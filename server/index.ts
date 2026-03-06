@@ -61,7 +61,7 @@ function setupBodyParsing(app: express.Application) {
     }),
   );
 
-  app.use(express.urlencoded({ extended: false }));
+  app.use(express.urlencoded({ extended: false, limit: "500mb" }));
 }
 
 function setupRequestLogging(app: express.Application) {
