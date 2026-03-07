@@ -149,7 +149,15 @@ export default function ScrollSnapScreen() {
   const pollProgress = useCallback(
     (jobId: string) => {
       const baseUrl = getApiUrl();
+      const startTime = Date.now();
+      const TIMEOUT = 5 * 60 * 1000;
       pollRef.current = setInterval(async () => {
+        if (Date.now() - startTime > TIMEOUT) {
+          cleanupPolling();
+          setStage("error");
+          setErrorMessage("Processing timed out. Please try a shorter video.");
+          return;
+        }
         try {
           const url = new URL(`/api/progress/${jobId}`, baseUrl);
           const res = await fetch(url.toString());

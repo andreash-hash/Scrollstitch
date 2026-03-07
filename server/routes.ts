@@ -18,10 +18,30 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 },
 });
 
-const jobProgress = new Map<
-  string,
-  { stage: string; progress: number; result?: any; error?: string }
->();
+interface JobState {
+  stage: string;
+  progress: number;
+  result?: any;
+  error?: string;
+  createdAt: number;
+}
+const jobProgress = new Map<string, JobState>();
+
+function updateJob(id: string, update: Partial<JobState>) {
+  const existing = jobProgress.get(id);
+  if (existing) {
+    Object.assign(existing, update);
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of jobProgress.entries()) {
+    if (now - job.createdAt > 30 * 60 * 1000) {
+      jobProgress.delete(id);
+    }
+  }
+}, 5 * 60 * 1000);
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
@@ -39,17 +59,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         console.log(`Received ${files.length} frames for job ${jobId}`);
 
-        jobProgress.set(jobId, { stage: "Processing", progress: 0 });
+        jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
         res.json({ jobId, frameCount: files.length });
 
         (async () => {
           try {
             const framePaths = files.map((f) => f.path);
 
-            jobProgress.set(jobId, {
-              stage: "Removing duplicates",
-              progress: 0.3,
-            });
+            updateJob(jobId, { stage: "Removing duplicates", progress: 0.3 });
             const uniqueFrames = await deduplicateFrames(framePaths);
             console.log(
               `Deduplicated: ${framePaths.length} -> ${uniqueFrames.length} frames`
@@ -59,23 +76,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             fs.mkdirSync(outputDir, { recursive: true });
 
             const outputImagePath = path.join(outputDir, `${jobId}.png`);
-            jobProgress.set(jobId, {
-              stage: "Stitching frames",
-              progress: 0.5,
-            });
+            updateJob(jobId, { stage: "Stitching frames", progress: 0.5 });
             const dimensions = await stitchFrames(
               uniqueFrames,
               outputImagePath
             );
 
             const outputPdfPath = path.join(outputDir, `${jobId}.pdf`);
-            jobProgress.set(jobId, {
-              stage: "Generating PDF",
-              progress: 0.8,
-            });
+            updateJob(jobId, { stage: "Generating PDF", progress: 0.8 });
             await generatePdf(outputImagePath, outputPdfPath);
 
-            jobProgress.set(jobId, {
+            updateJob(jobId, {
               stage: "Complete",
               progress: 1,
               result: {
@@ -94,11 +105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           } catch (err: any) {
             console.error("Processing error:", err);
-            jobProgress.set(jobId, {
-              stage: "Error",
-              progress: 0,
-              error: err.message,
-            });
+            updateJob(jobId, { stage: "Error", progress: 0, error: err.message });
           }
         })();
       } catch (err: any) {
