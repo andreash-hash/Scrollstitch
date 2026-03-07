@@ -246,7 +246,7 @@ export default function ScrollSnapScreen() {
           asset.uri,
           {
             httpMethod: "POST",
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            uploadType: 1,
             fieldName: "video",
             mimeType: "video/mp4",
           }
