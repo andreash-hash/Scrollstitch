@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -296,42 +296,7 @@ export default function ScrollSnapScreen() {
     const fileUrl = new URL(urlPath, baseUrl).toString();
     const cacheDir = FileSystem.cacheDirectory || "";
     const localUri = cacheDir + filename;
-
-    if (Platform.OS === "web") {
-      const response = await fetch(fileUrl);
-      const blob = await response.blob();
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onloadend = () => {
-          const r = reader.result as string;
-          resolve(r.split(",")[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-      await FileSystem.writeAsStringAsync(localUri, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-    } else {
-      const { File: ExpoFile, Paths } = await import("expo-file-system");
-      const { fetch: expoFetch } = await import("expo/fetch");
-      const response = await expoFetch(fileUrl);
-      const arrayBuffer = await response.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-
-      let binary = "";
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, i + chunkSize);
-        binary += String.fromCharCode(...chunk);
-      }
-      const base64 = btoa(binary);
-
-      await FileSystem.writeAsStringAsync(localUri, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-    }
-
+    await FileSystem.downloadAsync(fileUrl, localUri);
     return localUri;
   };
 
