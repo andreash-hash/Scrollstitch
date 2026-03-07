@@ -269,7 +269,6 @@ export default function ScrollSnapScreen() {
 
         for (let i = 0; i < frameUris.length; i++) {
           const file = new ExpoFile(frameUris[i]);
-          (file as any).name = `frame_${i.toString().padStart(5, "0")}.jpg`;
           formData.append("frames", file as any);
         }
 

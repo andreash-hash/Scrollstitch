@@ -44,17 +44,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         (async () => {
           try {
-            const framePaths = files
-              .sort((a, b) => {
-                const aNum = parseInt(
-                  a.originalname.replace(/\D/g, "") || "0"
-                );
-                const bNum = parseInt(
-                  b.originalname.replace(/\D/g, "") || "0"
-                );
-                return aNum - bNum;
-              })
-              .map((f) => f.path);
+            const framePaths = files.map((f) => f.path);
 
             jobProgress.set(jobId, {
               stage: "Removing duplicates",
