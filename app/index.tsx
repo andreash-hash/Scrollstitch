@@ -294,26 +294,43 @@ export default function ScrollSnapScreen() {
   const downloadFile = async (urlPath: string, filename: string): Promise<string> => {
     const baseUrl = getApiUrl();
     const fileUrl = new URL(urlPath, baseUrl).toString();
-    const { fetch: expoFetch } = await import("expo/fetch");
-    const response = await expoFetch(fileUrl);
-    const blob = await response.blob();
-
     const cacheDir = FileSystem.cacheDirectory || "";
     const localUri = cacheDir + filename;
 
-    const reader = new FileReader();
-    const base64 = await new Promise<string>((resolve, reject) => {
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        resolve(result.split(",")[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    if (Platform.OS === "web") {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const r = reader.result as string;
+          resolve(r.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      await FileSystem.writeAsStringAsync(localUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } else {
+      const { File: ExpoFile, Paths } = await import("expo-file-system");
+      const { fetch: expoFetch } = await import("expo/fetch");
+      const response = await expoFetch(fileUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
 
-    await FileSystem.writeAsStringAsync(localUri, base64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+      }
+      const base64 = btoa(binary);
+
+      await FileSystem.writeAsStringAsync(localUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    }
 
     return localUri;
   };
