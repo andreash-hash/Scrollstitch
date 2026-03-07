@@ -296,14 +296,14 @@ export default function ScrollSnapScreen() {
     const fileUrl = new URL(urlPath, baseUrl).toString();
     const cacheDir = FileSystem.cacheDirectory || "";
     const localUri = cacheDir + filename;
-    await FileSystem.downloadAsync(fileUrl, localUri);
-    return localUri;
+    const result = await FileSystem.downloadAsync(fileUrl, localUri);
+    return result.uri;
   };
 
   const saveToPhotos = async () => {
     if (!result) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== "granted") {
         Alert.alert("Permission needed", "Please grant access to save images.");
@@ -314,14 +314,15 @@ export default function ScrollSnapScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", "Image saved to your photo library.");
     } catch (err: any) {
-      Alert.alert("Error", "Failed to save image: " + err.message);
+      console.error("Save error:", err);
+      Alert.alert("Error", String(err?.message || err));
     }
   };
 
   const sharePdf = async () => {
     if (!result) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const localUri = await downloadFile(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {
@@ -332,7 +333,8 @@ export default function ScrollSnapScreen() {
         Alert.alert("Sharing not available on this device");
       }
     } catch (err: any) {
-      Alert.alert("Error", "Failed to share PDF: " + err.message);
+      console.error("Share error:", err);
+      Alert.alert("Error", String(err?.message || err));
     }
   };
 
