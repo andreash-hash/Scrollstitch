@@ -212,7 +212,8 @@ export default function ScrollSnapScreen() {
 
       const asset = pickerResult.assets[0];
 
-      const durationMs = (asset.duration || 10) * 1000;
+      const rawDuration = asset.duration || 10000;
+      const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
       const estimatedFrames = Math.ceil(durationMs / 500);
 
       setStage("extracting");
