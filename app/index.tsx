@@ -221,29 +221,43 @@ export default function ScrollSnapScreen() {
       const baseUrl = getApiUrl();
       const uploadUrl = new URL("/api/process", baseUrl);
 
-      const formData = new FormData();
+      let jobId: string;
 
       if (Platform.OS === "web") {
+        const formData = new FormData();
         const response = await fetch(asset.uri);
         const blob = await response.blob();
         formData.append("video", blob, "video.mp4");
+
+        const uploadRes = await fetch(uploadUrl.toString(), {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          const err = await uploadRes.text();
+          throw new Error(err);
+        }
+        const data = await uploadRes.json();
+        jobId = data.jobId;
       } else {
-        const { File } = await import("expo-file-system");
-        const file = new File(asset.uri);
-        formData.append("video", file as any);
+        const uploadResult = await FileSystem.uploadAsync(
+          uploadUrl.toString(),
+          asset.uri,
+          {
+            httpMethod: "POST",
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            fieldName: "video",
+            mimeType: "video/mp4",
+          }
+        );
+
+        if (uploadResult.status !== 200) {
+          throw new Error(uploadResult.body || "Upload failed");
+        }
+        const data = JSON.parse(uploadResult.body);
+        jobId = data.jobId;
       }
-
-      const uploadRes = await fetch(uploadUrl.toString(), {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.text();
-        throw new Error(err);
-      }
-
-      const { jobId } = await uploadRes.json();
       setStage("extracting");
       setStatusText("Extracting frames from video...");
       pollProgress(jobId);
