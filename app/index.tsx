@@ -291,6 +291,33 @@ export default function ScrollSnapScreen() {
     }
   };
 
+  const downloadFile = async (urlPath: string, filename: string): Promise<string> => {
+    const baseUrl = getApiUrl();
+    const fileUrl = new URL(urlPath, baseUrl).toString();
+    const { fetch: expoFetch } = await import("expo/fetch");
+    const response = await expoFetch(fileUrl);
+    const blob = await response.blob();
+
+    const cacheDir = FileSystem.cacheDirectory || "";
+    const localUri = cacheDir + filename;
+
+    const reader = new FileReader();
+    const base64 = await new Promise<string>((resolve, reject) => {
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        resolve(result.split(",")[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    await FileSystem.writeAsStringAsync(localUri, base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    return localUri;
+  };
+
   const saveToPhotos = async () => {
     if (!result) return;
     try {
@@ -300,10 +327,7 @@ export default function ScrollSnapScreen() {
         Alert.alert("Permission needed", "Please grant access to save images.");
         return;
       }
-      const baseUrl = getApiUrl();
-      const imageUrl = new URL(result.imageUrl, baseUrl).toString();
-      const localUri = FileSystem.cacheDirectory + `scrollsnap_${Date.now()}.png`;
-      await FileSystem.downloadAsync(imageUrl, localUri);
+      const localUri = await downloadFile(result.imageUrl, `scrollsnap_${Date.now()}.png`);
       await MediaLibrary.saveToLibraryAsync(localUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", "Image saved to your photo library.");
@@ -316,10 +340,7 @@ export default function ScrollSnapScreen() {
     if (!result) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const baseUrl = getApiUrl();
-      const pdfUrl = new URL(result.pdfUrl, baseUrl).toString();
-      const localUri = FileSystem.cacheDirectory + `scrollsnap_${Date.now()}.pdf`;
-      await FileSystem.downloadAsync(pdfUrl, localUri);
+      const localUri = await downloadFile(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {
           mimeType: "application/pdf",
