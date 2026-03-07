@@ -1,80 +1,11 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import sharp from "sharp";
 
-const execFileAsync = promisify(execFile);
-
-const FRAME_RATE = 5;
 const SIMILARITY_THRESHOLD = 0.97;
 const OVERLAP_SEARCH_HEIGHT = 120;
 const OVERLAP_MIN_HEIGHT = 20;
-
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "scrollsnap-"));
-}
-
-function cleanupDir(dir: string) {
-  try {
-    fs.rmSync(dir, { recursive: true, force: true });
-  } catch {}
-}
-
-export async function extractFrames(
-  videoPath: string,
-  tempDir: string
-): Promise<string[]> {
-  const framesDir = path.join(tempDir, "frames");
-  fs.mkdirSync(framesDir, { recursive: true });
-
-  if (!fs.existsSync(videoPath)) {
-    throw new Error(`Video file not found: ${videoPath}`);
-  }
-
-  const stat = fs.statSync(videoPath);
-  console.log(`Video file size: ${stat.size} bytes`);
-
-  const outputPattern = path.join(framesDir, "frame_%05d.jpg");
-
-  try {
-    const { stdout, stderr } = await execFileAsync(
-      "ffmpeg",
-      [
-        "-i", videoPath,
-        "-vf", `fps=${FRAME_RATE}`,
-        "-q:v", "2",
-        "-f", "image2",
-        outputPattern,
-        "-y",
-      ],
-      { timeout: 120000, maxBuffer: 50 * 1024 * 1024 }
-    );
-    if (stderr) {
-      console.log("ffmpeg stderr:", stderr.slice(-500));
-    }
-  } catch (err: any) {
-    console.error("ffmpeg error:", err.stderr?.slice(-500) || err.message);
-    const partialFiles = fs
-      .readdirSync(framesDir)
-      .filter((f) => f.endsWith(".jpg"));
-    if (partialFiles.length > 0) {
-      console.log(`ffmpeg errored but produced ${partialFiles.length} frames, continuing`);
-    } else {
-      throw new Error(`Frame extraction failed: ${err.message?.slice(0, 200)}`);
-    }
-  }
-
-  const files = fs
-    .readdirSync(framesDir)
-    .filter((f) => f.endsWith(".jpg"))
-    .sort()
-    .map((f) => path.join(framesDir, f));
-
-  console.log(`Extracted ${files.length} frames`);
-  return files;
-}
 
 async function getFrameSignature(
   framePath: string,
@@ -127,13 +58,20 @@ async function findOverlap(
   const topMeta = await sharp(topImagePath).metadata();
   const bottomMeta = await sharp(bottomImagePath).metadata();
 
-  if (!topMeta.width || !topMeta.height || !bottomMeta.width || !bottomMeta.height) {
+  if (
+    !topMeta.width ||
+    !topMeta.height ||
+    !bottomMeta.width ||
+    !bottomMeta.height
+  ) {
     return 0;
   }
 
   const width = Math.min(topMeta.width, bottomMeta.width);
-  const searchHeight = Math.min(OVERLAP_SEARCH_HEIGHT, Math.floor(topMeta.height * 0.4));
-
+  const searchHeight = Math.min(
+    OVERLAP_SEARCH_HEIGHT,
+    Math.floor(topMeta.height * 0.4)
+  );
   const sampleWidth = Math.min(width, 200);
 
   const topBottom = await sharp(topImagePath)
@@ -222,32 +160,23 @@ export async function stitchFrames(
     totalHeight += h - overlaps[i];
   }
 
-  const canvas = sharp({
-    create: {
-      width: targetWidth,
-      height: totalHeight,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
-    },
-  });
-
-  const composites: { input: string; top: number; left: number }[] = [];
+  const composites: { input: Buffer; top: number; left: number }[] = [];
   let currentY = 0;
 
   for (let i = 0; i < framePaths.length; i++) {
     const frameWidth = metadata[i].width || 0;
-    let inputPath = framePaths[i];
+    let inputBuffer: Buffer;
 
     if (frameWidth !== targetWidth) {
-      const resizedPath = framePaths[i].replace(/\.(jpg|png)$/, "_resized.$1");
-      await sharp(framePaths[i])
+      inputBuffer = await sharp(framePaths[i])
         .resize(targetWidth, metadata[i].height || 0, { fit: "fill" })
-        .toFile(resizedPath);
-      inputPath = resizedPath;
+        .toBuffer();
+    } else {
+      inputBuffer = await sharp(framePaths[i]).toBuffer();
     }
 
     composites.push({
-      input: inputPath,
+      input: inputBuffer,
       top: currentY,
       left: 0,
     });
@@ -255,7 +184,17 @@ export async function stitchFrames(
     currentY += (metadata[i].height || 0) - overlaps[i];
   }
 
-  await canvas.composite(composites).png({ quality: 90 }).toFile(outputPath);
+  await sharp({
+    create: {
+      width: targetWidth,
+      height: totalHeight,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    },
+  })
+    .composite(composites)
+    .png()
+    .toFile(outputPath);
 
   return { width: targetWidth, height: totalHeight };
 }
@@ -284,67 +223,11 @@ export async function generatePdf(
 
   const stream = fs.createWriteStream(outputPath);
   doc.pipe(stream);
-
-  doc.image(imagePath, margin, margin, {
-    width: contentWidth,
-  });
-
+  doc.image(imagePath, margin, margin, { width: contentWidth });
   doc.end();
 
   await new Promise<void>((resolve, reject) => {
     stream.on("finish", resolve);
     stream.on("error", reject);
   });
-}
-
-export interface ProcessingResult {
-  imageUrl: string;
-  pdfUrl: string;
-  frameCount: number;
-  uniqueFrames: number;
-  dimensions: { width: number; height: number };
-}
-
-export async function processVideo(
-  videoPath: string,
-  jobId: string,
-  onProgress: (stage: string, progress: number) => void
-): Promise<ProcessingResult> {
-  const tempDir = createTempDir();
-  const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
-  fs.mkdirSync(outputDir, { recursive: true });
-
-  try {
-    onProgress("Extracting frames", 0.1);
-    const frames = await extractFrames(videoPath, tempDir);
-    onProgress("Extracting frames", 0.3);
-
-    if (frames.length === 0) {
-      throw new Error("No frames could be extracted from the video");
-    }
-
-    onProgress("Removing duplicates", 0.4);
-    const uniqueFrames = await deduplicateFrames(frames);
-    onProgress("Removing duplicates", 0.5);
-
-    const outputImagePath = path.join(outputDir, `${jobId}.png`);
-    onProgress("Stitching frames", 0.6);
-    const dimensions = await stitchFrames(uniqueFrames, outputImagePath);
-    onProgress("Stitching frames", 0.8);
-
-    const outputPdfPath = path.join(outputDir, `${jobId}.pdf`);
-    onProgress("Generating PDF", 0.9);
-    await generatePdf(outputImagePath, outputPdfPath);
-    onProgress("Complete", 1.0);
-
-    return {
-      imageUrl: `/api/output/${jobId}.png`,
-      pdfUrl: `/api/output/${jobId}.pdf`,
-      frameCount: frames.length,
-      uniqueFrames: uniqueFrames.length,
-      dimensions,
-    };
-  } finally {
-    cleanupDir(tempDir);
-  }
 }

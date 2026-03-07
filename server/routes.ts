@@ -4,11 +4,18 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import multer from "multer";
-import { processVideo } from "./video-processor";
+import {
+  deduplicateFrames,
+  stitchFrames,
+  generatePdf,
+} from "./video-processor";
+
+const uploadDir = path.join(os.tmpdir(), "scrollsnap-uploads");
+fs.mkdirSync(uploadDir, { recursive: true });
 
 const upload = multer({
-  dest: path.join(os.tmpdir(), "scrollsnap-uploads"),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  dest: uploadDir,
+  limits: { fileSize: 100 * 1024 * 1024 },
 });
 
 const jobProgress = new Map<
@@ -18,49 +25,92 @@ const jobProgress = new Map<
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
-    "/api/process",
-    upload.single("video"),
+    "/api/process-frames",
+    upload.array("frames", 500),
     async (req: Request, res: Response) => {
+      const jobId =
+        Date.now().toString() + Math.random().toString(36).substr(2, 9);
+
       try {
-        if (!req.file) {
-          return res.status(400).json({ error: "No video file provided" });
+        const files = req.files as Express.Multer.File[];
+        if (!files || files.length === 0) {
+          return res.status(400).json({ error: "No frames provided" });
         }
 
-        const jobId =
-          Date.now().toString() +
-          Math.random().toString(36).substr(2, 9);
+        console.log(`Received ${files.length} frames for job ${jobId}`);
 
-        jobProgress.set(jobId, { stage: "Uploading", progress: 0 });
+        jobProgress.set(jobId, { stage: "Processing", progress: 0 });
+        res.json({ jobId, frameCount: files.length });
 
-        res.json({ jobId });
+        (async () => {
+          try {
+            const framePaths = files
+              .sort((a, b) => {
+                const aNum = parseInt(
+                  a.originalname.replace(/\D/g, "") || "0"
+                );
+                const bNum = parseInt(
+                  b.originalname.replace(/\D/g, "") || "0"
+                );
+                return aNum - bNum;
+              })
+              .map((f) => f.path);
 
-        processVideo(
-          req.file.path,
-          jobId,
-          (stage: string, progress: number) => {
-            jobProgress.set(jobId, { stage, progress });
-          }
-        )
-          .then((result) => {
+            jobProgress.set(jobId, {
+              stage: "Removing duplicates",
+              progress: 0.3,
+            });
+            const uniqueFrames = await deduplicateFrames(framePaths);
+            console.log(
+              `Deduplicated: ${framePaths.length} -> ${uniqueFrames.length} frames`
+            );
+
+            const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
+            fs.mkdirSync(outputDir, { recursive: true });
+
+            const outputImagePath = path.join(outputDir, `${jobId}.png`);
+            jobProgress.set(jobId, {
+              stage: "Stitching frames",
+              progress: 0.5,
+            });
+            const dimensions = await stitchFrames(
+              uniqueFrames,
+              outputImagePath
+            );
+
+            const outputPdfPath = path.join(outputDir, `${jobId}.pdf`);
+            jobProgress.set(jobId, {
+              stage: "Generating PDF",
+              progress: 0.8,
+            });
+            await generatePdf(outputImagePath, outputPdfPath);
+
             jobProgress.set(jobId, {
               stage: "Complete",
               progress: 1,
-              result,
+              result: {
+                imageUrl: `/api/output/${jobId}.png`,
+                pdfUrl: `/api/output/${jobId}.pdf`,
+                frameCount: framePaths.length,
+                uniqueFrames: uniqueFrames.length,
+                dimensions,
+              },
             });
-            try {
-              fs.unlinkSync(req.file!.path);
-            } catch {}
-          })
-          .catch((err) => {
+
+            for (const f of files) {
+              try {
+                fs.unlinkSync(f.path);
+              } catch {}
+            }
+          } catch (err: any) {
+            console.error("Processing error:", err);
             jobProgress.set(jobId, {
               stage: "Error",
               progress: 0,
               error: err.message,
             });
-            try {
-              fs.unlinkSync(req.file!.path);
-            } catch {}
-          });
+          }
+        })();
       } catch (err: any) {
         return res.status(500).json({ error: err.message });
       }
@@ -77,20 +127,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/output/:filename", (req: Request, res: Response) => {
     const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
-    const filePath = path.join(outputDir, req.params.filename);
+    const filename = path.basename(req.params.filename);
+    const filePath = path.join(outputDir, filename);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: "File not found" });
     }
 
     const ext = path.extname(filePath).toLowerCase();
-    const contentType =
-      ext === ".pdf" ? "application/pdf" : "image/png";
+    const contentType = ext === ".pdf" ? "application/pdf" : "image/png";
 
     res.setHeader("Content-Type", contentType);
     res.setHeader(
       "Content-Disposition",
-      `inline; filename="${req.params.filename}"`
+      `inline; filename="${filename}"`
     );
     fs.createReadStream(filePath).pipe(res);
   });

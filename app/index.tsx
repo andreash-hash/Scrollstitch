@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Alert,
   Platform,
   Dimensions,
@@ -19,6 +18,7 @@ import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -26,7 +26,6 @@ import Animated, {
   withRepeat,
   withTiming,
   withSequence,
-  Easing,
   FadeIn,
   FadeInDown,
 } from "react-native-reanimated";
@@ -39,11 +38,9 @@ const C = Colors.dark;
 
 type ProcessingStage =
   | "idle"
-  | "uploading"
   | "extracting"
-  | "deduplicating"
-  | "stitching"
-  | "generating_pdf"
+  | "uploading"
+  | "processing"
   | "complete"
   | "error";
 
@@ -57,7 +54,6 @@ interface ProcessingResult {
 
 function PulsingDot() {
   const opacity = useSharedValue(0.3);
-
   useEffect(() => {
     opacity.value = withRepeat(
       withSequence(
@@ -67,28 +63,21 @@ function PulsingDot() {
       -1
     );
   }, []);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return <Animated.View style={[styles.pulsingDot, style]} />;
 }
 
 function ProgressBar({ progress }: { progress: number }) {
   const animatedWidth = useSharedValue(0);
-
   useEffect(() => {
     animatedWidth.value = withSpring(progress * 100, {
       damping: 15,
       stiffness: 100,
     });
   }, [progress]);
-
   const barStyle = useAnimatedStyle(() => ({
     width: `${animatedWidth.value}%` as any,
   }));
-
   return (
     <View style={styles.progressBarContainer}>
       <Animated.View style={[styles.progressBarFill, barStyle]}>
@@ -103,6 +92,43 @@ function ProgressBar({ progress }: { progress: number }) {
   );
 }
 
+async function getVideoDuration(uri: string): Promise<number> {
+  try {
+    const thumb = await VideoThumbnails.getThumbnailAsync(uri, { time: 999999999 });
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function extractFramesFromVideo(
+  uri: string,
+  onProgress: (p: number) => void
+): Promise<string[]> {
+  const frameUris: string[] = [];
+  const intervalMs = 200;
+  let time = 0;
+  let consecutiveErrors = 0;
+  const maxErrors = 5;
+
+  while (consecutiveErrors < maxErrors) {
+    try {
+      const thumb = await VideoThumbnails.getThumbnailAsync(uri, {
+        time,
+        quality: 0.8,
+      });
+      frameUris.push(thumb.uri);
+      consecutiveErrors = 0;
+      onProgress(frameUris.length);
+    } catch {
+      consecutiveErrors++;
+    }
+    time += intervalMs;
+  }
+
+  return frameUris;
+}
+
 export default function ScrollSnapScreen() {
   const insets = useSafeAreaInsets();
   const [stage, setStage] = useState<ProcessingStage>("idle");
@@ -110,7 +136,7 @@ export default function ScrollSnapScreen() {
   const [statusText, setStatusText] = useState("");
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [frameCount, setFrameCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const buttonScale = useSharedValue(1);
 
@@ -132,23 +158,6 @@ export default function ScrollSnapScreen() {
     return cleanupPolling;
   }, [cleanupPolling]);
 
-  const stageToText = (s: string): string => {
-    switch (s) {
-      case "Extracting frames":
-        return "Extracting frames from video...";
-      case "Removing duplicates":
-        return "Detecting duplicate frames...";
-      case "Stitching frames":
-        return "Stitching unique frames together...";
-      case "Generating PDF":
-        return "Creating PDF document...";
-      case "Complete":
-        return "Processing complete!";
-      default:
-        return s;
-    }
-  };
-
   const pollProgress = useCallback(
     (jobId: string) => {
       const baseUrl = getApiUrl();
@@ -166,18 +175,21 @@ export default function ScrollSnapScreen() {
           }
 
           setProgress(data.progress || 0);
-          setStatusText(stageToText(data.stage));
 
-          if (data.stage === "Extracting frames") setStage("extracting");
-          else if (data.stage === "Removing duplicates")
-            setStage("deduplicating");
-          else if (data.stage === "Stitching frames") setStage("stitching");
-          else if (data.stage === "Generating PDF")
-            setStage("generating_pdf");
+          if (data.stage === "Removing duplicates") {
+            setStatusText("Detecting duplicate frames...");
+          } else if (data.stage === "Stitching frames") {
+            setStatusText("Stitching unique frames together...");
+            setProgress(0.6);
+          } else if (data.stage === "Generating PDF") {
+            setStatusText("Creating PDF document...");
+            setProgress(0.85);
+          }
 
           if (data.stage === "Complete" && data.result) {
             cleanupPolling();
             setStage("complete");
+            setProgress(1);
             setResult(data.result);
             Haptics.notificationAsync(
               Haptics.NotificationFeedbackType.Success
@@ -193,7 +205,8 @@ export default function ScrollSnapScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permResult.granted) {
         Alert.alert(
           "Permission needed",
@@ -211,57 +224,75 @@ export default function ScrollSnapScreen() {
       if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
 
       const asset = pickerResult.assets[0];
-      setVideoUri(asset.uri);
-      setStage("uploading");
+
+      setStage("extracting");
       setProgress(0);
-      setStatusText("Uploading video...");
+      setFrameCount(0);
+      setStatusText("Extracting frames from video...");
       setResult(null);
       setErrorMessage("");
 
-      const baseUrl = getApiUrl();
-      const uploadUrl = new URL("/api/process", baseUrl);
+      const frameUris = await extractFramesFromVideo(
+        asset.uri,
+        (count) => {
+          setFrameCount(count);
+          setStatusText(`Extracted ${count} frames...`);
+        }
+      );
 
-      let jobId: string;
+      if (frameUris.length === 0) {
+        throw new Error("Could not extract any frames from the video");
+      }
+
+      setStage("uploading");
+      setStatusText(`Uploading ${frameUris.length} frames...`);
+      setProgress(0.15);
+
+      const baseUrl = getApiUrl();
+      const uploadUrl = new URL("/api/process-frames", baseUrl);
 
       if (Platform.OS === "web") {
         const formData = new FormData();
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        formData.append("video", blob, "video.mp4");
-
+        for (let i = 0; i < frameUris.length; i++) {
+          const response = await fetch(frameUris[i]);
+          const blob = await response.blob();
+          formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
+        }
         const uploadRes = await fetch(uploadUrl.toString(), {
           method: "POST",
           body: formData,
         });
-
-        if (!uploadRes.ok) {
-          const err = await uploadRes.text();
-          throw new Error(err);
-        }
+        if (!uploadRes.ok) throw new Error(await uploadRes.text());
         const data = await uploadRes.json();
-        jobId = data.jobId;
+
+        setStage("processing");
+        setProgress(0.3);
+        setStatusText("Processing frames on server...");
+        pollProgress(data.jobId);
       } else {
         const { fetch: expoFetch } = await import("expo/fetch");
         const { File: ExpoFile } = await import("expo-file-system");
         const formData = new FormData();
-        const file = new ExpoFile(asset.uri);
-        formData.append("video", file as any);
+
+        for (let i = 0; i < frameUris.length; i++) {
+          const file = new ExpoFile(frameUris[i]);
+          (file as any).name = `frame_${i.toString().padStart(5, "0")}.jpg`;
+          formData.append("frames", file as any);
+        }
 
         const uploadRes = await expoFetch(uploadUrl.toString(), {
           method: "POST",
           body: formData,
         });
 
-        if (!uploadRes.ok) {
-          const err = await uploadRes.text();
-          throw new Error(err);
-        }
+        if (!uploadRes.ok) throw new Error(await uploadRes.text());
         const data = await uploadRes.json();
-        jobId = data.jobId;
+
+        setStage("processing");
+        setProgress(0.3);
+        setStatusText("Processing frames on server...");
+        pollProgress(data.jobId);
       }
-      setStage("extracting");
-      setStatusText("Extracting frames from video...");
-      pollProgress(jobId);
     } catch (err: any) {
       setStage("error");
       setErrorMessage(err.message || "Failed to process video");
@@ -274,21 +305,14 @@ export default function ScrollSnapScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
-          "Permission needed",
-          "Please grant access to save images."
-        );
+        Alert.alert("Permission needed", "Please grant access to save images.");
         return;
       }
-
       const baseUrl = getApiUrl();
       const imageUrl = new URL(result.imageUrl, baseUrl).toString();
-      const localUri =
-        FileSystem.cacheDirectory + `scrollsnap_${Date.now()}.png`;
-
+      const localUri = FileSystem.cacheDirectory + `scrollsnap_${Date.now()}.png`;
       await FileSystem.downloadAsync(imageUrl, localUri);
       await MediaLibrary.saveToLibraryAsync(localUri);
-
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", "Image saved to your photo library.");
     } catch (err: any) {
@@ -302,11 +326,8 @@ export default function ScrollSnapScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const baseUrl = getApiUrl();
       const pdfUrl = new URL(result.pdfUrl, baseUrl).toString();
-      const localUri =
-        FileSystem.cacheDirectory + `scrollsnap_${Date.now()}.pdf`;
-
+      const localUri = FileSystem.cacheDirectory + `scrollsnap_${Date.now()}.pdf`;
       await FileSystem.downloadAsync(pdfUrl, localUri);
-
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {
           mimeType: "application/pdf",
@@ -328,11 +349,11 @@ export default function ScrollSnapScreen() {
     setStatusText("");
     setResult(null);
     setErrorMessage("");
-    setVideoUri(null);
+    setFrameCount(0);
   };
 
   const isProcessing =
-    stage !== "idle" && stage !== "complete" && stage !== "error";
+    stage === "extracting" || stage === "uploading" || stage === "processing";
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
@@ -435,14 +456,13 @@ export default function ScrollSnapScreen() {
               <View style={styles.stageIndicators}>
                 {[
                   { key: "extracting", label: "Extract" },
-                  { key: "deduplicating", label: "Dedupe" },
-                  { key: "stitching", label: "Stitch" },
-                  { key: "generating_pdf", label: "PDF" },
+                  { key: "uploading", label: "Upload" },
+                  { key: "processing", label: "Process" },
                 ].map((s) => {
+                  const stageOrder = ["extracting", "uploading", "processing"];
                   const isActive = stage === s.key;
                   const isPast =
-                    ["extracting", "deduplicating", "stitching", "generating_pdf"].indexOf(stage) >
-                    ["extracting", "deduplicating", "stitching", "generating_pdf"].indexOf(s.key);
+                    stageOrder.indexOf(stage) > stageOrder.indexOf(s.key);
                   return (
                     <View
                       key={s.key}
@@ -468,6 +488,12 @@ export default function ScrollSnapScreen() {
                   );
                 })}
               </View>
+
+              {stage === "extracting" && frameCount > 0 && (
+                <Text style={styles.frameCountText}>
+                  {frameCount} frames extracted
+                </Text>
+              )}
             </View>
           </Animated.View>
         )}
@@ -728,6 +754,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: C.textSecondary,
     marginBottom: 24,
+    textAlign: "center",
   },
   stageIndicators: {
     flexDirection: "row",
@@ -762,6 +789,12 @@ const styles = StyleSheet.create({
   },
   stageChipTextDone: {
     color: C.accentDim,
+  },
+  frameCountText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: C.accentDim,
+    marginTop: 16,
   },
   errorContainer: {
     paddingTop: 40,
