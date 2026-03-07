@@ -1,10 +1,13 @@
-import { execSync, exec } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import sharp from "sharp";
 
-const FRAME_INTERVAL = 0.15;
+const execFileAsync = promisify(execFile);
+
+const FRAME_RATE = 5;
 const SIMILARITY_THRESHOLD = 0.97;
 const OVERLAP_SEARCH_HEIGHT = 120;
 const OVERLAP_MIN_HEIGHT = 20;
@@ -26,17 +29,50 @@ export async function extractFrames(
   const framesDir = path.join(tempDir, "frames");
   fs.mkdirSync(framesDir, { recursive: true });
 
-  execSync(
-    `ffmpeg -i "${videoPath}" -vf "fps=1/${FRAME_INTERVAL}" -q:v 2 "${framesDir}/frame_%05d.png" -y 2>/dev/null`,
-    { timeout: 120000 }
-  );
+  if (!fs.existsSync(videoPath)) {
+    throw new Error(`Video file not found: ${videoPath}`);
+  }
+
+  const stat = fs.statSync(videoPath);
+  console.log(`Video file size: ${stat.size} bytes`);
+
+  const outputPattern = path.join(framesDir, "frame_%05d.jpg");
+
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      "ffmpeg",
+      [
+        "-i", videoPath,
+        "-vf", `fps=${FRAME_RATE}`,
+        "-q:v", "2",
+        "-f", "image2",
+        outputPattern,
+        "-y",
+      ],
+      { timeout: 120000, maxBuffer: 50 * 1024 * 1024 }
+    );
+    if (stderr) {
+      console.log("ffmpeg stderr:", stderr.slice(-500));
+    }
+  } catch (err: any) {
+    console.error("ffmpeg error:", err.stderr?.slice(-500) || err.message);
+    const partialFiles = fs
+      .readdirSync(framesDir)
+      .filter((f) => f.endsWith(".jpg"));
+    if (partialFiles.length > 0) {
+      console.log(`ffmpeg errored but produced ${partialFiles.length} frames, continuing`);
+    } else {
+      throw new Error(`Frame extraction failed: ${err.message?.slice(0, 200)}`);
+    }
+  }
 
   const files = fs
     .readdirSync(framesDir)
-    .filter((f) => f.endsWith(".png"))
+    .filter((f) => f.endsWith(".jpg"))
     .sort()
     .map((f) => path.join(framesDir, f));
 
+  console.log(`Extracted ${files.length} frames`);
   return files;
 }
 
@@ -203,7 +239,7 @@ export async function stitchFrames(
     let inputPath = framePaths[i];
 
     if (frameWidth !== targetWidth) {
-      const resizedPath = framePaths[i].replace(".png", "_resized.png");
+      const resizedPath = framePaths[i].replace(/\.(jpg|png)$/, "_resized.$1");
       await sharp(framePaths[i])
         .resize(targetWidth, metadata[i].height || 0, { fit: "fill" })
         .toFile(resizedPath);
