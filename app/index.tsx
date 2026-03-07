@@ -241,21 +241,22 @@ export default function ScrollSnapScreen() {
         const data = await uploadRes.json();
         jobId = data.jobId;
       } else {
-        const uploadResult = await FileSystem.uploadAsync(
-          uploadUrl.toString(),
-          asset.uri,
-          {
-            httpMethod: "POST",
-            uploadType: 1,
-            fieldName: "video",
-            mimeType: "video/mp4",
-          }
-        );
+        const { fetch: expoFetch } = await import("expo/fetch");
+        const { File: ExpoFile } = await import("expo-file-system");
+        const formData = new FormData();
+        const file = new ExpoFile(asset.uri);
+        formData.append("video", file as any);
 
-        if (uploadResult.status !== 200) {
-          throw new Error(uploadResult.body || "Upload failed");
+        const uploadRes = await expoFetch(uploadUrl.toString(), {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          const err = await uploadRes.text();
+          throw new Error(err);
         }
-        const data = JSON.parse(uploadResult.body);
+        const data = await uploadRes.json();
         jobId = data.jobId;
       }
       setStage("extracting");
