@@ -135,6 +135,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.createReadStream(filePath).pipe(res);
   });
 
+  app.get("/api/output-base64/:filename", (req: Request, res: Response) => {
+    const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
+    const filename = path.basename(req.params.filename);
+    const filePath = path.join(outputDir, filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    const data = fs.readFileSync(filePath);
+    const base64 = data.toString("base64");
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType = ext === ".pdf" ? "application/pdf" : "image/png";
+
+    res.json({ base64, mimeType, filename });
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

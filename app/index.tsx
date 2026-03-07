@@ -15,7 +15,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
-import * as FileSystem from "expo-file-system/legacy";
+import * as LegacyFileSystem from "expo-file-system/legacy";
+import { Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -291,13 +292,21 @@ export default function ScrollSnapScreen() {
     }
   };
 
-  const downloadFile = async (urlPath: string, filename: string): Promise<string> => {
+  const fetchAndSaveFile = async (urlPath: string, filename: string): Promise<string> => {
     const baseUrl = getApiUrl();
-    const fileUrl = new URL(urlPath, baseUrl).toString();
-    const cacheDir = FileSystem.cacheDirectory || "";
-    const localUri = cacheDir + filename;
-    const result = await FileSystem.downloadAsync(fileUrl, localUri);
-    return result.uri;
+    const jobFile = urlPath.split("/").pop();
+    const url = new URL(`/api/output-base64/${jobFile}`, baseUrl);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error("Failed to fetch file");
+    const { base64 } = await res.json();
+
+    const cacheDir = Paths.cache?.uri || LegacyFileSystem.cacheDirectory || "";
+    const localUri = cacheDir + (cacheDir.endsWith("/") ? "" : "/") + filename;
+    await LegacyFileSystem.writeAsStringAsync(localUri, base64, {
+      encoding: LegacyFileSystem.EncodingType.Base64,
+    });
+    return localUri;
   };
 
   const saveToPhotos = async () => {
@@ -309,7 +318,7 @@ export default function ScrollSnapScreen() {
         Alert.alert("Permission needed", "Please grant access to save images.");
         return;
       }
-      const localUri = await downloadFile(result.imageUrl, `scrollsnap_${Date.now()}.png`);
+      const localUri = await fetchAndSaveFile(result.imageUrl, `scrollsnap_${Date.now()}.png`);
       await MediaLibrary.saveToLibraryAsync(localUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", "Image saved to your photo library.");
@@ -323,7 +332,7 @@ export default function ScrollSnapScreen() {
     if (!result) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      const localUri = await downloadFile(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
+      const localUri = await fetchAndSaveFile(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {
           mimeType: "application/pdf",
