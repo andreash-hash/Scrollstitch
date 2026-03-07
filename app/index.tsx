@@ -92,38 +92,25 @@ function ProgressBar({ progress }: { progress: number }) {
   );
 }
 
-async function getVideoDuration(uri: string): Promise<number> {
-  try {
-    const thumb = await VideoThumbnails.getThumbnailAsync(uri, { time: 999999999 });
-    return 0;
-  } catch {
-    return 0;
-  }
-}
-
 async function extractFramesFromVideo(
   uri: string,
-  onProgress: (p: number) => void
+  durationMs: number,
+  onProgress: (current: number, total: number) => void
 ): Promise<string[]> {
+  const intervalMs = 500;
+  const totalFrames = Math.ceil(durationMs / intervalMs);
   const frameUris: string[] = [];
-  const intervalMs = 200;
-  let time = 0;
-  let consecutiveErrors = 0;
-  const maxErrors = 5;
 
-  while (consecutiveErrors < maxErrors) {
+  for (let i = 0; i < totalFrames; i++) {
+    const time = i * intervalMs;
     try {
       const thumb = await VideoThumbnails.getThumbnailAsync(uri, {
         time,
-        quality: 0.8,
+        quality: 0.7,
       });
       frameUris.push(thumb.uri);
-      consecutiveErrors = 0;
-      onProgress(frameUris.length);
-    } catch {
-      consecutiveErrors++;
-    }
-    time += intervalMs;
+    } catch {}
+    onProgress(i + 1, totalFrames);
   }
 
   return frameUris;
@@ -225,18 +212,23 @@ export default function ScrollSnapScreen() {
 
       const asset = pickerResult.assets[0];
 
+      const durationMs = (asset.duration || 10) * 1000;
+      const estimatedFrames = Math.ceil(durationMs / 500);
+
       setStage("extracting");
       setProgress(0);
       setFrameCount(0);
-      setStatusText("Extracting frames from video...");
+      setStatusText(`Extracting ~${estimatedFrames} frames...`);
       setResult(null);
       setErrorMessage("");
 
       const frameUris = await extractFramesFromVideo(
         asset.uri,
-        (count) => {
-          setFrameCount(count);
-          setStatusText(`Extracted ${count} frames...`);
+        durationMs,
+        (current, total) => {
+          setFrameCount(current);
+          setProgress((current / total) * 0.15);
+          setStatusText(`Extracting frames: ${current}/${total}`);
         }
       );
 
