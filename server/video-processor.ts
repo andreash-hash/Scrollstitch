@@ -70,29 +70,55 @@ async function detectStickyRegion(
 
   let stickyHeight = 0;
 
-  for (let row = 0; row < maxCheckHeight; row++) {
-    const actualRow = region === "top" ? row : row;
-    const rowStart = actualRow * sampleWidth;
-    const rowEnd = rowStart + sampleWidth;
-    const refRow = strips[0].subarray(rowStart, rowEnd);
+  if (region === "top") {
+    for (let row = 0; row < maxCheckHeight; row++) {
+      const rowStart = row * sampleWidth;
+      const rowEnd = rowStart + sampleWidth;
+      const refRow = strips[0].subarray(rowStart, rowEnd);
 
-    let allMatch = true;
-    for (let s = 1; s < strips.length; s++) {
-      const cmpRow = strips[s].subarray(rowStart, rowEnd);
-      let matches = 0;
-      for (let p = 0; p < sampleWidth; p++) {
-        if (Math.abs(refRow[p] - cmpRow[p]) < 15) matches++;
+      let allMatch = true;
+      for (let s = 1; s < strips.length; s++) {
+        const cmpRow = strips[s].subarray(rowStart, rowEnd);
+        let matches = 0;
+        for (let p = 0; p < sampleWidth; p++) {
+          if (Math.abs(refRow[p] - cmpRow[p]) < 15) matches++;
+        }
+        if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
+          allMatch = false;
+          break;
+        }
       }
-      if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
-        allMatch = false;
+
+      if (allMatch) {
+        stickyHeight = row + 1;
+      } else {
         break;
       }
     }
+  } else {
+    for (let row = maxCheckHeight - 1; row >= 0; row--) {
+      const rowStart = row * sampleWidth;
+      const rowEnd = rowStart + sampleWidth;
+      const refRow = strips[0].subarray(rowStart, rowEnd);
 
-    if (allMatch) {
-      stickyHeight = row + 1;
-    } else {
-      break;
+      let allMatch = true;
+      for (let s = 1; s < strips.length; s++) {
+        const cmpRow = strips[s].subarray(rowStart, rowEnd);
+        let matches = 0;
+        for (let p = 0; p < sampleWidth; p++) {
+          if (Math.abs(refRow[p] - cmpRow[p]) < 15) matches++;
+        }
+        if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
+          allMatch = false;
+          break;
+        }
+      }
+
+      if (allMatch) {
+        stickyHeight = maxCheckHeight - row;
+      } else {
+        break;
+      }
     }
   }
 
