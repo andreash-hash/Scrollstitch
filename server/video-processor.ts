@@ -6,10 +6,11 @@ import sharp from "sharp";
 const SIMILARITY_THRESHOLD = 0.97;
 const OVERLAP_SEARCH_HEIGHT = 120;
 const OVERLAP_MIN_HEIGHT = 20;
-const HEADER_SAMPLE_FRAMES = 5;
-const HEADER_ROW_MATCH_THRESHOLD = 0.92;
+const HEADER_SAMPLE_FRAMES = 7;
+const HEADER_ROW_MATCH_THRESHOLD = 0.96;
 const HEADER_MIN_HEIGHT = 40;
-const HEADER_MAX_RATIO = 0.2;
+const HEADER_MAX_RATIO = 0.15;
+const HEADER_PIXEL_TOLERANCE = 10;
 
 async function getFrameSignature(
   framePath: string,
@@ -42,9 +43,12 @@ async function detectStickyRegion(
 
   const sampleCount = Math.min(framePaths.length, HEADER_SAMPLE_FRAMES);
   const indices: number[] = [];
-  const step = Math.max(1, Math.floor(framePaths.length / sampleCount));
+  const step = Math.max(1, Math.floor((framePaths.length - 1) / (sampleCount - 1)));
   for (let i = 0; i < framePaths.length && indices.length < sampleCount; i += step) {
     indices.push(i);
+  }
+  if (!indices.includes(framePaths.length - 1) && framePaths.length > 1) {
+    indices.push(framePaths.length - 1);
   }
   if (indices.length < 3) return 0;
 
@@ -70,54 +74,44 @@ async function detectStickyRegion(
 
   let stickyHeight = 0;
 
-  if (region === "top") {
-    for (let row = 0; row < maxCheckHeight; row++) {
-      const rowStart = row * sampleWidth;
-      const rowEnd = rowStart + sampleWidth;
-      const refRow = strips[0].subarray(rowStart, rowEnd);
+  const checkRow = (row: number): boolean => {
+    const rowStart = row * sampleWidth;
+    const rowEnd = rowStart + sampleWidth;
+    const refRow = strips[0].subarray(rowStart, rowEnd);
 
-      let allMatch = true;
-      for (let s = 1; s < strips.length; s++) {
-        const cmpRow = strips[s].subarray(rowStart, rowEnd);
-        let matches = 0;
-        for (let p = 0; p < sampleWidth; p++) {
-          if (Math.abs(refRow[p] - cmpRow[p]) < 15) matches++;
-        }
-        if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
-          allMatch = false;
-          break;
-        }
+    for (let s = 1; s < strips.length; s++) {
+      const cmpRow = strips[s].subarray(rowStart, rowEnd);
+      let matches = 0;
+      for (let p = 0; p < sampleWidth; p++) {
+        if (Math.abs(refRow[p] - cmpRow[p]) < HEADER_PIXEL_TOLERANCE) matches++;
       }
+      if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
+        return false;
+      }
+    }
+    return true;
+  };
 
-      if (allMatch) {
+  if (region === "top") {
+    let consecutiveMisses = 0;
+    for (let row = 0; row < maxCheckHeight; row++) {
+      if (checkRow(row)) {
         stickyHeight = row + 1;
+        consecutiveMisses = 0;
       } else {
-        break;
+        consecutiveMisses++;
+        if (consecutiveMisses > 3) break;
       }
     }
   } else {
+    let consecutiveMisses = 0;
     for (let row = maxCheckHeight - 1; row >= 0; row--) {
-      const rowStart = row * sampleWidth;
-      const rowEnd = rowStart + sampleWidth;
-      const refRow = strips[0].subarray(rowStart, rowEnd);
-
-      let allMatch = true;
-      for (let s = 1; s < strips.length; s++) {
-        const cmpRow = strips[s].subarray(rowStart, rowEnd);
-        let matches = 0;
-        for (let p = 0; p < sampleWidth; p++) {
-          if (Math.abs(refRow[p] - cmpRow[p]) < 15) matches++;
-        }
-        if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
-          allMatch = false;
-          break;
-        }
-      }
-
-      if (allMatch) {
+      if (checkRow(row)) {
         stickyHeight = maxCheckHeight - row;
+        consecutiveMisses = 0;
       } else {
-        break;
+        consecutiveMisses++;
+        if (consecutiveMisses > 3) break;
       }
     }
   }

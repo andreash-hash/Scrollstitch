@@ -98,7 +98,7 @@ async function extractFramesFromVideo(
   durationMs: number,
   onProgress: (current: number, total: number) => void
 ): Promise<string[]> {
-  const intervalMs = 500;
+  const intervalMs = 300;
   const totalFrames = Math.ceil(durationMs / intervalMs);
   const frameUris: string[] = [];
 
@@ -226,7 +226,7 @@ export default function ScrollSnapScreen() {
 
       const rawDuration = asset.duration || 10000;
       const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
-      const estimatedFrames = Math.ceil(durationMs / 500);
+      const estimatedFrames = Math.ceil(durationMs / 300);
 
       setStage("extracting");
       setProgress(0);
