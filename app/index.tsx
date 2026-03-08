@@ -174,6 +174,9 @@ export default function ScrollSnapScreen() {
 
           if (data.stage === "Removing duplicates") {
             setStatusText("Detecting duplicate frames...");
+          } else if (data.stage === "Removing sticky headers") {
+            setStatusText("Removing sticky headers & footers...");
+            setProgress(0.45);
           } else if (data.stage === "Stitching frames") {
             setStatusText("Stitching unique frames together...");
             setProgress(0.6);

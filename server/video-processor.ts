@@ -6,6 +6,10 @@ import sharp from "sharp";
 const SIMILARITY_THRESHOLD = 0.97;
 const OVERLAP_SEARCH_HEIGHT = 120;
 const OVERLAP_MIN_HEIGHT = 20;
+const HEADER_SAMPLE_FRAMES = 5;
+const HEADER_ROW_MATCH_THRESHOLD = 0.92;
+const HEADER_MIN_HEIGHT = 40;
+const HEADER_MAX_RATIO = 0.2;
 
 async function getFrameSignature(
   framePath: string,
@@ -28,6 +32,126 @@ function bufferSimilarity(a: Buffer, b: Buffer): number {
     if (diff < 20) matches++;
   }
   return matches / a.length;
+}
+
+async function detectStickyRegion(
+  framePaths: string[],
+  region: "top" | "bottom"
+): Promise<number> {
+  if (framePaths.length < 3) return 0;
+
+  const sampleCount = Math.min(framePaths.length, HEADER_SAMPLE_FRAMES);
+  const indices: number[] = [];
+  const step = Math.max(1, Math.floor(framePaths.length / sampleCount));
+  for (let i = 0; i < framePaths.length && indices.length < sampleCount; i += step) {
+    indices.push(i);
+  }
+  if (indices.length < 3) return 0;
+
+  const firstMeta = await sharp(framePaths[indices[0]]).metadata();
+  const frameWidth = firstMeta.width || 0;
+  const frameHeight = firstMeta.height || 0;
+  if (!frameWidth || !frameHeight) return 0;
+
+  const maxCheckHeight = Math.floor(frameHeight * HEADER_MAX_RATIO);
+  const sampleWidth = Math.min(frameWidth, 300);
+
+  const strips: Buffer[] = [];
+  for (const idx of indices) {
+    const extractTop = region === "top" ? 0 : frameHeight - maxCheckHeight;
+    const strip = await sharp(framePaths[idx])
+      .extract({ left: 0, top: extractTop, width: frameWidth, height: maxCheckHeight })
+      .resize(sampleWidth, maxCheckHeight, { fit: "fill" })
+      .greyscale()
+      .raw()
+      .toBuffer();
+    strips.push(strip);
+  }
+
+  let stickyHeight = 0;
+
+  for (let row = 0; row < maxCheckHeight; row++) {
+    const actualRow = region === "top" ? row : row;
+    const rowStart = actualRow * sampleWidth;
+    const rowEnd = rowStart + sampleWidth;
+    const refRow = strips[0].subarray(rowStart, rowEnd);
+
+    let allMatch = true;
+    for (let s = 1; s < strips.length; s++) {
+      const cmpRow = strips[s].subarray(rowStart, rowEnd);
+      let matches = 0;
+      for (let p = 0; p < sampleWidth; p++) {
+        if (Math.abs(refRow[p] - cmpRow[p]) < 15) matches++;
+      }
+      if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
+        allMatch = false;
+        break;
+      }
+    }
+
+    if (allMatch) {
+      stickyHeight = row + 1;
+    } else {
+      break;
+    }
+  }
+
+  const scaleFactor = frameHeight * HEADER_MAX_RATIO / maxCheckHeight;
+  const realHeight = Math.round(stickyHeight * scaleFactor);
+
+  if (realHeight < HEADER_MIN_HEIGHT) return 0;
+
+  return realHeight;
+}
+
+export async function detectAndRemoveStickyHeaders(
+  framePaths: string[]
+): Promise<{ paths: string[]; headerHeight: number; footerHeight: number }> {
+  if (framePaths.length < 3) {
+    return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
+  }
+
+  const headerHeight = await detectStickyRegion(framePaths, "top");
+  const footerHeight = await detectStickyRegion(framePaths, "bottom");
+
+  console.log(`Sticky detection: header=${headerHeight}px, footer=${footerHeight}px`);
+
+  if (headerHeight === 0 && footerHeight === 0) {
+    return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
+  }
+
+  const outputDir = path.join(os.tmpdir(), "scrollsnap-cropped");
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const croppedPaths: string[] = [];
+
+  for (let i = 0; i < framePaths.length; i++) {
+    const meta = await sharp(framePaths[i]).metadata();
+    const w = meta.width || 0;
+    const h = meta.height || 0;
+
+    const cropTop = i === 0 ? 0 : headerHeight;
+    const cropBottom = i === framePaths.length - 1 ? 0 : footerHeight;
+    const newHeight = h - cropTop - cropBottom;
+
+    if (newHeight <= 0 || cropTop + cropBottom >= h) {
+      croppedPaths.push(framePaths[i]);
+      continue;
+    }
+
+    if (cropTop === 0 && cropBottom === 0) {
+      croppedPaths.push(framePaths[i]);
+      continue;
+    }
+
+    const outPath = path.join(outputDir, `cropped_${i}_${path.basename(framePaths[i])}`);
+    await sharp(framePaths[i])
+      .extract({ left: 0, top: cropTop, width: w, height: newHeight })
+      .toFile(outPath);
+    croppedPaths.push(outPath);
+  }
+
+  return { paths: croppedPaths, headerHeight, footerHeight };
 }
 
 export async function deduplicateFrames(

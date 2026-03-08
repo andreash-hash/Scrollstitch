@@ -6,6 +6,7 @@ import * as os from "os";
 import multer from "multer";
 import {
   deduplicateFrames,
+  detectAndRemoveStickyHeaders,
   stitchFrames,
   generatePdf,
 } from "./video-processor";
@@ -66,19 +67,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             const framePaths = files.map((f) => f.path);
 
-            updateJob(jobId, { stage: "Removing duplicates", progress: 0.3 });
+            updateJob(jobId, { stage: "Removing duplicates", progress: 0.2 });
             const uniqueFrames = await deduplicateFrames(framePaths);
             console.log(
               `Deduplicated: ${framePaths.length} -> ${uniqueFrames.length} frames`
             );
 
+            updateJob(jobId, { stage: "Removing sticky headers", progress: 0.4 });
+            const { paths: cleanedFrames, headerHeight, footerHeight } =
+              await detectAndRemoveStickyHeaders(uniqueFrames);
+            if (headerHeight > 0 || footerHeight > 0) {
+              console.log(`Removed sticky: header=${headerHeight}px, footer=${footerHeight}px`);
+            }
+
             const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
             fs.mkdirSync(outputDir, { recursive: true });
 
             const outputImagePath = path.join(outputDir, `${jobId}.png`);
-            updateJob(jobId, { stage: "Stitching frames", progress: 0.5 });
+            updateJob(jobId, { stage: "Stitching frames", progress: 0.55 });
             const dimensions = await stitchFrames(
-              uniqueFrames,
+              cleanedFrames,
               outputImagePath
             );
 
