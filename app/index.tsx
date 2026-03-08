@@ -9,6 +9,7 @@ import {
   Platform,
   Dimensions,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,7 +21,7 @@ import { Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import * as VideoThumbnails from "expo-video-thumbnails";
-import Animated, {
+import Animated, { Easing,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -71,9 +72,9 @@ function PulsingDot() {
 function ProgressBar({ progress }: { progress: number }) {
   const animatedWidth = useSharedValue(0);
   useEffect(() => {
-    animatedWidth.value = withSpring(progress * 100, {
-      damping: 15,
-      stiffness: 100,
+    animatedWidth.value = withTiming(progress * 100, {
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
     });
   }, [progress]);
   const barStyle = useAnimatedStyle(() => ({
@@ -89,6 +90,27 @@ function ProgressBar({ progress }: { progress: number }) {
           style={StyleSheet.absoluteFill}
         />
       </Animated.View>
+    </View>
+  );
+}
+
+function ActivityOverlay({ label }: { label: string }) {
+  const shimmer = useSharedValue(0);
+  useEffect(() => {
+    shimmer.value = withRepeat(
+      withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+      -1
+    );
+  }, []);
+  const shimmerStyle = useAnimatedStyle(() => ({
+    opacity: 0.4 + shimmer.value * 0.6,
+  }));
+  return (
+    <View style={styles.activityOverlay}>
+      <Animated.View style={shimmerStyle}>
+        <ActivityIndicator size="small" color={C.accent} />
+      </Animated.View>
+      <Text style={styles.activityText}>{label}</Text>
     </View>
   );
 }
@@ -125,6 +147,8 @@ export default function ScrollSnapScreen() {
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [frameCount, setFrameCount] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const buttonScale = useSharedValue(1);
 
@@ -321,8 +345,9 @@ export default function ScrollSnapScreen() {
   };
 
   const saveToPhotos = async () => {
-    if (!result) return;
+    if (!result || isSaving) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsSaving(true);
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== "granted") {
@@ -336,12 +361,15 @@ export default function ScrollSnapScreen() {
     } catch (err: any) {
       console.error("Save error:", err);
       Alert.alert("Error", String(err?.message || err));
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const sharePdf = async () => {
-    if (!result) return;
+    if (!result || isSharing) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsSharing(true);
     try {
       const localUri = await fetchAndSaveFile(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
       if (await Sharing.isAvailableAsync()) {
@@ -355,6 +383,8 @@ export default function ScrollSnapScreen() {
     } catch (err: any) {
       console.error("Share error:", err);
       Alert.alert("Error", String(err?.message || err));
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -367,6 +397,8 @@ export default function ScrollSnapScreen() {
     setResult(null);
     setErrorMessage("");
     setFrameCount(0);
+    setIsSaving(false);
+    setIsSharing(false);
   };
 
   const isProcessing =
@@ -572,29 +604,49 @@ export default function ScrollSnapScreen() {
               </ScrollView>
             </View>
 
+            {(isSaving || isSharing) && (
+              <ActivityOverlay label={isSaving ? "Preparing image..." : "Preparing PDF..."} />
+            )}
+
             <View style={styles.actionButtons}>
               <Pressable
                 onPress={saveToPhotos}
+                disabled={isSaving || isSharing}
                 style={({ pressed }) => [
                   styles.actionButton,
                   styles.saveButton,
                   pressed && styles.actionButtonPressed,
+                  (isSaving || isSharing) && styles.actionButtonDisabled,
                 ]}
               >
-                <Feather name="download" size={20} color="#0A0E17" />
-                <Text style={styles.saveButtonText}>Save to Photos</Text>
+                {isSaving ? (
+                  <ActivityIndicator size="small" color="#0A0E17" />
+                ) : (
+                  <Feather name="download" size={20} color="#0A0E17" />
+                )}
+                <Text style={styles.saveButtonText}>
+                  {isSaving ? "Saving..." : "Save to Photos"}
+                </Text>
               </Pressable>
 
               <Pressable
                 onPress={sharePdf}
+                disabled={isSaving || isSharing}
                 style={({ pressed }) => [
                   styles.actionButton,
                   styles.shareButton,
                   pressed && styles.actionButtonPressed,
+                  (isSaving || isSharing) && styles.actionButtonDisabled,
                 ]}
               >
-                <Feather name="share" size={20} color={C.accent} />
-                <Text style={styles.shareButtonText}>Share as PDF</Text>
+                {isSharing ? (
+                  <ActivityIndicator size="small" color={C.accent} />
+                ) : (
+                  <Feather name="share" size={20} color={C.accent} />
+                )}
+                <Text style={styles.shareButtonText}>
+                  {isSharing ? "Preparing..." : "Share as PDF"}
+                </Text>
               </Pressable>
             </View>
 
@@ -917,6 +969,25 @@ const styles = StyleSheet.create({
   },
   actionButtonPressed: {
     opacity: 0.8,
+  },
+  actionButtonDisabled: {
+    opacity: 0.6,
+  },
+  activityOverlay: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  activityText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    color: C.textSecondary,
   },
   saveButton: {
     backgroundColor: C.accent,
