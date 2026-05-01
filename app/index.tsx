@@ -21,6 +21,7 @@ import { Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import * as VideoThumbnails from "expo-video-thumbnails";
+import * as ImageManipulator from "expo-image-manipulator";
 import Animated, { Easing,
   useSharedValue,
   useAnimatedStyle,
@@ -41,6 +42,7 @@ const C = Colors.dark;
 type ProcessingStage =
   | "idle"
   | "extracting"
+  | "filtering"
   | "uploading"
   | "processing"
   | "complete"
@@ -137,6 +139,53 @@ async function extractFramesFromVideo(
   }
 
   return frameUris;
+}
+
+const CLIENT_SIMILARITY_THRESHOLD = 0.92;
+
+async function getFrameThumbnailHash(uri: string): Promise<string> {
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 16, height: 16 } }],
+      { compress: 0, format: ImageManipulator.SaveFormat.PNG, base64: true }
+    );
+    return result.base64 || "";
+  } catch {
+    return "";
+  }
+}
+
+function compareHashes(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const len = Math.min(a.length, b.length);
+  if (len === 0) return 0;
+  let matches = 0;
+  for (let i = 0; i < len; i++) {
+    if (a[i] === b[i]) matches++;
+  }
+  return matches / Math.max(a.length, b.length);
+}
+
+async function clientDeduplicateFrames(
+  uris: string[],
+  onProgress: (kept: number, total: number) => void
+): Promise<string[]> {
+  if (uris.length <= 1) return uris;
+  const kept: string[] = [uris[0]];
+  let lastHash = await getFrameThumbnailHash(uris[0]);
+  onProgress(1, uris.length);
+
+  for (let i = 1; i < uris.length; i++) {
+    const hash = await getFrameThumbnailHash(uris[i]);
+    const similarity = compareHashes(lastHash, hash);
+    if (similarity < CLIENT_SIMILARITY_THRESHOLD) {
+      kept.push(uris[i]);
+      lastHash = hash;
+    }
+    onProgress(i + 1, uris.length);
+  }
+  return kept;
 }
 
 export default function ScrollSnapScreen() {
@@ -306,11 +355,26 @@ export default function ScrollSnapScreen() {
         throw new Error("Could not extract any frames from the video");
       }
 
-      setStage("uploading");
-      setStatusText(`Uploading ${frameUris.length} frames...`);
+      setStage("filtering");
+      setStatusText(`Filtering ${frameUris.length} frames...`);
       advanceProgress(0.18);
 
-      const estimatedUploadMs = Math.max(3000, frameUris.length * 60);
+      const filteredUris = await clientDeduplicateFrames(
+        frameUris,
+        (checked, total) => {
+          advanceProgress(0.18 + (checked / total) * 0.08);
+          setStatusText(`Filtering: removing duplicates on-device...`);
+        }
+      );
+
+      const droppedCount = frameUris.length - filteredUris.length;
+      console.log(`Client filter: ${frameUris.length} → ${filteredUris.length} frames (dropped ${droppedCount})`);
+
+      setStage("uploading");
+      setStatusText(`Uploading ${filteredUris.length} frames...`);
+      advanceProgress(0.26);
+
+      const estimatedUploadMs = Math.max(2000, filteredUris.length * 60);
       startFakeTick(0.18, 0.32, estimatedUploadMs);
 
       const baseUrl = getApiUrl();
@@ -318,8 +382,8 @@ export default function ScrollSnapScreen() {
 
       if (Platform.OS === "web") {
         const formData = new FormData();
-        for (let i = 0; i < frameUris.length; i++) {
-          const response = await fetch(frameUris[i]);
+        for (let i = 0; i < filteredUris.length; i++) {
+          const response = await fetch(filteredUris[i]);
           const blob = await response.blob();
           formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
         }
@@ -340,8 +404,8 @@ export default function ScrollSnapScreen() {
         const { File: ExpoFile } = await import("expo-file-system");
         const formData = new FormData();
 
-        for (let i = 0; i < frameUris.length; i++) {
-          const file = new ExpoFile(frameUris[i]);
+        for (let i = 0; i < filteredUris.length; i++) {
+          const file = new ExpoFile(filteredUris[i]);
           formData.append("frames", file as any);
         }
 
@@ -441,7 +505,7 @@ export default function ScrollSnapScreen() {
   };
 
   const isProcessing =
-    stage === "extracting" || stage === "uploading" || stage === "processing";
+    stage === "extracting" || stage === "filtering" || stage === "uploading" || stage === "processing";
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
@@ -544,10 +608,11 @@ export default function ScrollSnapScreen() {
               <View style={styles.stageIndicators}>
                 {[
                   { key: "extracting", label: "Extract" },
+                  { key: "filtering", label: "Filter" },
                   { key: "uploading", label: "Upload" },
                   { key: "processing", label: "Process" },
                 ].map((s) => {
-                  const stageOrder = ["extracting", "uploading", "processing"];
+                  const stageOrder = ["extracting", "filtering", "uploading", "processing"];
                   const isActive = stage === s.key;
                   const isPast =
                     stageOrder.indexOf(stage) > stageOrder.indexOf(s.key);
