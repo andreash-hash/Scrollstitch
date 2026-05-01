@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppContext } from "@/contexts/AppContext";
+import { useRouter } from "expo-router";
 import {
   View,
   Text,
@@ -205,7 +206,8 @@ function formatEta(ms: number): string {
 
 export default function ScrollSnapScreen() {
   const insets = useSafeAreaInsets();
-  const { isPro } = useAppContext();
+  const { isPro, resetOnboarding } = useAppContext();
+  const router = useRouter();
   const [stage, setStage] = useState<ProcessingStage>("idle");
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
@@ -746,6 +748,17 @@ export default function ScrollSnapScreen() {
                 <Text style={styles.settingHint}>
                   {outputQuality === "png" ? "Lossless, larger file" : "Smaller file, slight compression"}
                 </Text>
+
+                <Pressable
+                  onPress={async () => {
+                    await resetOnboarding();
+                    router.replace("/onboarding");
+                  }}
+                  style={styles.replayIntroBtn}
+                >
+                  <Feather name="play-circle" size={14} color={C.textTertiary} />
+                  <Text style={styles.replayIntroText}>Replay intro</Text>
+                </Pressable>
               </View>
             )}
           </Animated.View>
@@ -1027,6 +1040,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 20,
+  },
+  replayIntroBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 20,
+    alignSelf: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  replayIntroText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: C.textTertiary,
   },
   proBadge: {
     backgroundColor: C.accent,

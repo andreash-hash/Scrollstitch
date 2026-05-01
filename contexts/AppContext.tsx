@@ -9,6 +9,7 @@ interface AppContextType {
   isPro: boolean;
   isLoading: boolean;
   markOnboardingComplete: () => Promise<void>;
+  resetOnboarding: () => Promise<void>;
   upgradeToPro: () => Promise<void>;
   downgradeToFree: () => Promise<void>;
 }
@@ -18,6 +19,7 @@ const AppContext = createContext<AppContextType>({
   isPro: false,
   isLoading: true,
   markOnboardingComplete: async () => {},
+  resetOnboarding: async () => {},
   upgradeToPro: async () => {},
   downgradeToFree: async () => {},
 });
@@ -46,6 +48,11 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
     setHasSeenOnboarding(true);
   };
 
+  const resetOnboarding = async () => {
+    await AsyncStorage.removeItem(ONBOARDING_KEY);
+    setHasSeenOnboarding(false);
+  };
+
   const upgradeToPro = async () => {
     await AsyncStorage.setItem(PRO_KEY, "true");
     setIsPro(true);
@@ -63,6 +70,7 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
         isPro,
         isLoading,
         markOnboardingComplete,
+        resetOnboarding,
         upgradeToPro,
         downgradeToFree,
       }}
