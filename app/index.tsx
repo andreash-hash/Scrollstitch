@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useAppContext } from "@/contexts/AppContext";
 import {
   View,
   Text,
@@ -204,6 +205,7 @@ function formatEta(ms: number): string {
 
 export default function ScrollSnapScreen() {
   const insets = useSafeAreaInsets();
+  const { isPro } = useAppContext();
   const [stage, setStage] = useState<ProcessingStage>("idle");
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
@@ -615,6 +617,11 @@ export default function ScrollSnapScreen() {
         <View style={styles.headerLeft}>
           <Ionicons name="scan-outline" size={22} color={C.accent} />
           <Text style={styles.headerTitle}>ScrollSnap</Text>
+          {isPro && (
+            <View style={styles.proBadge}>
+              <Text style={styles.proBadgeText}>PRO</Text>
+            </View>
+          )}
         </View>
         {(stage === "complete" || stage === "error") && (
           <Pressable onPress={reset} style={styles.headerButton}>
@@ -1020,6 +1027,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 20,
+  },
+  proBadge: {
+    backgroundColor: C.accent,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  proBadgeText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    color: "#0A0E17",
+    letterSpacing: 1,
   },
   scrollView: {
     flex: 1,
