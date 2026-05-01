@@ -119,11 +119,66 @@ function ActivityOverlay({ label }: { label: string }) {
   );
 }
 
+async function extractFramesFromVideoWeb(
+  uri: string,
+  onProgress: (current: number, total: number) => void
+): Promise<string[]> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.src = uri;
+    video.muted = true;
+    video.playsInline = true;
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const frameUris: string[] = [];
+    const intervalMs = 300;
+    let currentFrame = 0;
+    let totalFrames = 0;
+
+    const captureFrame = () => {
+      if (!ctx || video.videoWidth === 0) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      frameUris.push(canvas.toDataURL("image/jpeg", 0.7));
+    };
+
+    const seekNext = () => {
+      if (currentFrame >= totalFrames) {
+        video.src = "";
+        resolve(frameUris);
+        return;
+      }
+      video.currentTime = (currentFrame * intervalMs) / 1000;
+    };
+
+    video.addEventListener("loadedmetadata", () => {
+      totalFrames = Math.max(1, Math.ceil((video.duration * 1000) / intervalMs));
+      seekNext();
+    });
+
+    video.addEventListener("seeked", () => {
+      captureFrame();
+      onProgress(currentFrame + 1, totalFrames);
+      currentFrame++;
+      seekNext();
+    });
+
+    video.addEventListener("error", () => resolve(frameUris));
+    video.load();
+  });
+}
+
 async function extractFramesFromVideo(
   uri: string,
   durationMs: number,
   onProgress: (current: number, total: number) => void
 ): Promise<string[]> {
+  if (Platform.OS === "web") {
+    return extractFramesFromVideoWeb(uri, onProgress);
+  }
+
   const intervalMs = 300;
   const totalFrames = Math.ceil(durationMs / intervalMs);
   const frameUris: string[] = [];
@@ -660,7 +715,7 @@ export default function ScrollSnapScreen() {
 
             <Animated.View style={buttonAnimStyle}>
               <Pressable
-                onPress={pickLatestVideo}
+                onPress={Platform.OS === "web" ? pickVideo : pickLatestVideo}
                 onPressIn={() => { buttonScale.value = withSpring(0.96); }}
                 onPressOut={() => { buttonScale.value = withSpring(1); }}
                 style={styles.pickButton}
@@ -671,16 +726,20 @@ export default function ScrollSnapScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.pickButtonGradient}
                 >
-                  <Feather name="zap" size={22} color="#0A0E17" />
-                  <Text style={styles.pickButtonText}>Use Latest Recording</Text>
+                  <Feather name={Platform.OS === "web" ? "upload" : "zap"} size={22} color="#0A0E17" />
+                  <Text style={styles.pickButtonText}>
+                    {Platform.OS === "web" ? "Pick a Screen Recording" : "Use Latest Recording"}
+                  </Text>
                 </LinearGradient>
               </Pressable>
             </Animated.View>
 
-            <Pressable onPress={pickVideo} style={styles.secondaryButton}>
-              <Feather name="folder" size={18} color={C.accent} />
-              <Text style={styles.secondaryButtonText}>Pick from Library</Text>
-            </Pressable>
+            {Platform.OS !== "web" && (
+              <Pressable onPress={pickVideo} style={styles.secondaryButton}>
+                <Feather name="folder" size={18} color={C.accent} />
+                <Text style={styles.secondaryButtonText}>Pick from Library</Text>
+              </Pressable>
+            )}
 
             <Pressable
               onPress={() => setShowSettings((v) => !v)}
