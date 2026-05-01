@@ -141,7 +141,12 @@ async function extractFramesFromVideo(
   return frameUris;
 }
 
-const CLIENT_SIMILARITY_THRESHOLD = 0.92;
+const SENSITIVITY_PRESETS = {
+  fine:     { label: "Fine",     value: 0.85, desc: "Captures more frames" },
+  balanced: { label: "Balanced", value: 0.92, desc: "Default" },
+  fast:     { label: "Fast",     value: 0.97, desc: "Fewer frames, quicker" },
+} as const;
+type SensitivityKey = keyof typeof SENSITIVITY_PRESETS;
 
 async function getFrameThumbnailHash(uri: string): Promise<string> {
   try {
@@ -169,7 +174,8 @@ function compareHashes(a: string, b: string): number {
 
 async function clientDeduplicateFrames(
   uris: string[],
-  onProgress: (kept: number, total: number) => void
+  threshold: number,
+  onProgress: (checked: number, total: number) => void
 ): Promise<string[]> {
   if (uris.length <= 1) return uris;
   const kept: string[] = [uris[0]];
@@ -179,13 +185,21 @@ async function clientDeduplicateFrames(
   for (let i = 1; i < uris.length; i++) {
     const hash = await getFrameThumbnailHash(uris[i]);
     const similarity = compareHashes(lastHash, hash);
-    if (similarity < CLIENT_SIMILARITY_THRESHOLD) {
+    if (similarity < threshold) {
       kept.push(uris[i]);
       lastHash = hash;
     }
     onProgress(i + 1, uris.length);
   }
   return kept;
+}
+
+function formatEta(ms: number): string {
+  const sec = Math.ceil(ms / 1000);
+  if (sec < 60) return `~${sec}s remaining`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return `~${min}m ${rem}s remaining`;
 }
 
 export default function ScrollSnapScreen() {
@@ -198,9 +212,17 @@ export default function ScrollSnapScreen() {
   const [frameCount, setFrameCount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [sensitivity, setSensitivity] = useState<SensitivityKey>("balanced");
+  const [outputQuality, setOutputQuality] = useState<"png" | "jpeg">("png");
+  const [eta, setEta] = useState<string | null>(null);
+  const [cropTop, setCropTop] = useState(0);
+  const [cropBottom, setCropBottom] = useState(0);
+  const [isCropping, setIsCropping] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fakeTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressRef = useRef(0);
+  const startTimeRef = useRef(0);
   const buttonScale = useSharedValue(1);
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
@@ -214,6 +236,13 @@ export default function ScrollSnapScreen() {
     const next = Math.max(progressRef.current, value);
     progressRef.current = next;
     setProgress(next);
+    if (next > 0.05 && next < 0.98 && startTimeRef.current > 0) {
+      const elapsed = Date.now() - startTimeRef.current;
+      const totalEst = elapsed / next;
+      const remaining = totalEst - elapsed;
+      if (remaining > 2000) setEta(formatEta(remaining));
+      else setEta(null);
+    }
   }, []);
 
   const stopFakeTick = useCallback(() => {
@@ -305,71 +334,56 @@ export default function ScrollSnapScreen() {
     [cleanupPolling, advanceProgress, startFakeTick, stopFakeTick]
   );
 
-  const pickVideo = async () => {
+  const processVideoUri = async (uri: string, durationMs: number) => {
+    const threshold = SENSITIVITY_PRESETS[sensitivity].value;
+    const estimatedFrames = Math.ceil(durationMs / 300);
+
+    progressRef.current = 0;
+    startTimeRef.current = Date.now();
+    setStage("extracting");
+    advanceProgress(0);
+    setFrameCount(0);
+    setEta(null);
+    setCropTop(0);
+    setCropBottom(0);
+    setStatusText(`Extracting ~${estimatedFrames} frames...`);
+    setResult(null);
+    setErrorMessage("");
+
+    const frameUris = await extractFramesFromVideo(
+      uri,
+      durationMs,
+      (current, total) => {
+        setFrameCount(current);
+        advanceProgress((current / total) * 0.18);
+        setStatusText(`Extracting frames: ${current}/${total}`);
+      }
+    );
+
+    if (frameUris.length === 0) {
+      throw new Error("Could not extract any frames from the video");
+    }
+
+    setStage("filtering");
+    setStatusText(`Filtering ${frameUris.length} frames...`);
+    advanceProgress(0.18);
+
+    const filteredUris = await clientDeduplicateFrames(
+      frameUris,
+      threshold,
+      (checked, total) => {
+        advanceProgress(0.18 + (checked / total) * 0.08);
+        setStatusText(`Filtering: removing duplicates on-device...`);
+      }
+    );
+
+    const droppedCount = frameUris.length - filteredUris.length;
+    console.log(`Client filter: ${frameUris.length} → ${filteredUris.length} frames (dropped ${droppedCount})`);
+    return filteredUris;
+  };
+
+  const startUpload = async (filteredUris: string[]) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      const permResult =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permResult.granted) {
-        Alert.alert(
-          "Permission needed",
-          "Please grant access to your media library to pick videos."
-        );
-        return;
-      }
-
-      const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["videos"],
-        quality: 1,
-        videoMaxDuration: 300,
-      });
-
-      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
-
-      const asset = pickerResult.assets[0];
-
-      const rawDuration = asset.duration || 10000;
-      const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
-      const estimatedFrames = Math.ceil(durationMs / 300);
-
-      progressRef.current = 0;
-      setStage("extracting");
-      advanceProgress(0);
-      setFrameCount(0);
-      setStatusText(`Extracting ~${estimatedFrames} frames...`);
-      setResult(null);
-      setErrorMessage("");
-
-      const frameUris = await extractFramesFromVideo(
-        asset.uri,
-        durationMs,
-        (current, total) => {
-          setFrameCount(current);
-          advanceProgress((current / total) * 0.18);
-          setStatusText(`Extracting frames: ${current}/${total}`);
-        }
-      );
-
-      if (frameUris.length === 0) {
-        throw new Error("Could not extract any frames from the video");
-      }
-
-      setStage("filtering");
-      setStatusText(`Filtering ${frameUris.length} frames...`);
-      advanceProgress(0.18);
-
-      const filteredUris = await clientDeduplicateFrames(
-        frameUris,
-        (checked, total) => {
-          advanceProgress(0.18 + (checked / total) * 0.08);
-          setStatusText(`Filtering: removing duplicates on-device...`);
-        }
-      );
-
-      const droppedCount = frameUris.length - filteredUris.length;
-      console.log(`Client filter: ${frameUris.length} → ${filteredUris.length} frames (dropped ${droppedCount})`);
-
       setStage("uploading");
       setStatusText(`Uploading ${filteredUris.length} frames...`);
       advanceProgress(0.26);
@@ -379,6 +393,7 @@ export default function ScrollSnapScreen() {
 
       const baseUrl = getApiUrl();
       const uploadUrl = new URL("/api/process-frames", baseUrl);
+      uploadUrl.searchParams.set("quality", outputQuality);
 
       if (Platform.OS === "web") {
         const formData = new FormData();
@@ -423,6 +438,60 @@ export default function ScrollSnapScreen() {
         setStatusText("Processing frames on server...");
         pollProgress(data.jobId);
       }
+    } catch (err: any) {
+      setStage("error");
+      setErrorMessage(err.message || "Failed to process video");
+    }
+  };
+
+  const pickVideo = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permResult.granted) {
+        Alert.alert("Permission needed", "Please grant access to your media library.");
+        return;
+      }
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["videos"],
+        quality: 1,
+        videoMaxDuration: 300,
+      });
+      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
+      const asset = pickerResult.assets[0];
+      const rawDuration = asset.duration || 10000;
+      const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
+      const filtered = await processVideoUri(asset.uri, durationMs);
+      await startUpload(filtered);
+    } catch (err: any) {
+      setStage("error");
+      setErrorMessage(err.message || "Failed to process video");
+    }
+  };
+
+  const pickLatestVideo = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Please grant access to your media library.");
+        return;
+      }
+      const { assets } = await MediaLibrary.getAssetsAsync({
+        mediaType: MediaLibrary.MediaType.video,
+        sortBy: [MediaLibrary.SortBy.creationTime],
+        first: 1,
+      });
+      if (!assets.length) {
+        Alert.alert("No videos found", "No screen recordings found in your library.");
+        return;
+      }
+      const asset = assets[0];
+      const info = await MediaLibrary.getAssetInfoAsync(asset);
+      const uri = info.localUri || asset.uri;
+      const durationMs = (asset.duration || 10) * 1000;
+      const filtered = await processVideoUri(uri, durationMs);
+      await startUpload(filtered);
     } catch (err: any) {
       setStage("error");
       setErrorMessage(err.message || "Failed to process video");
@@ -490,10 +559,38 @@ export default function ScrollSnapScreen() {
     }
   };
 
+  const applyCrop = async () => {
+    if (!result || isCropping) return;
+    if (cropTop === 0 && cropBottom === 0) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsCropping(true);
+    try {
+      const baseUrl = getApiUrl();
+      const filename = result.imageUrl.split("/").pop();
+      const url = new URL(`/api/crop/${filename}`, baseUrl);
+      url.searchParams.set("top", String(cropTop));
+      url.searchParams.set("bottom", String(cropBottom));
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error("Crop failed");
+      const data = await res.json();
+      setResult((prev) =>
+        prev ? { ...prev, imageUrl: data.imageUrl, pdfUrl: data.pdfUrl } : prev
+      );
+      setCropTop(0);
+      setCropBottom(0);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      Alert.alert("Crop failed", err.message);
+    } finally {
+      setIsCropping(false);
+    }
+  };
+
   const reset = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     cleanupPolling();
     progressRef.current = 0;
+    startTimeRef.current = 0;
     setStage("idle");
     setProgress(0);
     setStatusText("");
@@ -502,6 +599,9 @@ export default function ScrollSnapScreen() {
     setFrameCount(0);
     setIsSaving(false);
     setIsSharing(false);
+    setEta(null);
+    setCropTop(0);
+    setCropBottom(0);
   };
 
   const isProcessing =
@@ -551,13 +651,9 @@ export default function ScrollSnapScreen() {
 
             <Animated.View style={buttonAnimStyle}>
               <Pressable
-                onPress={pickVideo}
-                onPressIn={() => {
-                  buttonScale.value = withSpring(0.96);
-                }}
-                onPressOut={() => {
-                  buttonScale.value = withSpring(1);
-                }}
+                onPress={pickLatestVideo}
+                onPressIn={() => { buttonScale.value = withSpring(0.96); }}
+                onPressOut={() => { buttonScale.value = withSpring(1); }}
                 style={styles.pickButton}
               >
                 <LinearGradient
@@ -566,27 +662,85 @@ export default function ScrollSnapScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.pickButtonGradient}
                 >
-                  <Feather name="video" size={22} color="#0A0E17" />
-                  <Text style={styles.pickButtonText}>Pick Video</Text>
+                  <Feather name="zap" size={22} color="#0A0E17" />
+                  <Text style={styles.pickButtonText}>Use Latest Recording</Text>
                 </LinearGradient>
               </Pressable>
             </Animated.View>
 
-            <View style={styles.stepsContainer}>
-              {[
-                { icon: "film" as const, label: "Select recording" },
-                { icon: "layers" as const, label: "Extract frames" },
-                { icon: "scissors" as const, label: "Remove duplicates" },
-                { icon: "image" as const, label: "Stitch & export" },
-              ].map((step, i) => (
-                <View key={i} style={styles.stepRow}>
-                  <View style={styles.stepIcon}>
-                    <Feather name={step.icon} size={16} color={C.accent} />
-                  </View>
-                  <Text style={styles.stepLabel}>{step.label}</Text>
+            <Pressable onPress={pickVideo} style={styles.secondaryButton}>
+              <Feather name="folder" size={18} color={C.accent} />
+              <Text style={styles.secondaryButtonText}>Pick from Library</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setShowSettings((v) => !v)}
+              style={styles.settingsToggle}
+            >
+              <Feather name="sliders" size={15} color={C.textSecondary} />
+              <Text style={styles.settingsToggleText}>Settings</Text>
+              <Feather
+                name={showSettings ? "chevron-up" : "chevron-down"}
+                size={14}
+                color={C.textSecondary}
+              />
+            </Pressable>
+
+            {showSettings && (
+              <View style={styles.settingsPanel}>
+                <Text style={styles.settingLabel}>Sensitivity</Text>
+                <View style={styles.settingRow}>
+                  {(Object.keys(SENSITIVITY_PRESETS) as SensitivityKey[]).map((key) => (
+                    <Pressable
+                      key={key}
+                      onPress={() => setSensitivity(key)}
+                      style={[
+                        styles.chipButton,
+                        sensitivity === key && styles.chipButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          sensitivity === key && styles.chipTextActive,
+                        ]}
+                      >
+                        {SENSITIVITY_PRESETS[key].label}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
-              ))}
-            </View>
+                <Text style={styles.settingHint}>
+                  {SENSITIVITY_PRESETS[sensitivity].desc}
+                </Text>
+
+                <Text style={[styles.settingLabel, { marginTop: 16 }]}>Output Quality</Text>
+                <View style={styles.settingRow}>
+                  {(["png", "jpeg"] as const).map((q) => (
+                    <Pressable
+                      key={q}
+                      onPress={() => setOutputQuality(q)}
+                      style={[
+                        styles.chipButton,
+                        outputQuality === q && styles.chipButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          outputQuality === q && styles.chipTextActive,
+                        ]}
+                      >
+                        {q.toUpperCase()}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.settingHint}>
+                  {outputQuality === "png" ? "Lossless, larger file" : "Smaller file, slight compression"}
+                </Text>
+              </View>
+            )}
           </Animated.View>
         )}
 
@@ -604,6 +758,9 @@ export default function ScrollSnapScreen() {
                 {Math.round(progress * 100)}%
               </Text>
               <Text style={styles.statusText}>{statusText}</Text>
+              {eta && (
+                <Text style={styles.etaText}>{eta}</Text>
+              )}
 
               <View style={styles.stageIndicators}>
                 {[
@@ -685,12 +842,19 @@ export default function ScrollSnapScreen() {
             </View>
 
             <View style={styles.previewContainer}>
-              <Text style={styles.previewLabel}>Preview</Text>
+              <View style={styles.previewLabelRow}>
+                <Text style={styles.previewLabel}>Preview</Text>
+                <Text style={styles.previewHint}>Pinch to zoom</Text>
+              </View>
               <ScrollView
                 style={styles.previewScroll}
                 contentContainerStyle={styles.previewContent}
                 showsVerticalScrollIndicator={true}
+                showsHorizontalScrollIndicator={false}
                 nestedScrollEnabled={true}
+                maximumZoomScale={Platform.OS === "ios" ? 6 : 1}
+                minimumZoomScale={1}
+                bouncesZoom={true}
               >
                 <Image
                   source={{
@@ -708,6 +872,67 @@ export default function ScrollSnapScreen() {
               </ScrollView>
             </View>
 
+            <View style={styles.cropPanel}>
+              <View style={styles.cropTitleRow}>
+                <Feather name="crop" size={14} color={C.textSecondary} />
+                <Text style={styles.cropTitle}>Trim edges</Text>
+              </View>
+              <View style={styles.cropRow}>
+                <View style={styles.cropControl}>
+                  <Text style={styles.cropControlLabel}>Top  {cropTop > 0 ? `${cropTop}px` : ""}</Text>
+                  <View style={styles.cropStepper}>
+                    <Pressable
+                      onPress={() => setCropTop((v) => Math.max(0, v - 50))}
+                      style={styles.stepperBtn}
+                    >
+                      <Feather name="minus" size={16} color={C.textSecondary} />
+                    </Pressable>
+                    <Text style={styles.stepperVal}>{cropTop}</Text>
+                    <Pressable
+                      onPress={() => setCropTop((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
+                      style={styles.stepperBtn}
+                    >
+                      <Feather name="plus" size={16} color={C.accent} />
+                    </Pressable>
+                  </View>
+                </View>
+                <View style={styles.cropControl}>
+                  <Text style={styles.cropControlLabel}>Bottom  {cropBottom > 0 ? `${cropBottom}px` : ""}</Text>
+                  <View style={styles.cropStepper}>
+                    <Pressable
+                      onPress={() => setCropBottom((v) => Math.max(0, v - 50))}
+                      style={styles.stepperBtn}
+                    >
+                      <Feather name="minus" size={16} color={C.textSecondary} />
+                    </Pressable>
+                    <Text style={styles.stepperVal}>{cropBottom}</Text>
+                    <Pressable
+                      onPress={() => setCropBottom((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
+                      style={styles.stepperBtn}
+                    >
+                      <Feather name="plus" size={16} color={C.accent} />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+              {(cropTop > 0 || cropBottom > 0) && (
+                <Pressable
+                  onPress={applyCrop}
+                  disabled={isCropping}
+                  style={styles.cropApplyBtn}
+                >
+                  {isCropping ? (
+                    <ActivityIndicator size="small" color="#0A0E17" />
+                  ) : (
+                    <Feather name="check" size={16} color="#0A0E17" />
+                  )}
+                  <Text style={styles.cropApplyText}>
+                    {isCropping ? "Cropping..." : "Apply Crop"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
             {(isSaving || isSharing) && (
               <ActivityOverlay label={isSaving ? "Preparing image..." : "Preparing PDF..."} />
             )}
@@ -715,12 +940,12 @@ export default function ScrollSnapScreen() {
             <View style={styles.actionButtons}>
               <Pressable
                 onPress={saveToPhotos}
-                disabled={isSaving || isSharing}
+                disabled={isSaving || isSharing || isCropping}
                 style={({ pressed }) => [
                   styles.actionButton,
                   styles.saveButton,
                   pressed && styles.actionButtonPressed,
-                  (isSaving || isSharing) && styles.actionButtonDisabled,
+                  (isSaving || isSharing || isCropping) && styles.actionButtonDisabled,
                 ]}
               >
                 {isSaving ? (
@@ -735,12 +960,12 @@ export default function ScrollSnapScreen() {
 
               <Pressable
                 onPress={sharePdf}
-                disabled={isSaving || isSharing}
+                disabled={isSaving || isSharing || isCropping}
                 style={({ pressed }) => [
                   styles.actionButton,
                   styles.shareButton,
                   pressed && styles.actionButtonPressed,
-                  (isSaving || isSharing) && styles.actionButtonDisabled,
+                  (isSaving || isSharing || isCropping) && styles.actionButtonDisabled,
                 ]}
               >
                 {isSharing ? (
@@ -754,7 +979,7 @@ export default function ScrollSnapScreen() {
               </Pressable>
             </View>
 
-            <Pressable onPress={pickVideo} style={styles.newVideoButton}>
+            <Pressable onPress={reset} style={styles.newVideoButton}>
               <Feather name="plus" size={18} color={C.textSecondary} />
               <Text style={styles.newVideoText}>Process Another Video</Text>
             </Pressable>
@@ -839,7 +1064,7 @@ const styles = StyleSheet.create({
   pickButton: {
     borderRadius: 16,
     overflow: "hidden",
-    marginBottom: 40,
+    marginBottom: 12,
   },
   pickButtonGradient: {
     flexDirection: "row",
@@ -1040,15 +1265,25 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: 20,
   },
+  previewLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
   previewLabel: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
     color: C.textSecondary,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 10,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  previewHint: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    color: C.textTertiary,
   },
   previewScroll: {
     maxHeight: 400,
@@ -1125,5 +1360,155 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter_500Medium",
     color: C.textSecondary,
+  },
+  secondaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: "rgba(0, 212, 170, 0.25)",
+    marginBottom: 12,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
+    color: C.accent,
+  },
+  settingsToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  settingsToggleText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: C.textSecondary,
+  },
+  settingsPanel: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    gap: 8,
+  },
+  settingLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: C.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  settingRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  settingHint: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: C.textSecondary,
+    opacity: 0.7,
+    marginTop: 2,
+  },
+  chipButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: C.background,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+  },
+  chipButtonActive: {
+    backgroundColor: "rgba(0, 212, 170, 0.15)",
+    borderColor: C.accent,
+  },
+  chipText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: C.textSecondary,
+  },
+  chipTextActive: {
+    color: C.accent,
+  },
+  etaText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: C.textSecondary,
+    textAlign: "center",
+    marginTop: 2,
+    opacity: 0.8,
+  },
+  cropPanel: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  cropTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  cropTitle: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    color: C.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  cropRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  cropControl: {
+    flex: 1,
+    gap: 6,
+  },
+  cropControlLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: C.textSecondary,
+  },
+  cropStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.background,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  stepperBtn: {
+    padding: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperVal: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: C.text,
+  },
+  cropApplyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: C.accent,
+  },
+  cropApplyText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: "#0A0E17",
   },
 });

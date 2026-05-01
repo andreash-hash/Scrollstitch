@@ -274,14 +274,20 @@ async function findOverlap(
 
 export async function stitchFrames(
   framePaths: string[],
-  outputPath: string
+  outputPath: string,
+  quality: "png" | "jpeg" = "png"
 ): Promise<{ width: number; height: number }> {
   if (framePaths.length === 0) {
     throw new Error("No frames to stitch");
   }
 
   if (framePaths.length === 1) {
-    await sharp(framePaths[0]).png().toFile(outputPath);
+    const single = sharp(framePaths[0]);
+    if (quality === "jpeg") {
+      await single.jpeg({ quality: 90 }).toFile(outputPath);
+    } else {
+      await single.png().toFile(outputPath);
+    }
     const meta = await sharp(framePaths[0]).metadata();
     return { width: meta.width || 0, height: meta.height || 0 };
   }
@@ -328,17 +334,20 @@ export async function stitchFrames(
     currentY += (metadata[i].height || 0) - overlaps[i];
   }
 
-  await sharp({
+  const pipeline = sharp({
     create: {
       width: targetWidth,
       height: totalHeight,
       channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 1 },
     },
-  })
-    .composite(composites)
-    .png()
-    .toFile(outputPath);
+  }).composite(composites);
+
+  if (quality === "jpeg") {
+    await pipeline.jpeg({ quality: 90 }).toFile(outputPath);
+  } else {
+    await pipeline.png().toFile(outputPath);
+  }
 
   return { width: targetWidth, height: totalHeight };
 }

@@ -80,14 +80,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log(`Removed sticky: header=${headerHeight}px, footer=${footerHeight}px`);
             }
 
+            const quality = (req.query.quality as string) === "jpeg" ? "jpeg" : "png";
             const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
             fs.mkdirSync(outputDir, { recursive: true });
 
-            const outputImagePath = path.join(outputDir, `${jobId}.png`);
+            const imgExt = quality === "jpeg" ? "jpg" : "png";
+            const outputImagePath = path.join(outputDir, `${jobId}.${imgExt}`);
             updateJob(jobId, { stage: "Stitching frames", progress: 0.55 });
             const dimensions = await stitchFrames(
               cleanedFrames,
-              outputImagePath
+              outputImagePath,
+              quality
             );
 
             const outputPdfPath = path.join(outputDir, `${jobId}.pdf`);
@@ -98,7 +101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               stage: "Complete",
               progress: 1,
               result: {
-                imageUrl: `/api/output/${jobId}.png`,
+                imageUrl: `/api/output/${jobId}.${imgExt}`,
                 pdfUrl: `/api/output/${jobId}.pdf`,
                 frameCount: framePaths.length,
                 uniqueFrames: uniqueFrames.length,
@@ -140,7 +143,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     const ext = path.extname(filePath).toLowerCase();
-    const contentType = ext === ".pdf" ? "application/pdf" : "image/png";
+    const contentType =
+      ext === ".pdf" ? "application/pdf" :
+      ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
+      "image/png";
 
     res.setHeader("Content-Type", contentType);
     res.setHeader(
@@ -165,6 +171,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const mimeType = ext === ".pdf" ? "application/pdf" : "image/png";
 
     res.json({ base64, mimeType, filename });
+  });
+
+  app.get("/api/crop/:filename", async (req: Request, res: Response) => {
+    try {
+      const sharp = (await import("sharp")).default;
+      const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
+      const filename = path.basename(req.params.filename);
+      const filePath = path.join(outputDir, filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      const cropTop = Math.max(0, parseInt(req.query.top as string) || 0);
+      const cropBottom = Math.max(0, parseInt(req.query.bottom as string) || 0);
+
+      if (cropTop === 0 && cropBottom === 0) {
+        return res.status(400).json({ error: "No crop values provided" });
+      }
+
+      const meta = await sharp(filePath).metadata();
+      const origWidth = meta.width ?? 0;
+      const origHeight = meta.height ?? 0;
+      const newHeight = Math.max(10, origHeight - cropTop - cropBottom);
+
+      const ext = path.extname(filename).toLowerCase();
+      const baseName = path.basename(filename, ext);
+      const croppedFilename = `${baseName}_crop${ext}`;
+      const croppedPath = path.join(outputDir, croppedFilename);
+
+      await sharp(filePath)
+        .extract({ left: 0, top: cropTop, width: origWidth, height: newHeight })
+        .toFile(croppedPath);
+
+      const pdfFilename = `${baseName}_crop.pdf`;
+      const pdfPath = path.join(outputDir, pdfFilename);
+      await generatePdf(croppedPath, pdfPath);
+
+      res.json({
+        imageUrl: `/api/output/${croppedFilename}`,
+        pdfUrl: `/api/output/${pdfFilename}`,
+        dimensions: { width: origWidth, height: newHeight },
+      });
+    } catch (err: any) {
+      console.error("Crop error:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   const httpServer = createServer(app);
