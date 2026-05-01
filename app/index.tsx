@@ -205,7 +205,38 @@ const SENSITIVITY_PRESETS = {
 } as const;
 type SensitivityKey = keyof typeof SENSITIVITY_PRESETS;
 
+// Web: draw to a 16x16 canvas and return grayscale pixel values as hex string
+function getFrameThumbnailHashWeb(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(""); return; }
+        ctx.drawImage(img, 0, 0, 16, 16);
+        const { data } = ctx.getImageData(0, 0, 16, 16);
+        let hash = "";
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+          hash += gray.toString(16).padStart(2, "0");
+        }
+        resolve(hash);
+      } catch {
+        resolve("");
+      }
+    };
+    img.onerror = () => resolve("");
+    img.src = dataUrl;
+  });
+}
+
 async function getFrameThumbnailHash(uri: string): Promise<string> {
+  if (Platform.OS === "web") {
+    return getFrameThumbnailHashWeb(uri);
+  }
   try {
     const result = await ImageManipulator.manipulateAsync(
       uri,
@@ -218,8 +249,21 @@ async function getFrameThumbnailHash(uri: string): Promise<string> {
   }
 }
 
+// Web hashes: 512-char hex strings (256 pixels × 2 hex chars).
+// Native hashes: base64 PNG data. Use appropriate comparison per type.
 function compareHashes(a: string, b: string): number {
   if (!a || !b) return 0;
+  // Web hex hash: compute mean absolute pixel difference
+  if (a.length === 512 && b.length === 512) {
+    let totalDiff = 0;
+    for (let i = 0; i < 256; i++) {
+      const va = parseInt(a.slice(i * 2, i * 2 + 2), 16);
+      const vb = parseInt(b.slice(i * 2, i * 2 + 2), 16);
+      totalDiff += Math.abs(va - vb);
+    }
+    return 1 - totalDiff / (255 * 256);
+  }
+  // Native base64 path: character-level similarity
   const len = Math.min(a.length, b.length);
   if (len === 0) return 0;
   let matches = 0;
