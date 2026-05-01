@@ -150,6 +150,8 @@ export default function ScrollSnapScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fakeTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressRef = useRef(0);
   const buttonScale = useSharedValue(1);
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
@@ -159,12 +161,38 @@ export default function ScrollSnapScreen() {
     transform: [{ scale: buttonScale.value }],
   }));
 
+  const advanceProgress = useCallback((value: number) => {
+    const next = Math.max(progressRef.current, value);
+    progressRef.current = next;
+    setProgress(next);
+  }, []);
+
+  const stopFakeTick = useCallback(() => {
+    if (fakeTickRef.current) {
+      clearInterval(fakeTickRef.current);
+      fakeTickRef.current = null;
+    }
+  }, []);
+
+  const startFakeTick = useCallback((from: number, to: number, durationMs: number) => {
+    stopFakeTick();
+    const steps = Math.ceil(durationMs / 80);
+    const increment = (to - from) / steps;
+    let current = from;
+    fakeTickRef.current = setInterval(() => {
+      current = Math.min(current + increment, to - 0.005);
+      advanceProgress(current);
+      if (current >= to - 0.005) stopFakeTick();
+    }, 80);
+  }, [advanceProgress, stopFakeTick]);
+
   const cleanupPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-  }, []);
+    stopFakeTick();
+  }, [stopFakeTick]);
 
   useEffect(() => {
     return cleanupPolling;
@@ -194,25 +222,29 @@ export default function ScrollSnapScreen() {
             return;
           }
 
-          setProgress(data.progress || 0);
-
           if (data.stage === "Removing duplicates") {
             setStatusText("Detecting duplicate frames...");
+            advanceProgress(0.38);
+            startFakeTick(0.38, 0.48, 3000);
           } else if (data.stage === "Removing sticky headers") {
             setStatusText("Removing sticky headers & footers...");
-            setProgress(0.45);
+            advanceProgress(0.5);
+            startFakeTick(0.5, 0.58, 2000);
           } else if (data.stage === "Stitching frames") {
-            setStatusText("Stitching unique frames together...");
-            setProgress(0.6);
+            setStatusText("Stitching frames together...");
+            advanceProgress(0.6);
+            startFakeTick(0.6, 0.75, 5000);
           } else if (data.stage === "Generating PDF") {
-            setStatusText("Creating PDF document...");
-            setProgress(0.85);
+            setStatusText("Generating PDF...");
+            advanceProgress(0.78);
+            startFakeTick(0.78, 0.92, 4000);
           }
 
           if (data.stage === "Complete" && data.result) {
+            stopFakeTick();
             cleanupPolling();
             setStage("complete");
-            setProgress(1);
+            advanceProgress(1);
             setResult(data.result);
             Haptics.notificationAsync(
               Haptics.NotificationFeedbackType.Success
@@ -221,7 +253,7 @@ export default function ScrollSnapScreen() {
         } catch {}
       }, 500);
     },
-    [cleanupPolling]
+    [cleanupPolling, advanceProgress, startFakeTick, stopFakeTick]
   );
 
   const pickVideo = async () => {
@@ -252,8 +284,9 @@ export default function ScrollSnapScreen() {
       const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
       const estimatedFrames = Math.ceil(durationMs / 300);
 
+      progressRef.current = 0;
       setStage("extracting");
-      setProgress(0);
+      advanceProgress(0);
       setFrameCount(0);
       setStatusText(`Extracting ~${estimatedFrames} frames...`);
       setResult(null);
@@ -264,7 +297,7 @@ export default function ScrollSnapScreen() {
         durationMs,
         (current, total) => {
           setFrameCount(current);
-          setProgress((current / total) * 0.15);
+          advanceProgress((current / total) * 0.18);
           setStatusText(`Extracting frames: ${current}/${total}`);
         }
       );
@@ -275,7 +308,10 @@ export default function ScrollSnapScreen() {
 
       setStage("uploading");
       setStatusText(`Uploading ${frameUris.length} frames...`);
-      setProgress(0.15);
+      advanceProgress(0.18);
+
+      const estimatedUploadMs = Math.max(3000, frameUris.length * 60);
+      startFakeTick(0.18, 0.32, estimatedUploadMs);
 
       const baseUrl = getApiUrl();
       const uploadUrl = new URL("/api/process-frames", baseUrl);
@@ -294,8 +330,9 @@ export default function ScrollSnapScreen() {
         if (!uploadRes.ok) throw new Error(await uploadRes.text());
         const data = await uploadRes.json();
 
+        stopFakeTick();
         setStage("processing");
-        setProgress(0.3);
+        advanceProgress(0.33);
         setStatusText("Processing frames on server...");
         pollProgress(data.jobId);
       } else {
@@ -316,8 +353,9 @@ export default function ScrollSnapScreen() {
         if (!uploadRes.ok) throw new Error(await uploadRes.text());
         const data = await uploadRes.json();
 
+        stopFakeTick();
         setStage("processing");
-        setProgress(0.3);
+        advanceProgress(0.33);
         setStatusText("Processing frames on server...");
         pollProgress(data.jobId);
       }
@@ -391,6 +429,7 @@ export default function ScrollSnapScreen() {
   const reset = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     cleanupPolling();
+    progressRef.current = 0;
     setStage("idle");
     setProgress(0);
     setStatusText("");
