@@ -206,29 +206,29 @@ const SLIDES = [
   {
     id: "hero",
     tag: "WELCOME",
-    title: "Turn recordings into\nscrollable docs",
-    subtitle: "No editing. No manual screenshots.\nJust results.",
+    title: "Stop taking 12\nscreenshots",
+    subtitle: "Scroll once, record it — and get one long image or PDF you can share with Claude, ChatGPT, or friends.",
     illustration: HeroIllustration,
   },
   {
     id: "pick",
     tag: "STEP 1",
-    title: "Pick any screen\nrecording",
-    subtitle: "Use your latest recording or browse your library. Any app, any length.",
+    title: "Record the thread,\nchat, or doc",
+    subtitle: "Reddit debate, long DM, a page you want to save — just scroll through it while recording. That's it.",
     illustration: PickIllustration,
   },
   {
     id: "extract",
     tag: "STEP 2",
-    title: "We extract only\nthe unique frames",
-    subtitle: "On-device AI removes duplicate and paused frames before upload.",
+    title: "We cut out all\nthe repeated frames",
+    subtitle: "Every paused or duplicate moment is removed automatically. Only the new content makes it through.",
     illustration: ExtractIllustration,
   },
   {
     id: "export",
     tag: "STEP 3",
-    title: "One seamless image\nor PDF",
-    subtitle: "Stitched vertically with perfect alignment. Ready to share or save.",
+    title: "One image to drop\ninto any AI or chat",
+    subtitle: "Send the full conversation to Claude or ChatGPT in a single file. Or share it with a friend as a PDF.",
     illustration: ExportIllustration,
   },
 ];
@@ -259,11 +259,11 @@ function OnboardingSlide({ item, index }: SlideProps) {
 // ─── Paywall Slide ────────────────────────────────────────────────────────────
 
 const PRO_FEATURES = [
-  { icon: "zap" as const, text: "Unlimited videos, any length" },
-  { icon: "layers" as const, text: "PNG, JPEG & PDF export" },
-  { icon: "crop" as const, text: "Crop & trim output" },
-  { icon: "sliders" as const, text: "Sensitivity & quality settings" },
-  { icon: "shield" as const, text: "Priority processing" },
+  { icon: "film" as const, text: "Unlimited recordings, any scroll length" },
+  { icon: "layers" as const, text: "Export as PNG, JPEG or PDF" },
+  { icon: "crop" as const, text: "Trim sticky headers & footers" },
+  { icon: "sliders" as const, text: "Fine-tune dedup sensitivity" },
+  { icon: "zap" as const, text: "Priority processing" },
 ];
 
 function PaywallSlide({
@@ -291,7 +291,7 @@ function PaywallSlide({
             <Ionicons name="star" size={26} color={C.accent} />
           </LinearGradient>
           <Text style={paywall.title}>Go Pro</Text>
-          <Text style={paywall.sub}>Everything unlocked, no limits.</Text>
+          <Text style={paywall.sub}>Capture anything. Share everywhere.</Text>
         </View>
 
         <View style={paywall.features}>
