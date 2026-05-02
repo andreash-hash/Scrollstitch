@@ -238,10 +238,13 @@ async function getFrameThumbnailHash(uri: string): Promise<string> {
     return getFrameThumbnailHashWeb(uri);
   }
   try {
+    // JPEG at minimum quality: all high-frequency DCT coefficients → 0.
+    // Identical-looking frames produce identical bytes → similarity=1.0.
+    // Frames with new content have different DC coefficients → different bytes.
     const result = await ImageManipulator.manipulateAsync(
       uri,
       [{ resize: { width: 16, height: 16 } }],
-      { compress: 0, format: ImageManipulator.SaveFormat.PNG, base64: true }
+      { compress: 0, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
     return result.base64 || "";
   } catch {
@@ -249,8 +252,9 @@ async function getFrameThumbnailHash(uri: string): Promise<string> {
   }
 }
 
-// Web hashes: 512-char hex strings (256 pixels × 2 hex chars).
-// Native hashes: base64 PNG data. Use appropriate comparison per type.
+// Web hashes: 512-char hex strings (256 pixels × 2 hex chars) → MAD pixel comparison.
+// Native hashes: base64 JPEG at quality=0. Identical-looking frames → identical bytes →
+// similarity=1.0. New content → different DCT coefficients → different bytes → ~0.71.
 function compareHashes(a: string, b: string): number {
   if (!a || !b) return 0;
   // Web hex hash: compute mean absolute pixel difference
