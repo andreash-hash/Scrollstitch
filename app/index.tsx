@@ -205,7 +205,8 @@ const SENSITIVITY_PRESETS = {
 } as const;
 type SensitivityKey = keyof typeof SENSITIVITY_PRESETS;
 
-// Web: draw to a 16x16 canvas and return grayscale pixel values as hex string
+// Web: draw to a 16×32 canvas (taller = more sensitive to vertical scroll) and
+// return grayscale pixel values as hex string (512 pixels × 2 hex chars = 1024 chars).
 function getFrameThumbnailHashWeb(dataUrl: string): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -213,11 +214,11 @@ function getFrameThumbnailHashWeb(dataUrl: string): Promise<string> {
       try {
         const canvas = document.createElement("canvas");
         canvas.width = 16;
-        canvas.height = 16;
+        canvas.height = 32;
         const ctx = canvas.getContext("2d");
         if (!ctx) { resolve(""); return; }
-        ctx.drawImage(img, 0, 0, 16, 16);
-        const { data } = ctx.getImageData(0, 0, 16, 16);
+        ctx.drawImage(img, 0, 0, 16, 32);
+        const { data } = ctx.getImageData(0, 0, 16, 32);
         let hash = "";
         for (let i = 0; i < data.length; i += 4) {
           const gray = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
@@ -233,41 +234,86 @@ function getFrameThumbnailHashWeb(dataUrl: string): Promise<string> {
   });
 }
 
-async function getFrameThumbnailHash(uri: string): Promise<string> {
-  if (Platform.OS === "web") {
-    return getFrameThumbnailHashWeb(uri);
-  }
+// Extracts the raw scan data bytes from a JPEG base64 string (skips the fixed header)
+// and returns them as a "J"-prefixed hex string. This bypasses the fixed JPEG header
+// (~85% of the file is always identical) and compares only the actual image content.
+function jpegScanHash(base64: string): string {
   try {
-    // JPEG at minimum quality: all high-frequency DCT coefficients → 0.
-    // Identical-looking frames produce identical bytes → similarity=1.0.
-    // Frames with new content have different DC coefficients → different bytes.
-    const result = await ImageManipulator.manipulateAsync(
-      uri,
-      [{ resize: { width: 16, height: 16 } }],
-      { compress: 0, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-    );
-    return result.base64 || "";
+    const bin = atob(base64);
+    for (let i = 0; i < bin.length - 3; i++) {
+      if (bin.charCodeAt(i) === 0xFF && bin.charCodeAt(i + 1) === 0xDA) {
+        // Found SOS marker. Skip SOS segment header (length field at i+2..i+3).
+        const sosSegLen = (bin.charCodeAt(i + 2) << 8) | bin.charCodeAt(i + 3);
+        const scanStart = i + 2 + sosSegLen;
+        let hex = "J";
+        for (let j = scanStart; j < bin.length - 2; j++) {
+          const b = bin.charCodeAt(j);
+          // Handle byte-stuffing: 0xFF 0x00 → real 0xFF in data; 0xFF 0xD9 = EOI
+          if (b === 0xFF) {
+            const n = bin.charCodeAt(j + 1);
+            if (n === 0xD9) break; // end of image
+            if (n === 0x00) { hex += "ff"; j++; continue; }
+          }
+          hex += b.toString(16).padStart(2, "0");
+        }
+        return hex;
+      }
+    }
+    return "J" + base64; // fallback: no SOS found, use full string
   } catch {
     return "";
   }
 }
 
-// Web hashes: 512-char hex strings (256 pixels × 2 hex chars) → MAD pixel comparison.
-// Native hashes: base64 JPEG at quality=0. Identical-looking frames → identical bytes →
-// similarity=1.0. New content → different DCT coefficients → different bytes → ~0.71.
+async function getFrameThumbnailHash(uri: string): Promise<string> {
+  if (Platform.OS === "web") {
+    return getFrameThumbnailHashWeb(uri);
+  }
+  try {
+    // 16×32: taller hash = more sensitive to vertical scrolling.
+    // 15% quality: enough detail for AC coefficients to differ between text blocks,
+    // while identical/paused frames produce byte-identical JPEG → scan hash identical.
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 16, height: 32 } }],
+      { compress: 0.15, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    return jpegScanHash(result.base64 || "");
+  } catch {
+    return "";
+  }
+}
+
 function compareHashes(a: string, b: string): number {
   if (!a || !b) return 0;
-  // Web hex hash: compute mean absolute pixel difference
-  if (a.length === 512 && b.length === 512) {
+
+  // Web: 1024-char hex string (16×32 pixels × 2 hex chars) → mean absolute pixel diff
+  if (a.length === 1024 && b.length === 1024) {
     let totalDiff = 0;
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < 512; i++) {
       const va = parseInt(a.slice(i * 2, i * 2 + 2), 16);
       const vb = parseInt(b.slice(i * 2, i * 2 + 2), 16);
       totalDiff += Math.abs(va - vb);
     }
-    return 1 - totalDiff / (255 * 256);
+    return 1 - totalDiff / (255 * 512);
   }
-  // Native base64 path: character-level similarity
+
+  // Native: "J"-prefixed hex string of JPEG scan data (skips fixed header).
+  // Identical frames → identical scan bytes → similarity=1.0.
+  // Blocks that scrolled in share the same bit-offset so hex chars align correctly.
+  if (a.startsWith("J") && b.startsWith("J")) {
+    const aHex = a.slice(1);
+    const bHex = b.slice(1);
+    const len = Math.min(aHex.length, bHex.length);
+    if (len === 0) return 0;
+    let matches = 0;
+    for (let i = 0; i < len; i++) {
+      if (aHex[i] === bHex[i]) matches++;
+    }
+    return matches / Math.max(aHex.length, bHex.length);
+  }
+
+  // Fallback: character-level similarity on raw strings
   const len = Math.min(a.length, b.length);
   if (len === 0) return 0;
   let matches = 0;
@@ -287,15 +333,21 @@ async function clientDeduplicateFrames(
   let lastHash = await getFrameThumbnailHash(uris[0]);
   onProgress(1, uris.length);
 
+  const sims: number[] = [];
   for (let i = 1; i < uris.length; i++) {
     const hash = await getFrameThumbnailHash(uris[i]);
     const similarity = compareHashes(lastHash, hash);
+    sims.push(Math.round(similarity * 100) / 100);
     if (similarity < threshold) {
       kept.push(uris[i]);
       lastHash = hash;
     }
     onProgress(i + 1, uris.length);
   }
+  const min = sims.length ? Math.min(...sims) : 0;
+  const max = sims.length ? Math.max(...sims) : 0;
+  const avg = sims.length ? sims.reduce((s, v) => s + v, 0) / sims.length : 0;
+  console.log(`Dedup sims — min:${min.toFixed(2)} avg:${avg.toFixed(2)} max:${max.toFixed(2)} threshold:${threshold} kept:${kept.length}/${uris.length}`);
   return kept;
 }
 
