@@ -337,9 +337,11 @@ export async function stitchFrames(
       inputBuffer = await sharp(framePaths[i]).toBuffer();
     }
 
+    // Place frame so its overlapping rows sit ON TOP of the previous frame's
+    // identical bottom rows. The unique new content lands at currentY onward.
     composites.push({
       input: inputBuffer,
-      top: currentY,
+      top: currentY - overlaps[i],
       left: 0,
     });
 
