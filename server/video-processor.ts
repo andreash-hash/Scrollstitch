@@ -8,7 +8,8 @@ const OVERLAP_SAMPLE_WIDTH = 64;   // px — narrow enough to be fast, wide enou
 const OVERLAP_MIN_HEIGHT = 20;
 const OVERLAP_STEP = 8;            // px — coarse pass step
 const OVERLAP_REFINE_STEP = 2;     // px — fine-pass step around the best candidate
-const OVERLAP_SCORE_THRESHOLD = 0.85;
+const OVERLAP_SCORE_THRESHOLD = 0.75;  // relaxed: JPEG re-compression adds ~15-30 unit drift
+const OVERLAP_PIXEL_TOLERANCE = 40;   // relaxed from 25: accounts for video→JPEG→crop artifacts
 const HEADER_SAMPLE_FRAMES = 7;
 const HEADER_ROW_MATCH_THRESHOLD = 0.96;
 const HEADER_MIN_HEIGHT = 40;
@@ -167,9 +168,11 @@ export async function detectAndRemoveStickyHeaders(
       continue;
     }
 
-    const outPath = path.join(outputDir, `cropped_${i}_${path.basename(framePaths[i])}`);
+    // Force PNG to avoid double-JPEG compression artifacts that break overlap detection
+    const outPath = path.join(outputDir, `cropped_${i}_${path.basename(framePaths[i])}.png`);
     await sharp(framePaths[i])
       .extract({ left: 0, top: cropTop, width: w, height: newHeight })
+      .png()
       .toFile(outPath);
     croppedPaths.push(outPath);
   }
@@ -214,7 +217,7 @@ function scoreOverlap(
   let total = 0;
   for (let i = 0; i < len; i += 3) {
     total++;
-    if (Math.abs(topBuf[topOffset + i] - botBuf[i]) < 25) matches++;
+    if (Math.abs(topBuf[topOffset + i] - botBuf[i]) < OVERLAP_PIXEL_TOLERANCE) matches++;
   }
   return total > 0 ? matches / total : 0;
 }
@@ -280,8 +283,9 @@ async function findOverlap(
     }
   }
 
-  console.log(`  overlap: ${bestOverlap}px (score ${bestScore.toFixed(3)}, searched 0-${maxSearch}px)`);
-  return bestScore >= OVERLAP_SCORE_THRESHOLD ? bestOverlap : 0;
+  const finalOverlap = bestScore >= OVERLAP_SCORE_THRESHOLD ? bestOverlap : 0;
+  console.log(`  overlap: ${finalOverlap}px (bestScore=${bestScore.toFixed(3)}, maxSearch=${maxSearch}px)`);
+  return finalOverlap;
 }
 
 export async function stitchFrames(

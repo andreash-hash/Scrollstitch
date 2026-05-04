@@ -138,10 +138,13 @@ async function extractFramesFromVideoWeb(
 
     const captureFrame = () => {
       if (!ctx || video.videoWidth === 0) return;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-      frameUris.push(canvas.toDataURL("image/jpeg", 0.7));
+      // Cap at 540px wide — full resolution causes memory exhaustion with 100+ frames.
+      // 540px is still plenty for server dedup (8×8) and overlap detection (64px sample).
+      const scale = Math.min(1, 540 / video.videoWidth);
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      frameUris.push(canvas.toDataURL("image/jpeg", 0.8));
     };
 
     const seekNext = () => {
