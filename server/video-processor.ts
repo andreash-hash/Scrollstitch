@@ -4,8 +4,11 @@ import * as os from "os";
 import sharp from "sharp";
 
 const SIMILARITY_THRESHOLD = 0.97;
-const OVERLAP_SEARCH_HEIGHT = 120;
+const OVERLAP_SAMPLE_WIDTH = 64;   // px — narrow enough to be fast, wide enough to be accurate
 const OVERLAP_MIN_HEIGHT = 20;
+const OVERLAP_STEP = 8;            // px — coarse pass step
+const OVERLAP_REFINE_STEP = 2;     // px — fine-pass step around the best candidate
+const OVERLAP_SCORE_THRESHOLD = 0.85;
 const HEADER_SAMPLE_FRAMES = 7;
 const HEADER_ROW_MATCH_THRESHOLD = 0.96;
 const HEADER_MIN_HEIGHT = 40;
@@ -195,81 +198,90 @@ export async function deduplicateFrames(
   return unique;
 }
 
+// Score how well `overlap` rows match between the bottom of topBuf and top of botBuf.
+// Both buffers are (OVERLAP_SAMPLE_WIDTH × maxSearch) grayscale raw pixels.
+// Samples every 3rd pixel for speed.
+function scoreOverlap(
+  topBuf: Buffer,
+  botBuf: Buffer,
+  maxSearch: number,
+  overlap: number
+): number {
+  const w = OVERLAP_SAMPLE_WIDTH;
+  const topOffset = (maxSearch - overlap) * w;
+  const len = overlap * w;
+  let matches = 0;
+  let total = 0;
+  for (let i = 0; i < len; i += 3) {
+    total++;
+    if (Math.abs(topBuf[topOffset + i] - botBuf[i]) < 25) matches++;
+  }
+  return total > 0 ? matches / total : 0;
+}
+
 async function findOverlap(
   topImagePath: string,
   bottomImagePath: string
 ): Promise<number> {
-  const topMeta = await sharp(topImagePath).metadata();
-  const bottomMeta = await sharp(bottomImagePath).metadata();
+  const [topMeta, botMeta] = await Promise.all([
+    sharp(topImagePath).metadata(),
+    sharp(bottomImagePath).metadata(),
+  ]);
 
-  if (
-    !topMeta.width ||
-    !topMeta.height ||
-    !bottomMeta.width ||
-    !bottomMeta.height
-  ) {
+  if (!topMeta.width || !topMeta.height || !botMeta.width || !botMeta.height) {
     return 0;
   }
 
-  const width = Math.min(topMeta.width, bottomMeta.width);
-  const searchHeight = Math.min(
-    OVERLAP_SEARCH_HEIGHT,
-    Math.floor(topMeta.height * 0.4)
-  );
-  const sampleWidth = Math.min(width, 200);
+  const frameH = Math.min(topMeta.height, botMeta.height);
+  const frameW = Math.min(topMeta.width, botMeta.width);
 
-  const topBottom = await sharp(topImagePath)
-    .extract({
-      left: 0,
-      top: topMeta.height - searchHeight,
-      width: width,
-      height: searchHeight,
-    })
-    .resize(sampleWidth, searchHeight, { fit: "fill" })
-    .greyscale()
-    .raw()
-    .toBuffer();
+  // Search up to 85 % of the shorter frame so we catch even very slow scrolling.
+  const maxSearch = Math.max(OVERLAP_MIN_HEIGHT, Math.floor(frameH * 0.85));
 
+  // Load BOTH regions with exactly 2 sharp calls. All candidate comparisons
+  // happen in memory, so there are no more O(n) sharp calls inside the loop.
+  const [topBuf, botBuf] = await Promise.all([
+    sharp(topImagePath)
+      .extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch })
+      .resize(OVERLAP_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
+      .greyscale()
+      .raw()
+      .toBuffer(),
+    sharp(bottomImagePath)
+      .extract({ left: 0, top: 0, width: frameW, height: maxSearch })
+      .resize(OVERLAP_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
+      .greyscale()
+      .raw()
+      .toBuffer(),
+  ]);
+
+  // Coarse pass — step OVERLAP_STEP px
   let bestOverlap = 0;
   let bestScore = 0;
 
-  for (
-    let overlap = OVERLAP_MIN_HEIGHT;
-    overlap <= searchHeight;
-    overlap += 4
-  ) {
-    const bottomTop = await sharp(bottomImagePath)
-      .extract({
-        left: 0,
-        top: 0,
-        width: width,
-        height: overlap,
-      })
-      .resize(sampleWidth, overlap, { fit: "fill" })
-      .greyscale()
-      .raw()
-      .toBuffer();
-
-    const topSlice = topBottom.subarray(
-      (searchHeight - overlap) * sampleWidth,
-      searchHeight * sampleWidth
-    );
-
-    if (topSlice.length !== bottomTop.length) continue;
-
-    let matches = 0;
-    for (let i = 0; i < topSlice.length; i++) {
-      if (Math.abs(topSlice[i] - bottomTop[i]) < 25) matches++;
-    }
-    const score = matches / topSlice.length;
-
-    if (score > bestScore && score > 0.85) {
+  for (let ov = OVERLAP_MIN_HEIGHT; ov <= maxSearch; ov += OVERLAP_STEP) {
+    const score = scoreOverlap(topBuf, botBuf, maxSearch, ov);
+    if (score > bestScore) {
       bestScore = score;
-      bestOverlap = overlap;
+      bestOverlap = ov;
     }
   }
 
-  return bestOverlap;
+  if (bestScore < OVERLAP_SCORE_THRESHOLD) return 0;
+
+  // Fine pass — search ±OVERLAP_STEP around the coarse winner at OVERLAP_REFINE_STEP
+  const lo = Math.max(OVERLAP_MIN_HEIGHT, bestOverlap - OVERLAP_STEP);
+  const hi = Math.min(maxSearch, bestOverlap + OVERLAP_STEP);
+  for (let ov = lo; ov <= hi; ov += OVERLAP_REFINE_STEP) {
+    const score = scoreOverlap(topBuf, botBuf, maxSearch, ov);
+    if (score > bestScore) {
+      bestScore = score;
+      bestOverlap = ov;
+    }
+  }
+
+  console.log(`  overlap: ${bestOverlap}px (score ${bestScore.toFixed(3)}, searched 0-${maxSearch}px)`);
+  return bestScore >= OVERLAP_SCORE_THRESHOLD ? bestOverlap : 0;
 }
 
 export async function stitchFrames(
