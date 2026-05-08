@@ -3,7 +3,7 @@ import * as path from "path";
 import * as os from "os";
 import sharp from "sharp";
 
-const SIMILARITY_THRESHOLD = 0.97;
+const SIMILARITY_THRESHOLD = 0.90;  // was 0.97: tighter = fewer frames, more scroll between each
 const OVERLAP_SAMPLE_WIDTH = 64;   // px — narrow enough to be fast, wide enough to be accurate
 const OVERLAP_MIN_HEIGHT = 20;
 const OVERLAP_STEP = 8;            // px — coarse pass step
@@ -258,13 +258,16 @@ async function findOverlap(
       .toBuffer(),
   ]);
 
-  // Coarse pass — step OVERLAP_STEP px
+  // Coarse pass — step OVERLAP_STEP px, smallest→largest.
+  // Only update bestOverlap if the new score is meaningfully better (>1%).
+  // This biases toward smaller overlaps when scores are similar, which means
+  // more unique content per frame and avoids false matches on periodic content.
   let bestOverlap = 0;
   let bestScore = 0;
 
   for (let ov = OVERLAP_MIN_HEIGHT; ov <= maxSearch; ov += OVERLAP_STEP) {
     const score = scoreOverlap(topBuf, botBuf, maxSearch, ov);
-    if (score > bestScore) {
+    if (score > bestScore + 0.01) {  // must improve by >1% to prefer larger overlap
       bestScore = score;
       bestOverlap = ov;
     }
@@ -272,12 +275,13 @@ async function findOverlap(
 
   if (bestScore < OVERLAP_SCORE_THRESHOLD) return 0;
 
-  // Fine pass — search ±OVERLAP_STEP around the coarse winner at OVERLAP_REFINE_STEP
+  // Fine pass — search ±OVERLAP_STEP around the coarse winner at OVERLAP_REFINE_STEP.
+  // Same >1% improvement rule to keep preferring smaller overlaps.
   const lo = Math.max(OVERLAP_MIN_HEIGHT, bestOverlap - OVERLAP_STEP);
   const hi = Math.min(maxSearch, bestOverlap + OVERLAP_STEP);
   for (let ov = lo; ov <= hi; ov += OVERLAP_REFINE_STEP) {
     const score = scoreOverlap(topBuf, botBuf, maxSearch, ov);
-    if (score > bestScore) {
+    if (score > bestScore + 0.005) {
       bestScore = score;
       bestOverlap = ov;
     }
