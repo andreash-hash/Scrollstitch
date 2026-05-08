@@ -3,13 +3,15 @@ import * as path from "path";
 import * as os from "os";
 import sharp from "sharp";
 
-const SIMILARITY_THRESHOLD = 0.90;  // was 0.97: tighter = fewer frames, more scroll between each
-const OVERLAP_SAMPLE_WIDTH = 64;   // px — narrow enough to be fast, wide enough to be accurate
+const SIMILARITY_THRESHOLD = 0.90;
 const OVERLAP_MIN_HEIGHT = 20;
-const OVERLAP_STEP = 8;            // px — coarse pass step
-const OVERLAP_REFINE_STEP = 2;     // px — fine-pass step around the best candidate
-const OVERLAP_SCORE_THRESHOLD = 0.75;  // relaxed: JPEG re-compression adds ~15-30 unit drift
-const OVERLAP_PIXEL_TOLERANCE = 40;   // relaxed from 25: accounts for video→JPEG→crop artifacts
+const OVERLAP_STEP = 4;            // px — coarse pass step (smaller = more precise)
+const OVERLAP_REFINE_STEP = 1;     // px — fine-pass step
+const OVERLAP_SCORE_THRESHOLD = 0.70;  // fraction of rows that must match
+// Number of horizontal segments per fingerprint row — captures left/right structure.
+const FINGERPRINT_BLOCKS = 8;
+// Per-block tolerance: block-average of ~50px cancels JPEG noise from ±15 per-pixel to ±5–8.
+const FINGERPRINT_TOLERANCE = 15;
 const HEADER_SAMPLE_FRAMES = 7;
 const HEADER_ROW_MATCH_THRESHOLD = 0.96;
 const HEADER_MIN_HEIGHT = 40;
@@ -201,25 +203,49 @@ export async function deduplicateFrames(
   return unique;
 }
 
-// Score how well `overlap` rows match between the bottom of topBuf and top of botBuf.
-// Both buffers are (OVERLAP_SAMPLE_WIDTH × maxSearch) grayscale raw pixels.
-// Samples every 3rd pixel for speed.
+// Build a row-fingerprint array for a raw greyscale buffer (width × height, 1 byte/px).
+// Each row becomes FINGERPRINT_BLOCKS average values — one per horizontal segment.
+// Block-averages are stable against JPEG noise (averaging ~50px reduces ±15 drift to ±3–6).
+function buildFingerprints(buf: Buffer, width: number, height: number): Float32Array {
+  const fp = new Float32Array(height * FINGERPRINT_BLOCKS);
+  const blockW = width / FINGERPRINT_BLOCKS;
+  for (let row = 0; row < height; row++) {
+    const rowBase = row * width;
+    for (let b = 0; b < FINGERPRINT_BLOCKS; b++) {
+      const x0 = Math.floor(b * blockW);
+      const x1 = Math.floor((b + 1) * blockW);
+      let sum = 0;
+      for (let x = x0; x < x1; x++) sum += buf[rowBase + x];
+      fp[row * FINGERPRINT_BLOCKS + b] = sum / (x1 - x0);
+    }
+  }
+  return fp;
+}
+
+// Fraction of rows in the overlap region where ALL 8 block-averages agree
+// within FINGERPRINT_TOLERANCE.  topFp covers the last maxSearch rows of frame A;
+// botFp covers the first maxSearch rows of frame B.
 function scoreOverlap(
-  topBuf: Buffer,
-  botBuf: Buffer,
+  topFp: Float32Array,
+  botFp: Float32Array,
   maxSearch: number,
   overlap: number
 ): number {
-  const w = OVERLAP_SAMPLE_WIDTH;
-  const topOffset = (maxSearch - overlap) * w;
-  const len = overlap * w;
+  const rowOffset = maxSearch - overlap;
   let matches = 0;
-  let total = 0;
-  for (let i = 0; i < len; i += 3) {
-    total++;
-    if (Math.abs(topBuf[topOffset + i] - botBuf[i]) < OVERLAP_PIXEL_TOLERANCE) matches++;
+  for (let r = 0; r < overlap; r++) {
+    const ti = (rowOffset + r) * FINGERPRINT_BLOCKS;
+    const bi = r * FINGERPRINT_BLOCKS;
+    let ok = true;
+    for (let b = 0; b < FINGERPRINT_BLOCKS; b++) {
+      if (Math.abs(topFp[ti + b] - botFp[bi + b]) > FINGERPRINT_TOLERANCE) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) matches++;
   }
-  return total > 0 ? matches / total : 0;
+  return overlap > 0 ? matches / overlap : 0;
 }
 
 async function findOverlap(
@@ -237,59 +263,58 @@ async function findOverlap(
 
   const frameH = Math.min(topMeta.height, botMeta.height);
   const frameW = Math.min(topMeta.width, botMeta.width);
-
-  // Search up to 85 % of the shorter frame so we catch even very slow scrolling.
   const maxSearch = Math.max(OVERLAP_MIN_HEIGHT, Math.floor(frameH * 0.85));
 
-  // Load BOTH regions with exactly 2 sharp calls. All candidate comparisons
-  // happen in memory, so there are no more O(n) sharp calls inside the loop.
+  // Two sharp calls: extract the relevant rows at full width, greyscale, raw bytes.
   const [topBuf, botBuf] = await Promise.all([
     sharp(topImagePath)
       .extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch })
-      .resize(OVERLAP_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
       .greyscale()
       .raw()
       .toBuffer(),
     sharp(bottomImagePath)
       .extract({ left: 0, top: 0, width: frameW, height: maxSearch })
-      .resize(OVERLAP_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
       .greyscale()
       .raw()
       .toBuffer(),
   ]);
 
-  // Coarse pass — step OVERLAP_STEP px, smallest→largest.
-  // Only update bestOverlap if the new score is meaningfully better (>1%).
-  // This biases toward smaller overlaps when scores are similar, which means
-  // more unique content per frame and avoids false matches on periodic content.
+  // Build 8-block row fingerprints from the full-width buffers.
+  const topFp = buildFingerprints(topBuf, frameW, maxSearch);
+  const botFp = buildFingerprints(botBuf, frameW, maxSearch);
+
+  // Coarse pass — smallest→largest, require >1% improvement to pick a larger overlap.
+  // This biases toward the *smallest* overlap that genuinely matches,
+  // avoiding false positives from periodically-repeating content (lists, feeds).
   let bestOverlap = 0;
   let bestScore = 0;
 
   for (let ov = OVERLAP_MIN_HEIGHT; ov <= maxSearch; ov += OVERLAP_STEP) {
-    const score = scoreOverlap(topBuf, botBuf, maxSearch, ov);
-    if (score > bestScore + 0.01) {  // must improve by >1% to prefer larger overlap
+    const score = scoreOverlap(topFp, botFp, maxSearch, ov);
+    if (score > bestScore + 0.01) {
       bestScore = score;
       bestOverlap = ov;
     }
   }
 
-  if (bestScore < OVERLAP_SCORE_THRESHOLD) return 0;
+  if (bestScore < OVERLAP_SCORE_THRESHOLD) {
+    console.log(`  overlap: 0px (bestScore=${bestScore.toFixed(3)}, below threshold)`);
+    return 0;
+  }
 
-  // Fine pass — search ±OVERLAP_STEP around the coarse winner at OVERLAP_REFINE_STEP.
-  // Same >1% improvement rule to keep preferring smaller overlaps.
+  // Fine pass — ±OVERLAP_STEP around winner, 1px resolution.
   const lo = Math.max(OVERLAP_MIN_HEIGHT, bestOverlap - OVERLAP_STEP);
   const hi = Math.min(maxSearch, bestOverlap + OVERLAP_STEP);
   for (let ov = lo; ov <= hi; ov += OVERLAP_REFINE_STEP) {
-    const score = scoreOverlap(topBuf, botBuf, maxSearch, ov);
+    const score = scoreOverlap(topFp, botFp, maxSearch, ov);
     if (score > bestScore + 0.005) {
       bestScore = score;
       bestOverlap = ov;
     }
   }
 
-  const finalOverlap = bestScore >= OVERLAP_SCORE_THRESHOLD ? bestOverlap : 0;
-  console.log(`  overlap: ${finalOverlap}px (bestScore=${bestScore.toFixed(3)}, maxSearch=${maxSearch}px)`);
-  return finalOverlap;
+  console.log(`  overlap: ${bestOverlap}px (score=${bestScore.toFixed(3)}, maxSearch=${maxSearch}px)`);
+  return bestOverlap;
 }
 
 export async function stitchFrames(
