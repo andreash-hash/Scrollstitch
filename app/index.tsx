@@ -274,15 +274,23 @@ async function getFrameThumbnailHash(uri: string): Promise<string> {
   }
   try {
     // 16×32: taller hash = more sensitive to vertical scrolling.
-    // 15% quality: enough detail for AC coefficients to differ between text blocks,
-    // while identical/paused frames produce byte-identical JPEG → scan hash identical.
-    const result = await ImageManipulator.manipulateAsync(
+    // 15% quality: enough detail for AC coefficients to differ between text blocks.
+    // 3s timeout: manipulateAsync can hang indefinitely on low-memory devices.
+    const timeout = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error("manipulate timeout")), 3000)
+    );
+    const manip = ImageManipulator.manipulateAsync(
       uri,
       [{ resize: { width: 16, height: 32 } }],
       { compress: 0.15, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
-    return jpegScanHash(result.base64 || "");
-  } catch {
+    const result = await Promise.race([manip, timeout]);
+    if (!result) return "";
+    return jpegScanHash((result as ImageManipulator.ImageResult).base64 || "");
+  } catch (e: any) {
+    if (e?.message !== "manipulate timeout") {
+      console.warn("getFrameThumbnailHash error:", e?.message);
+    }
     return "";
   }
 }
@@ -332,9 +340,18 @@ async function clientDeduplicateFrames(
   onProgress: (checked: number, total: number) => void
 ): Promise<string[]> {
   if (uris.length <= 1) return uris;
+
   const kept: string[] = [uris[0]];
   let lastHash = await getFrameThumbnailHash(uris[0]);
   onProgress(1, uris.length);
+
+  // If the first hash fails (e.g. manipulator hangs/crashes on this device),
+  // skip client dedup entirely — the server's perceptual dedup will handle it.
+  if (!lastHash) {
+    console.log("Client dedup: first hash empty — skipping, server will dedup");
+    for (let i = 1; i < uris.length; i++) onProgress(i + 1, uris.length);
+    return uris;
+  }
 
   const sims: number[] = [];
   for (let i = 1; i < uris.length; i++) {
