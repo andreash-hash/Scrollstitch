@@ -356,6 +356,32 @@ async function clientDeduplicateFrames(
   const sims: number[] = [];
   for (let i = 1; i < uris.length; i++) {
     const hash = await getFrameThumbnailHash(uris[i]);
+
+    // If hash is empty (manipulation timed out / crashed for this frame):
+    // - If we have a valid reference: skip this frame (treat as duplicate).
+    //   A frame we cannot hash is likely identical or nearly identical to the
+    //   previous one (same content = same decode difficulty). Server dedup
+    //   will catch any genuine unique frames that we drop here.
+    // - If we have no valid reference yet (lastHash also empty): keep the frame
+    //   and keep searching for the first successful hash.
+    if (!hash) {
+      if (lastHash) {
+        // drop the unhashable frame — treat as similar to previous
+      } else {
+        kept.push(uris[i]); // no reference yet, keep and continue
+      }
+      onProgress(i + 1, uris.length);
+      continue;
+    }
+
+    if (!lastHash) {
+      // First valid hash after initial failures — always keep and set as reference
+      kept.push(uris[i]);
+      lastHash = hash;
+      onProgress(i + 1, uris.length);
+      continue;
+    }
+
     const similarity = compareHashes(lastHash, hash);
     sims.push(Math.round(similarity * 100) / 100);
     if (similarity < threshold) {

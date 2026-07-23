@@ -3,28 +3,38 @@ import * as path from "path";
 import * as os from "os";
 import sharp from "sharp";
 
-const SIMILARITY_THRESHOLD = 0.90;
-const OVERLAP_MIN_HEIGHT = 20;
-const OVERLAP_STEP = 4;            // px — coarse pass step (smaller = more precise)
-const OVERLAP_REFINE_STEP = 1;     // px — fine-pass step
-const OVERLAP_SCORE_THRESHOLD = 0.70;  // fraction of rows that must match
-// Number of horizontal segments per fingerprint row — captures left/right structure.
-const FINGERPRINT_BLOCKS = 8;
-// Per-block tolerance: block-average of ~50px cancels JPEG noise from ±15 per-pixel to ±5–8.
-const FINGERPRINT_TOLERANCE = 15;
+// --- Server dedup ---
+const SIMILARITY_THRESHOLD = 0.93;   // 16×16 perceptual hash (was 8×8 at 0.90)
+const DEDUP_HASH_SIZE = 16;           // 16×16 = 256 pixels (was 8×8=64)
+
+// --- Sticky detection ---
 const HEADER_SAMPLE_FRAMES = 7;
 const HEADER_ROW_MATCH_THRESHOLD = 0.96;
 const HEADER_MIN_HEIGHT = 40;
-const HEADER_MAX_RATIO = 0.15;
+const HEADER_MAX_RATIO = 0.50;        // search up to 50% of frame (was 15%)
 const HEADER_PIXEL_TOLERANCE = 10;
+
+// --- Overlap / NCC ---
+// Minimum overlap is 20% of the shorter frame height.
+// This eliminates false 20–50px matches on periodic UI chrome.
+const OVERLAP_MIN_FRACTION = 0.20;
+const OVERLAP_MIN_ABS = 40;           // absolute floor in px
+const NCC_SAMPLE_WIDTH = 64;          // downsample X to this width before NCC
+const NCC_COARSE_STEP = 8;            // px — coarse search step
+const NCC_FINE_RANGE = 16;            // px — fine-search ± around coarse winner
+const NCC_FINE_STEP = 1;              // px — fine-search resolution
+const NCC_CONFIDENCE = 0.85;          // minimum NCC to accept an overlap
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 async function getFrameSignature(
   framePath: string,
-  sampleHeight: number = 8,
-  sampleWidth: number = 8
+  size: number = DEDUP_HASH_SIZE
 ): Promise<Buffer> {
   const { data } = await sharp(framePath)
-    .resize(sampleWidth, sampleHeight, { fit: "fill" })
+    .resize(size, size, { fit: "fill" })
     .greyscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -35,11 +45,14 @@ function bufferSimilarity(a: Buffer, b: Buffer): number {
   if (a.length !== b.length) return 0;
   let matches = 0;
   for (let i = 0; i < a.length; i++) {
-    const diff = Math.abs(a[i] - b[i]);
-    if (diff < 20) matches++;
+    if (Math.abs(a[i] - b[i]) < 20) matches++;
   }
   return matches / a.length;
 }
+
+// ---------------------------------------------------------------------------
+// Sticky detection (up to HEADER_MAX_RATIO of frame)
+// ---------------------------------------------------------------------------
 
 async function detectStickyRegion(
   framePaths: string[],
@@ -63,6 +76,7 @@ async function detectStickyRegion(
   const frameHeight = firstMeta.height || 0;
   if (!frameWidth || !frameHeight) return 0;
 
+  // Search up to HEADER_MAX_RATIO of frame height (was 15%, now 50%)
   const maxCheckHeight = Math.floor(frameHeight * HEADER_MAX_RATIO);
   const sampleWidth = Math.min(frameWidth, 300);
 
@@ -84,16 +98,13 @@ async function detectStickyRegion(
     const rowStart = row * sampleWidth;
     const rowEnd = rowStart + sampleWidth;
     const refRow = strips[0].subarray(rowStart, rowEnd);
-
     for (let s = 1; s < strips.length; s++) {
       const cmpRow = strips[s].subarray(rowStart, rowEnd);
       let matches = 0;
       for (let p = 0; p < sampleWidth; p++) {
         if (Math.abs(refRow[p] - cmpRow[p]) < HEADER_PIXEL_TOLERANCE) matches++;
       }
-      if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) {
-        return false;
-      }
+      if (matches / sampleWidth < HEADER_ROW_MATCH_THRESHOLD) return false;
     }
     return true;
   };
@@ -122,11 +133,9 @@ async function detectStickyRegion(
     }
   }
 
-  const scaleFactor = frameHeight * HEADER_MAX_RATIO / maxCheckHeight;
-  const realHeight = Math.round(stickyHeight * scaleFactor);
-
+  // Scale back to real pixel coordinates
+  const realHeight = Math.round(stickyHeight * (frameHeight * HEADER_MAX_RATIO / maxCheckHeight));
   if (realHeight < HEADER_MIN_HEIGHT) return 0;
-
   return realHeight;
 }
 
@@ -170,7 +179,7 @@ export async function detectAndRemoveStickyHeaders(
       continue;
     }
 
-    // Force PNG to avoid double-JPEG compression artifacts that break overlap detection
+    // PNG to avoid double-JPEG compression artifacts
     const outPath = path.join(outputDir, `cropped_${i}_${path.basename(framePaths[i])}.png`);
     await sharp(framePaths[i])
       .extract({ left: 0, top: cropTop, width: w, height: newHeight })
@@ -181,6 +190,10 @@ export async function detectAndRemoveStickyHeaders(
 
   return { paths: croppedPaths, headerHeight, footerHeight };
 }
+
+// ---------------------------------------------------------------------------
+// Server-side frame deduplication (16×16, threshold 0.93)
+// ---------------------------------------------------------------------------
 
 export async function deduplicateFrames(
   framePaths: string[]
@@ -203,49 +216,65 @@ export async function deduplicateFrames(
   return unique;
 }
 
-// Build a row-fingerprint array for a raw greyscale buffer (width × height, 1 byte/px).
-// Each row becomes FINGERPRINT_BLOCKS average values — one per horizontal segment.
-// Block-averages are stable against JPEG noise (averaging ~50px reduces ±15 drift to ±3–6).
-function buildFingerprints(buf: Buffer, width: number, height: number): Float32Array {
-  const fp = new Float32Array(height * FINGERPRINT_BLOCKS);
-  const blockW = width / FINGERPRINT_BLOCKS;
-  for (let row = 0; row < height; row++) {
-    const rowBase = row * width;
-    for (let b = 0; b < FINGERPRINT_BLOCKS; b++) {
-      const x0 = Math.floor(b * blockW);
-      const x1 = Math.floor((b + 1) * blockW);
-      let sum = 0;
-      for (let x = x0; x < x1; x++) sum += buf[rowBase + x];
-      fp[row * FINGERPRINT_BLOCKS + b] = sum / (x1 - x0);
-    }
-  }
-  return fp;
-}
+// ---------------------------------------------------------------------------
+// NCC-based overlap detection — global maximum, no directional bias
+// ---------------------------------------------------------------------------
 
-// Fraction of rows in the overlap region where ALL 8 block-averages agree
-// within FINGERPRINT_TOLERANCE.  topFp covers the last maxSearch rows of frame A;
-// botFp covers the first maxSearch rows of frame B.
-function scoreOverlap(
-  topFp: Float32Array,
-  botFp: Float32Array,
+/**
+ * Compute Pearson NCC (normalized cross-correlation) between two pixel regions.
+ *
+ * topBuf: flat greyscale buffer, NCC_SAMPLE_WIDTH × maxSearch rows
+ * botBuf: same dimensions
+ * overlap: how many rows to compare
+ *   - top region: rows [maxSearch - overlap, maxSearch)
+ *   - bot region: rows [0, overlap)
+ *
+ * Returns a value in [-1, 1]; 1.0 = perfect match.
+ */
+function computeNCC(
+  topBuf: Buffer,
+  botBuf: Buffer,
   maxSearch: number,
   overlap: number
 ): number {
+  const W = NCC_SAMPLE_WIDTH;
+  const n = overlap * W;
+  if (n === 0) return 0;
+
   const rowOffset = maxSearch - overlap;
-  let matches = 0;
+
+  // Pass 1: compute means
+  let sumA = 0;
+  let sumB = 0;
   for (let r = 0; r < overlap; r++) {
-    const ti = (rowOffset + r) * FINGERPRINT_BLOCKS;
-    const bi = r * FINGERPRINT_BLOCKS;
-    let ok = true;
-    for (let b = 0; b < FINGERPRINT_BLOCKS; b++) {
-      if (Math.abs(topFp[ti + b] - botFp[bi + b]) > FINGERPRINT_TOLERANCE) {
-        ok = false;
-        break;
-      }
+    const ti = (rowOffset + r) * W;
+    const bi = r * W;
+    for (let x = 0; x < W; x++) {
+      sumA += topBuf[ti + x];
+      sumB += botBuf[bi + x];
     }
-    if (ok) matches++;
   }
-  return overlap > 0 ? matches / overlap : 0;
+  const meanA = sumA / n;
+  const meanB = sumB / n;
+
+  // Pass 2: compute NCC numerator and denominators
+  let num = 0;
+  let denA = 0;
+  let denB = 0;
+  for (let r = 0; r < overlap; r++) {
+    const ti = (rowOffset + r) * W;
+    const bi = r * W;
+    for (let x = 0; x < W; x++) {
+      const a = topBuf[ti + x] - meanA;
+      const b = botBuf[bi + x] - meanB;
+      num += a * b;
+      denA += a * a;
+      denB += b * b;
+    }
+  }
+
+  const den = Math.sqrt(denA * denB);
+  return den > 0 ? num / den : 0;
 }
 
 async function findOverlap(
@@ -263,59 +292,72 @@ async function findOverlap(
 
   const frameH = Math.min(topMeta.height, botMeta.height);
   const frameW = Math.min(topMeta.width, botMeta.width);
-  const maxSearch = Math.max(OVERLAP_MIN_HEIGHT, Math.floor(frameH * 0.85));
 
-  // Two sharp calls: extract the relevant rows at full width, greyscale, raw bytes.
+  // Minimum overlap: 20% of the shorter frame (eliminates false 20–50px matches)
+  const minOverlap = Math.max(OVERLAP_MIN_ABS, Math.floor(frameH * OVERLAP_MIN_FRACTION));
+  // Maximum search: 90% of the shorter frame
+  const maxSearch = Math.floor(frameH * 0.90);
+
+  if (minOverlap >= maxSearch) {
+    console.log(`  overlap: skipped (frame too short: ${frameH}px)`);
+    return 0;
+  }
+
+  // Extract and downsample both search regions in parallel.
+  // topBuf: bottom maxSearch rows of Frame A, width→NCC_SAMPLE_WIDTH
+  // botBuf: top    maxSearch rows of Frame B, width→NCC_SAMPLE_WIDTH
   const [topBuf, botBuf] = await Promise.all([
     sharp(topImagePath)
       .extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch })
+      .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
       .greyscale()
       .raw()
       .toBuffer(),
     sharp(bottomImagePath)
       .extract({ left: 0, top: 0, width: frameW, height: maxSearch })
+      .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
       .greyscale()
       .raw()
       .toBuffer(),
   ]);
 
-  // Build 8-block row fingerprints from the full-width buffers.
-  const topFp = buildFingerprints(topBuf, frameW, maxSearch);
-  const botFp = buildFingerprints(botBuf, frameW, maxSearch);
-
-  // Coarse pass — smallest→largest, require >1% improvement to pick a larger overlap.
-  // This biases toward the *smallest* overlap that genuinely matches,
-  // avoiding false positives from periodically-repeating content (lists, feeds).
+  // Coarse pass — iterate from minOverlap to maxSearch in NCC_COARSE_STEP steps.
+  // Track GLOBAL maximum NCC; no "prefer smallest" or "prefer largest" bias.
   let bestOverlap = 0;
-  let bestScore = 0;
+  let bestNCC = -1;
 
-  for (let ov = OVERLAP_MIN_HEIGHT; ov <= maxSearch; ov += OVERLAP_STEP) {
-    const score = scoreOverlap(topFp, botFp, maxSearch, ov);
-    if (score > bestScore + 0.01) {
-      bestScore = score;
+  for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
+    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov);
+    if (ncc > bestNCC) {
+      bestNCC = ncc;
       bestOverlap = ov;
     }
   }
 
-  if (bestScore < OVERLAP_SCORE_THRESHOLD) {
-    console.log(`  overlap: 0px (bestScore=${bestScore.toFixed(3)}, below threshold)`);
+  // Reject if best NCC is below confidence threshold
+  if (bestNCC < NCC_CONFIDENCE) {
+    console.log(`  overlap: 0px (bestNCC=${bestNCC.toFixed(3)} < ${NCC_CONFIDENCE}, no confident match)`);
     return 0;
   }
 
-  // Fine pass — ±OVERLAP_STEP around winner, 1px resolution.
-  const lo = Math.max(OVERLAP_MIN_HEIGHT, bestOverlap - OVERLAP_STEP);
-  const hi = Math.min(maxSearch, bestOverlap + OVERLAP_STEP);
-  for (let ov = lo; ov <= hi; ov += OVERLAP_REFINE_STEP) {
-    const score = scoreOverlap(topFp, botFp, maxSearch, ov);
-    if (score > bestScore + 0.005) {
-      bestScore = score;
+  // Fine pass — 1px resolution within ±NCC_FINE_RANGE of the coarse winner
+  const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
+  const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
+  for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
+    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov);
+    if (ncc > bestNCC) {
+      bestNCC = ncc;
       bestOverlap = ov;
     }
   }
 
-  console.log(`  overlap: ${bestOverlap}px (score=${bestScore.toFixed(3)}, maxSearch=${maxSearch}px)`);
+  console.log(`  overlap: ${bestOverlap}px (NCC=${bestNCC.toFixed(3)}, min=${minOverlap}px, max=${maxSearch}px)`);
   return bestOverlap;
 }
+
+// ---------------------------------------------------------------------------
+// Frame stitching
+// ---------------------------------------------------------------------------
 
 export async function stitchFrames(
   framePaths: string[],
@@ -370,8 +412,6 @@ export async function stitchFrames(
       inputBuffer = await sharp(framePaths[i]).toBuffer();
     }
 
-    // Place frame so its overlapping rows sit ON TOP of the previous frame's
-    // identical bottom rows. The unique new content lands at currentY onward.
     composites.push({
       input: inputBuffer,
       top: currentY - overlaps[i],
@@ -398,6 +438,10 @@ export async function stitchFrames(
 
   return { width: targetWidth, height: totalHeight };
 }
+
+// ---------------------------------------------------------------------------
+// PDF generation
+// ---------------------------------------------------------------------------
 
 export async function generatePdf(
   imagePath: string,
