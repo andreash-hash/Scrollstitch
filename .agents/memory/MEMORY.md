@@ -1,0 +1,1 @@
+- [RevenueCat integration](revenuecat-setup.md) — two-product (monthly+annual) setup via test store; entitlement "pro"; env vars and project IDs are set.

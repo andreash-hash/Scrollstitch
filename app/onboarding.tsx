@@ -8,6 +8,8 @@ import {
   Dimensions,
   StatusBar,
   ViewToken,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -33,6 +35,8 @@ import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 import Colors from "@/constants/colors";
 import { useAppContext } from "@/contexts/AppContext";
+import { useSubscription } from "@/lib/revenuecat";
+import { PurchasesPackage } from "react-native-purchases";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const C = Colors.dark;
@@ -267,18 +271,44 @@ const PRO_FEATURES = [
 ];
 
 function PaywallSlide({
-  onStartTrial,
   onContinueFree,
+  monthlyPackage,
+  annualPackage,
+  onPurchase,
+  onRestore,
+  isPurchasing,
+  isRestoring,
 }: {
-  onStartTrial: () => void;
   onContinueFree: () => void;
+  monthlyPackage: PurchasesPackage | null;
+  annualPackage: PurchasesPackage | null;
+  onPurchase: (pkg: PurchasesPackage) => void;
+  onRestore: () => void;
+  isPurchasing: boolean;
+  isRestoring: boolean;
 }) {
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const btnScale = useSharedValue(1);
 
   const btnStyle = useAnimatedStyle(() => ({
     transform: [{ scale: btnScale.value }],
   }));
+
+  const selectedPackage = billing === "monthly" ? monthlyPackage : annualPackage;
+
+  const monthlyPrice = monthlyPackage?.product.priceString ?? "$4.99";
+  const annualPrice = annualPackage?.product.priceString ?? "$29.99";
+
+  const handleCtaPress = () => {
+    btnScale.value = withSequence(withSpring(0.96), withSpring(1));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (__DEV__) {
+      setConfirmVisible(true);
+    } else if (selectedPackage) {
+      onPurchase(selectedPackage);
+    }
+  };
 
   return (
     <View style={[paywall.container, { width: SCREEN_WIDTH }]}>
@@ -317,7 +347,7 @@ function PaywallSlide({
               style={[paywall.billingChip, billing === b && paywall.billingChipActive]}
             >
               <Text style={[paywall.billingChipText, billing === b && paywall.billingChipTextActive]}>
-                {b === "monthly" ? "$4.99 / mo" : "$29.99 / yr"}
+                {b === "monthly" ? `${monthlyPrice} / mo` : `${annualPrice} / yr`}
               </Text>
               {b === "annual" && (
                 <View style={paywall.saveBadge}>
@@ -330,11 +360,8 @@ function PaywallSlide({
 
         <Animated.View style={btnStyle}>
           <Pressable
-            onPress={() => {
-              btnScale.value = withSequence(withSpring(0.96), withSpring(1));
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              onStartTrial();
-            }}
+            onPress={handleCtaPress}
+            disabled={isPurchasing || !selectedPackage}
             style={paywall.ctaWrap}
           >
             <LinearGradient
@@ -343,7 +370,13 @@ function PaywallSlide({
               end={{ x: 1, y: 0 }}
               style={paywall.cta}
             >
-              <Text style={paywall.ctaText}>Start 3-Day Free Trial</Text>
+              {isPurchasing ? (
+                <ActivityIndicator size="small" color="#0A0E17" />
+              ) : (
+                <Text style={paywall.ctaText}>
+                  Subscribe — {billing === "monthly" ? monthlyPrice + "/mo" : annualPrice + "/yr"}
+                </Text>
+              )}
             </LinearGradient>
           </Pressable>
         </Animated.View>
@@ -352,10 +385,56 @@ function PaywallSlide({
           <Text style={paywall.skipText}>Continue with limited access</Text>
         </Pressable>
 
+        <Pressable
+          onPress={onRestore}
+          disabled={isRestoring}
+          style={paywall.restoreWrap}
+        >
+          {isRestoring ? (
+            <ActivityIndicator size="small" color={C.textTertiary} />
+          ) : (
+            <Text style={paywall.restoreText}>Restore Purchases</Text>
+          )}
+        </Pressable>
+
         <Text style={paywall.legal}>
           Subscription auto-renews. Cancel anytime in Settings.
         </Text>
       </Animated.View>
+
+      {/* Custom confirmation modal for dev/test mode */}
+      <Modal
+        visible={confirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmVisible(false)}
+      >
+        <View style={paywall.modalOverlay}>
+          <View style={paywall.modalCard}>
+            <Text style={paywall.modalTitle}>Confirm Purchase</Text>
+            <Text style={paywall.modalBody}>
+              {`You are in test mode. Confirm purchase of the ${billing} plan (${billing === "monthly" ? monthlyPrice + "/mo" : annualPrice + "/yr"})?`}
+            </Text>
+            <View style={paywall.modalActions}>
+              <Pressable
+                onPress={() => setConfirmVisible(false)}
+                style={[paywall.modalBtn, paywall.modalBtnCancel]}
+              >
+                <Text style={paywall.modalBtnCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setConfirmVisible(false);
+                  if (selectedPackage) onPurchase(selectedPackage);
+                }}
+                style={[paywall.modalBtn, paywall.modalBtnConfirm]}
+              >
+                <Text style={paywall.modalBtnConfirmText}>Confirm</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -382,7 +461,8 @@ const TOTAL = SLIDES.length + 1; // slides + paywall
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { markOnboardingComplete, upgradeToPro } = useAppContext();
+  const { markOnboardingComplete } = useAppContext();
+  const { monthlyPackage, annualPackage, purchase, restore, isPurchasing, isRestoring } = useSubscription();
   const listRef = useRef<FlatList>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -404,10 +484,25 @@ export default function OnboardingScreen() {
     listRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
   };
 
-  const handleStartTrial = async () => {
-    await upgradeToPro();
-    await markOnboardingComplete();
-    router.replace("/");
+  const handlePurchase = async (pkg: PurchasesPackage) => {
+    try {
+      await purchase(pkg);
+      await markOnboardingComplete();
+      router.replace("/");
+    } catch (err: any) {
+      if (err?.userCancelled) return;
+      console.error("Purchase failed:", err?.message);
+    }
+  };
+
+  const handleRestore = async () => {
+    try {
+      await restore();
+      await markOnboardingComplete();
+      router.replace("/");
+    } catch (err: any) {
+      console.error("Restore failed:", err?.message);
+    }
   };
 
   const handleContinueFree = async () => {
@@ -420,14 +515,19 @@ export default function OnboardingScreen() {
       if (item === "paywall") {
         return (
           <PaywallSlide
-            onStartTrial={handleStartTrial}
             onContinueFree={handleContinueFree}
+            monthlyPackage={monthlyPackage}
+            annualPackage={annualPackage}
+            onPurchase={handlePurchase}
+            onRestore={handleRestore}
+            isPurchasing={isPurchasing}
+            isRestoring={isRestoring}
           />
         );
       }
       return <OnboardingSlide item={item} index={index} />;
     },
-    []
+    [monthlyPackage, annualPackage, isPurchasing, isRestoring]
   );
 
   const data: ((typeof SLIDES)[number] | "paywall")[] = [...SLIDES, "paywall"];
@@ -827,6 +927,16 @@ const paywall = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: C.textSecondary,
   },
+  restoreWrap: {
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  restoreText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: C.textTertiary,
+    textDecorationLine: "underline",
+  },
   legal: {
     fontSize: 10,
     fontFamily: "Inter_400Regular",
@@ -834,6 +944,62 @@ const paywall = StyleSheet.create({
     textAlign: "center",
     lineHeight: 14,
     marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+  },
+  modalCard: {
+    backgroundColor: "#1A1F2E",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+    color: C.text,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  modalBody: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: C.textSecondary,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  modalBtnCancel: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  modalBtnConfirm: {
+    backgroundColor: C.accent,
+  },
+  modalBtnCancelText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: C.textSecondary,
+  },
+  modalBtnConfirmText: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    color: "#0A0E17",
   },
 });
 

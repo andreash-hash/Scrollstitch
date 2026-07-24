@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ONBOARDING_KEY = "@scrollsnap/onboarding_complete";
-const PRO_KEY = "@scrollsnap/is_pro";
 
 interface AppContextType {
   hasSeenOnboarding: boolean;
@@ -10,6 +9,8 @@ interface AppContextType {
   isLoading: boolean;
   markOnboardingComplete: () => Promise<void>;
   resetOnboarding: () => Promise<void>;
+  setIsPro: (value: boolean) => void;
+  // Kept for backward compatibility (no-ops)
   upgradeToPro: () => Promise<void>;
   downgradeToFree: () => Promise<void>;
 }
@@ -20,6 +21,7 @@ const AppContext = createContext<AppContextType>({
   isLoading: true,
   markOnboardingComplete: async () => {},
   resetOnboarding: async () => {},
+  setIsPro: () => {},
   upgradeToPro: async () => {},
   downgradeToFree: async () => {},
 });
@@ -32,12 +34,8 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     (async () => {
       try {
-        const [onb, pro] = await Promise.all([
-          AsyncStorage.getItem(ONBOARDING_KEY),
-          AsyncStorage.getItem(PRO_KEY),
-        ]);
+        const onb = await AsyncStorage.getItem(ONBOARDING_KEY);
         setHasSeenOnboarding(onb === "true");
-        setIsPro(pro === "true");
       } catch {}
       setIsLoading(false);
     })();
@@ -53,15 +51,9 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
     setHasSeenOnboarding(false);
   };
 
-  const upgradeToPro = async () => {
-    await AsyncStorage.setItem(PRO_KEY, "true");
-    setIsPro(true);
-  };
-
-  const downgradeToFree = async () => {
-    await AsyncStorage.setItem(PRO_KEY, "false");
-    setIsPro(false);
-  };
+  // No-ops: isPro is now driven by RevenueCat entitlement via SubscriptionSync
+  const upgradeToPro = async () => {};
+  const downgradeToFree = async () => {};
 
   return (
     <AppContext.Provider
@@ -71,6 +63,7 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
         isLoading,
         markOnboardingComplete,
         resetOnboarding,
+        setIsPro,
         upgradeToPro,
         downgradeToFree,
       }}

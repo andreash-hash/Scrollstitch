@@ -9,13 +9,33 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Alert } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AppContextProvider, useAppContext } from "@/contexts/AppContext";
+import { initializeRevenueCat, SubscriptionProvider, useSubscription } from "@/lib/revenuecat";
 
 SplashScreen.preventAutoHideAsync();
+
+try {
+  initializeRevenueCat();
+} catch (err: any) {
+  Alert.alert("RevenueCat Unavailable", err?.message ?? "Unknown error");
+}
+
+/** Syncs RevenueCat subscription status into AppContext's isPro. */
+function SubscriptionSync() {
+  const { isSubscribed } = useSubscription();
+  const { setIsPro } = useAppContext();
+
+  useEffect(() => {
+    setIsPro(isSubscribed);
+  }, [isSubscribed]);
+
+  return null;
+}
 
 function RootLayoutNav() {
   const { hasSeenOnboarding, isLoading } = useAppContext();
@@ -33,10 +53,13 @@ function RootLayoutNav() {
   }, [isLoading, hasSeenOnboarding, segments]);
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
-    </Stack>
+    <>
+      <SubscriptionSync />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
+      </Stack>
+    </>
   );
 }
 
@@ -60,11 +83,13 @@ export default function RootLayout() {
     <ErrorBoundary>
       <AppContextProvider>
         <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView>
-            <KeyboardProvider>
-              <RootLayoutNav />
-            </KeyboardProvider>
-          </GestureHandlerRootView>
+          <SubscriptionProvider>
+            <GestureHandlerRootView>
+              <KeyboardProvider>
+                <RootLayoutNav />
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </SubscriptionProvider>
         </QueryClientProvider>
       </AppContextProvider>
     </ErrorBoundary>

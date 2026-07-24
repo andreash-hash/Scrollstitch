@@ -12,6 +12,7 @@ import {
   Dimensions,
   StatusBar,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -424,6 +425,7 @@ export default function ScrollSnapScreen() {
   const [cropBottom, setCropBottom] = useState(0);
   const [isCropping, setIsCropping] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fakeTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressRef = useRef(0);
@@ -833,6 +835,52 @@ export default function ScrollSnapScreen() {
         )}
       </View>
 
+      {/* Upgrade modal for free users */}
+      <Modal
+        visible={showUpgradeModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUpgradeModal(false)}
+      >
+        <View style={styles.upgradeOverlay}>
+          <View style={styles.upgradeCard}>
+            <LinearGradient
+              colors={["rgba(0,212,170,0.2)", "rgba(0,212,170,0.04)"]}
+              style={styles.upgradeIconBg}
+            >
+              <Feather name="lock" size={24} color={C.accent} />
+            </LinearGradient>
+            <Text style={styles.upgradeTitle}>Pro Feature</Text>
+            <Text style={styles.upgradeBody}>
+              Crop controls, sensitivity settings, and output quality are available in ScrollSnap Pro.
+            </Text>
+            <Pressable
+              onPress={async () => {
+                setShowUpgradeModal(false);
+                await resetOnboarding();
+                router.replace("/onboarding");
+              }}
+              style={styles.upgradeBtn}
+            >
+              <LinearGradient
+                colors={[C.accent, "#00E5B8"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.upgradeBtnGrad}
+              >
+                <Text style={styles.upgradeBtnText}>View Plans</Text>
+              </LinearGradient>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowUpgradeModal(false)}
+              style={styles.upgradeDismiss}
+            >
+              <Text style={styles.upgradeDismissText}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
@@ -888,19 +936,33 @@ export default function ScrollSnapScreen() {
             )}
 
             <Pressable
-              onPress={() => setShowSettings((v) => !v)}
+              onPress={() => {
+                if (!isPro) {
+                  setShowUpgradeModal(true);
+                } else {
+                  setShowSettings((v) => !v);
+                }
+              }}
               style={styles.settingsToggle}
             >
               <Feather name="sliders" size={15} color={C.textSecondary} />
               <Text style={styles.settingsToggleText}>Settings</Text>
-              <Feather
-                name={showSettings ? "chevron-up" : "chevron-down"}
-                size={14}
-                color={C.textSecondary}
-              />
+              {!isPro && (
+                <View style={styles.proLockBadge}>
+                  <Feather name="lock" size={10} color={C.accent} />
+                  <Text style={styles.proLockText}>PRO</Text>
+                </View>
+              )}
+              {isPro && (
+                <Feather
+                  name={showSettings ? "chevron-up" : "chevron-down"}
+                  size={14}
+                  color={C.textSecondary}
+                />
+              )}
             </Pressable>
 
-            {showSettings && (
+            {showSettings && isPro && (
               <View style={styles.settingsPanel}>
                 <Text style={styles.settingLabel}>Sensitivity</Text>
                 <View style={styles.settingRow}>
@@ -1097,66 +1159,79 @@ export default function ScrollSnapScreen() {
               </ScrollView>
             </View>
 
-            <View style={styles.cropPanel}>
-              <View style={styles.cropTitleRow}>
-                <Feather name="crop" size={14} color={C.textSecondary} />
-                <Text style={styles.cropTitle}>Trim edges</Text>
-              </View>
-              <View style={styles.cropRow}>
-                <View style={styles.cropControl}>
-                  <Text style={styles.cropControlLabel}>Top  {cropTop > 0 ? `${cropTop}px` : ""}</Text>
-                  <View style={styles.cropStepper}>
-                    <Pressable
-                      onPress={() => setCropTop((v) => Math.max(0, v - 50))}
-                      style={styles.stepperBtn}
-                    >
-                      <Feather name="minus" size={16} color={C.textSecondary} />
-                    </Pressable>
-                    <Text style={styles.stepperVal}>{cropTop}</Text>
-                    <Pressable
-                      onPress={() => setCropTop((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
-                      style={styles.stepperBtn}
-                    >
-                      <Feather name="plus" size={16} color={C.accent} />
-                    </Pressable>
+            {isPro ? (
+              <View style={styles.cropPanel}>
+                <View style={styles.cropTitleRow}>
+                  <Feather name="crop" size={14} color={C.textSecondary} />
+                  <Text style={styles.cropTitle}>Trim edges</Text>
+                </View>
+                <View style={styles.cropRow}>
+                  <View style={styles.cropControl}>
+                    <Text style={styles.cropControlLabel}>Top  {cropTop > 0 ? `${cropTop}px` : ""}</Text>
+                    <View style={styles.cropStepper}>
+                      <Pressable
+                        onPress={() => setCropTop((v) => Math.max(0, v - 50))}
+                        style={styles.stepperBtn}
+                      >
+                        <Feather name="minus" size={16} color={C.textSecondary} />
+                      </Pressable>
+                      <Text style={styles.stepperVal}>{cropTop}</Text>
+                      <Pressable
+                        onPress={() => setCropTop((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
+                        style={styles.stepperBtn}
+                      >
+                        <Feather name="plus" size={16} color={C.accent} />
+                      </Pressable>
+                    </View>
+                  </View>
+                  <View style={styles.cropControl}>
+                    <Text style={styles.cropControlLabel}>Bottom  {cropBottom > 0 ? `${cropBottom}px` : ""}</Text>
+                    <View style={styles.cropStepper}>
+                      <Pressable
+                        onPress={() => setCropBottom((v) => Math.max(0, v - 50))}
+                        style={styles.stepperBtn}
+                      >
+                        <Feather name="minus" size={16} color={C.textSecondary} />
+                      </Pressable>
+                      <Text style={styles.stepperVal}>{cropBottom}</Text>
+                      <Pressable
+                        onPress={() => setCropBottom((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
+                        style={styles.stepperBtn}
+                      >
+                        <Feather name="plus" size={16} color={C.accent} />
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
-                <View style={styles.cropControl}>
-                  <Text style={styles.cropControlLabel}>Bottom  {cropBottom > 0 ? `${cropBottom}px` : ""}</Text>
-                  <View style={styles.cropStepper}>
-                    <Pressable
-                      onPress={() => setCropBottom((v) => Math.max(0, v - 50))}
-                      style={styles.stepperBtn}
-                    >
-                      <Feather name="minus" size={16} color={C.textSecondary} />
-                    </Pressable>
-                    <Text style={styles.stepperVal}>{cropBottom}</Text>
-                    <Pressable
-                      onPress={() => setCropBottom((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
-                      style={styles.stepperBtn}
-                    >
-                      <Feather name="plus" size={16} color={C.accent} />
-                    </Pressable>
-                  </View>
-                </View>
+                {(cropTop > 0 || cropBottom > 0) && (
+                  <Pressable
+                    onPress={applyCrop}
+                    disabled={isCropping}
+                    style={styles.cropApplyBtn}
+                  >
+                    {isCropping ? (
+                      <ActivityIndicator size="small" color="#0A0E17" />
+                    ) : (
+                      <Feather name="check" size={16} color="#0A0E17" />
+                    )}
+                    <Text style={styles.cropApplyText}>
+                      {isCropping ? "Cropping..." : "Apply Crop"}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
-              {(cropTop > 0 || cropBottom > 0) && (
-                <Pressable
-                  onPress={applyCrop}
-                  disabled={isCropping}
-                  style={styles.cropApplyBtn}
-                >
-                  {isCropping ? (
-                    <ActivityIndicator size="small" color="#0A0E17" />
-                  ) : (
-                    <Feather name="check" size={16} color="#0A0E17" />
-                  )}
-                  <Text style={styles.cropApplyText}>
-                    {isCropping ? "Cropping..." : "Apply Crop"}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
+            ) : (
+              <Pressable
+                onPress={() => setShowUpgradeModal(true)}
+                style={styles.cropPanelLocked}
+              >
+                <Feather name="lock" size={14} color={C.accent} />
+                <Text style={styles.cropPanelLockedText}>Trim edges — Pro feature</Text>
+                <View style={styles.proLockBadge}>
+                  <Text style={styles.proLockText}>UPGRADE</Text>
+                </View>
+              </Pressable>
+            )}
 
             {(isSaving || isSharing) && (
               <ActivityOverlay label={isSaving ? "Preparing image..." : "Preparing PDF..."} />
@@ -1761,5 +1836,96 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter_600SemiBold",
     color: "#0A0E17",
+  },
+  cropPanelLocked: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  cropPanelLockedText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: C.textSecondary,
+  },
+  proLockBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(0,212,170,0.12)",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  proLockText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    color: C.accent,
+    letterSpacing: 0.5,
+  },
+  upgradeOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+  },
+  upgradeCard: {
+    backgroundColor: "#1A1F2E",
+    borderRadius: 24,
+    padding: 28,
+    width: "100%",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  upgradeIconBg: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  upgradeTitle: {
+    fontSize: 22,
+    fontFamily: "Inter_700Bold",
+    color: C.text,
+    marginBottom: 10,
+  },
+  upgradeBody: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: C.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  upgradeBtn: {
+    width: "100%",
+    borderRadius: 14,
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  upgradeBtnGrad: {
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  upgradeBtnText: {
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+    color: "#0A0E17",
+  },
+  upgradeDismiss: {
+    paddingVertical: 8,
+  },
+  upgradeDismissText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: C.textTertiary,
   },
 });
