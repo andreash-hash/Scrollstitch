@@ -3,6 +3,11 @@ import { createServer, type Server } from "node:http";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+
+const privacyPolicyHtml = fs.readFileSync(
+  path.resolve(process.cwd(), "server", "templates", "privacy-policy.html"),
+  "utf-8"
+);
 import multer from "multer";
 import {
   deduplicateFrames,
@@ -45,6 +50,11 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.get("/privacy", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(privacyPolicyHtml);
+  });
+
   app.post(
     "/api/process-frames",
     upload.array("frames", 500),
