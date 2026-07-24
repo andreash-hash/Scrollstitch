@@ -1027,10 +1027,9 @@ export default function ScrollSnapScreen() {
                   <View style={styles.subscriptionSection}>
                     <Text style={styles.settingLabel}>Subscription</Text>
                     <Pressable
-                      onPress={async () => {
+                      onPress={() => {
                         setShowSettings(false);
-                        await resetOnboarding();
-                        router.replace("/onboarding");
+                        router.push("/onboarding?directPaywall=1");
                       }}
                       style={styles.upgradeInlineBtn}
                     >

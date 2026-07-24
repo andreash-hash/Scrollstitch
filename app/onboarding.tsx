@@ -30,7 +30,7 @@ import Animated, {
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 import Colors from "@/constants/colors";
@@ -506,10 +506,24 @@ const TOTAL = SLIDES.length + 1; // slides + paywall
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { directPaywall } = useLocalSearchParams<{ directPaywall?: string }>();
   const { markOnboardingComplete } = useAppContext();
   const { monthlyPackage, annualPackage, purchase, restore, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings } = useSubscription();
   const listRef = useRef<FlatList>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const initialIndex = directPaywall === "1" ? SLIDES.length : 0;
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
+
+  // When opened directly to the paywall, scroll the FlatList there immediately
+  // (initial state already reflects the paywall, but the list renders at offset 0)
+  useEffect(() => {
+    if (directPaywall === "1") {
+      // Use a short delay so the FlatList has laid out before we scroll
+      const t = setTimeout(() => {
+        listRef.current?.scrollToIndex({ index: SLIDES.length, animated: false });
+      }, 50);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   const isPaywall = activeIndex === SLIDES.length;
 
