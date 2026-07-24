@@ -71,8 +71,20 @@ async function validateFrames(framePaths, onProgress) {
   const warnings = [];
   for (let i = 0; i < framePaths.length; i++) {
     try {
-      await sharp(framePaths[i]).resize(8, 8, { fit: "fill" }).greyscale().raw().toBuffer();
-      valid.push(framePaths[i]);
+      const probe = await sharp(framePaths[i]).resize(32, 32, { fit: "fill" }).greyscale().raw().toBuffer();
+      let min = 255;
+      let max = 0;
+      for (let p = 0; p < probe.length; p++) {
+        if (probe[p] < min) min = probe[p];
+        if (probe[p] > max) max = probe[p];
+      }
+      if (max - min < 5 && max < 12) {
+        const msg = `Frame ${i + 1} of ${framePaths.length} was blank (all black) and was skipped.`;
+        console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
+        warnings.push(msg);
+      } else {
+        valid.push(framePaths[i]);
+      }
     } catch {
       const msg = `Frame ${i + 1} of ${framePaths.length} could not be decoded and was skipped.`;
       console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
@@ -400,6 +412,12 @@ async function selectFrames(framePaths, onProgress) {
       "All frames were near-duplicates of the first frame \u2014 the result is a single frame. Make sure the recording actually scrolls."
     );
   }
+  const seamCount = selection.paths.length - 1;
+  if (seamCount > 0 && selection.gapCount >= Math.max(3, Math.ceil(seamCount / 2))) {
+    selection.warnings.unshift(
+      `Most frames did not overlap (${selection.gapCount} of ${seamCount} seams) \u2014 the scrolling was probably too fast for stitching. Re-record with a slower, steadier scroll.`
+    );
+  }
   console.log(
     `Selection: ${framePaths.length} \u2192 ${selection.paths.length} frames (${selection.skippedNearDuplicates} near-duplicates, ${selection.skippedRedundant} redundant, ${selection.gapCount} gaps)`
   );
@@ -516,6 +534,24 @@ async function stitchFrames(framePaths, outputPath, quality = "png", seams = nul
     await pipeline.png().toFile(outputPath);
   }
   return { width: targetWidth, height: totalHeight, format };
+}
+var PREVIEW_MAX_PIXELS = 12e6;
+async function generatePreviewImage(imagePath, outputPath, maxPixels = PREVIEW_MAX_PIXELS) {
+  const meta = await sharp(imagePath).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  const pixels = width * height;
+  if (!pixels || pixels <= maxPixels) {
+    return { scaled: false, width, height };
+  }
+  const factor = Math.min(Math.sqrt(maxPixels / pixels), (JPEG_MAX_DIMENSION - 100) / height);
+  const previewWidth = Math.max(1, Math.round(width * factor));
+  const previewHeight = Math.max(1, Math.round(height * factor));
+  await sharp(imagePath, { limitInputPixels: false }).resize(previewWidth, previewHeight, { fit: "fill" }).jpeg({ quality: 75 }).toFile(outputPath);
+  console.log(
+    `preview: ${width}\xD7${height} (${(pixels / 1e6).toFixed(0)}MP) \u2192 ${previewWidth}\xD7${previewHeight}`
+  );
+  return { scaled: true, width: previewWidth, height: previewHeight };
 }
 async function generatePdf(imagePath, outputPath) {
   const PDFDocument = (await import("pdfkit")).default;
@@ -675,6 +711,12 @@ async function registerRoutes(app2) {
                 "The stitched image is too tall for JPEG \u2014 it was saved as PNG instead."
               );
             }
+            let previewUrl = `/api/output/${jobId}.${imgExt}`;
+            const previewPath = path2.join(outputDir, `${jobId}_preview.jpg`);
+            const preview = await generatePreviewImage(outputImagePath, previewPath);
+            if (preview.scaled) {
+              previewUrl = `/api/output/${jobId}_preview.jpg`;
+            }
             const outputPdfPath = path2.join(outputDir, `${jobId}.pdf`);
             updateJob(jobId, { stage: "Generating PDF", progress: STAGE_SPANS.pdf[0], detail: void 0 });
             await generatePdf(outputImagePath, outputPdfPath);
@@ -691,6 +733,7 @@ async function registerRoutes(app2) {
               detail: void 0,
               result: {
                 imageUrl: `/api/output/${jobId}.${imgExt}`,
+                previewUrl,
                 pdfUrl: `/api/output/${jobId}.pdf`,
                 frameCount: framePaths.length,
                 uniqueFrames: uniqueFrames.length,
@@ -776,11 +819,21 @@ async function registerRoutes(app2) {
       const croppedFilename = `${baseName}_crop${ext}`;
       const croppedPath = path2.join(outputDir, croppedFilename);
       await sharp2(filePath).extract({ left: 0, top: cropTop, width: origWidth, height: newHeight }).toFile(croppedPath);
+      let previewUrl = `/api/output/${croppedFilename}`;
+      const previewFilename = `${baseName}_crop_preview.jpg`;
+      const preview = await generatePreviewImage(
+        croppedPath,
+        path2.join(outputDir, previewFilename)
+      );
+      if (preview.scaled) {
+        previewUrl = `/api/output/${previewFilename}`;
+      }
       const pdfFilename = `${baseName}_crop.pdf`;
       const pdfPath = path2.join(outputDir, pdfFilename);
       await generatePdf(croppedPath, pdfPath);
       res.json({
         imageUrl: `/api/output/${croppedFilename}`,
+        previewUrl,
         pdfUrl: `/api/output/${pdfFilename}`,
         dimensions: { width: origWidth, height: newHeight }
       });

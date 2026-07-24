@@ -122,8 +122,29 @@ export async function validateFrames(
     try {
       // Tiny full decode: metadata() only reads the header and misses
       // truncated scan data, so force an actual decode of the pixels.
-      await sharp(framePaths[i]).resize(8, 8, { fit: "fill" }).greyscale().raw().toBuffer();
-      valid.push(framePaths[i]);
+      const probe = await sharp(framePaths[i])
+        .resize(32, 32, { fit: "fill" })
+        .greyscale()
+        .raw()
+        .toBuffer();
+
+      // Uniform near-black frames are video-decoder glitches (iOS Safari can
+      // paint the canvas before the seeked frame is decoded), not content —
+      // they can never stitch and would force a gap on both sides. Legit dark
+      // content keeps its structure and passes the spread test.
+      let min = 255;
+      let max = 0;
+      for (let p = 0; p < probe.length; p++) {
+        if (probe[p] < min) min = probe[p];
+        if (probe[p] > max) max = probe[p];
+      }
+      if (max - min < 5 && max < 12) {
+        const msg = `Frame ${i + 1} of ${framePaths.length} was blank (all black) and was skipped.`;
+        console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
+        warnings.push(msg);
+      } else {
+        valid.push(framePaths[i]);
+      }
     } catch {
       const msg = `Frame ${i + 1} of ${framePaths.length} could not be decoded and was skipped.`;
       console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
@@ -664,6 +685,17 @@ export async function selectFrames(
     );
   }
 
+  // When gaps dominate, the individual seam warnings are noise — the real
+  // story is that the scroll outran the frame rate. Lead with that.
+  const seamCount = selection.paths.length - 1;
+  if (seamCount > 0 && selection.gapCount >= Math.max(3, Math.ceil(seamCount / 2))) {
+    selection.warnings.unshift(
+      `Most frames did not overlap (${selection.gapCount} of ${seamCount} seams) — ` +
+        `the scrolling was probably too fast for stitching. ` +
+        `Re-record with a slower, steadier scroll.`
+    );
+  }
+
   console.log(
     `Selection: ${framePaths.length} → ${selection.paths.length} frames ` +
       `(${selection.skippedNearDuplicates} near-duplicates, ${selection.skippedRedundant} redundant, ${selection.gapCount} gaps)`
@@ -842,6 +874,44 @@ export async function stitchFrames(
   }
 
   return { width: targetWidth, height: totalHeight, format };
+}
+
+// ---------------------------------------------------------------------------
+// Display preview — iOS refuses to decode very large images (tall stitches
+// easily exceed 50 megapixels and render as black), so results above the
+// pixel budget get a downscaled JPEG copy for on-screen use.
+// ---------------------------------------------------------------------------
+
+const PREVIEW_MAX_PIXELS = 12_000_000;
+
+export async function generatePreviewImage(
+  imagePath: string,
+  outputPath: string,
+  maxPixels: number = PREVIEW_MAX_PIXELS
+): Promise<{ scaled: boolean; width: number; height: number }> {
+  const meta = await sharp(imagePath).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  const pixels = width * height;
+
+  if (!pixels || pixels <= maxPixels) {
+    return { scaled: false, width, height };
+  }
+
+  // Stay under the pixel budget and the JPEG height limit
+  const factor = Math.min(Math.sqrt(maxPixels / pixels), (JPEG_MAX_DIMENSION - 100) / height);
+  const previewWidth = Math.max(1, Math.round(width * factor));
+  const previewHeight = Math.max(1, Math.round(height * factor));
+
+  await sharp(imagePath, { limitInputPixels: false })
+    .resize(previewWidth, previewHeight, { fit: "fill" })
+    .jpeg({ quality: 75 })
+    .toFile(outputPath);
+
+  console.log(
+    `preview: ${width}×${height} (${(pixels / 1e6).toFixed(0)}MP) → ${previewWidth}×${previewHeight}`
+  );
+  return { scaled: true, width: previewWidth, height: previewHeight };
 }
 
 // ---------------------------------------------------------------------------

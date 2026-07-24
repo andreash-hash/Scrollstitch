@@ -55,6 +55,9 @@ type ProcessingStage =
 
 interface ProcessingResult {
   imageUrl: string;
+  /** Downscaled copy for on-screen display — iOS refuses to decode very
+   * large images, so tall stitches would otherwise render black. */
+  previewUrl?: string;
   pdfUrl: string;
   frameCount: number;
   uniqueFrames: number;
@@ -62,6 +65,18 @@ interface ProcessingResult {
   gapCount?: number;
   warnings?: string[];
   dimensions: { width: number; height: number };
+}
+
+// 300ms sampling misses all overlap during fast flick-scrolls (a flick moves
+// 1-1.5 screen heights per 300ms), which turns every seam into a gap. 150ms
+// keeps consecutive frames overlapping even mid-flick; the dedup passes throw
+// away the surplus on slow sections. Long videos widen the interval so the
+// frame count stays bounded.
+const EXTRACT_INTERVAL_MS = 150;
+const MAX_EXTRACT_FRAMES = 240;
+
+function extractionIntervalMs(durationMs: number): number {
+  return Math.max(EXTRACT_INTERVAL_MS, Math.ceil(durationMs / MAX_EXTRACT_FRAMES));
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -147,20 +162,49 @@ async function extractFramesFromVideoWeb(
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
+    // Tiny probe canvas for detecting blank (undecoded) frames — iOS Safari
+    // can fire `seeked` before the frame is actually paintable.
+    const probeCanvas = document.createElement("canvas");
+    probeCanvas.width = 16;
+    probeCanvas.height = 16;
+    const probeCtx = probeCanvas.getContext("2d", { willReadFrequently: true });
     const frameUris: string[] = [];
-    const intervalMs = 300;
+    let intervalMs = EXTRACT_INTERVAL_MS;
     let currentFrame = 0;
     let totalFrames = 0;
 
-    const captureFrame = () => {
-      if (!ctx || video.videoWidth === 0) return;
+    const frameLooksBlank = (): boolean => {
+      if (!probeCtx || canvas.width === 0) return false;
+      probeCtx.drawImage(canvas, 0, 0, 16, 16);
+      const { data } = probeCtx.getImageData(0, 0, 16, 16);
+      let min = 255;
+      let max = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        if (g < min) min = g;
+        if (g > max) max = g;
+      }
+      // Uniform AND near-black = decoder glitch, not page content
+      return max - min < 6 && max < 16;
+    };
+
+    const captureFrame = (): boolean => {
+      if (!ctx || video.videoWidth === 0) return false;
       // Cap at 540px wide — full resolution causes memory exhaustion with 100+ frames.
       // 540px is still plenty for server dedup (8×8) and overlap detection (64px sample).
       const scale = Math.min(1, 540 / video.videoWidth);
       canvas.width = Math.round(video.videoWidth * scale);
       canvas.height = Math.round(video.videoHeight * scale);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      if (frameLooksBlank()) return false;
       frameUris.push(canvas.toDataURL("image/jpeg", 0.8));
+      return true;
+    };
+
+    const advance = () => {
+      onProgress(currentFrame + 1, totalFrames);
+      currentFrame++;
+      seekNext();
     };
 
     const seekNext = () => {
@@ -173,15 +217,22 @@ async function extractFramesFromVideoWeb(
     };
 
     video.addEventListener("loadedmetadata", () => {
+      intervalMs = extractionIntervalMs(video.duration * 1000);
       totalFrames = Math.max(1, Math.ceil((video.duration * 1000) / intervalMs));
       seekNext();
     });
 
     video.addEventListener("seeked", () => {
-      captureFrame();
-      onProgress(currentFrame + 1, totalFrames);
-      currentFrame++;
-      seekNext();
+      if (captureFrame()) {
+        advance();
+        return;
+      }
+      // Blank/undecoded — give the decoder one more paint cycle, then move on
+      // (skipping the frame if it is still blank).
+      setTimeout(() => {
+        captureFrame();
+        advance();
+      }, 80);
     });
 
     video.addEventListener("error", () => resolve(frameUris));
@@ -198,7 +249,7 @@ async function extractFramesFromVideo(
     return extractFramesFromVideoWeb(uri, onProgress);
   }
 
-  const intervalMs = 300;
+  const intervalMs = extractionIntervalMs(durationMs);
   const totalFrames = Math.ceil(durationMs / intervalMs);
   const frameUris: string[] = [];
 
@@ -567,7 +618,7 @@ export default function ScrollSnapScreen() {
 
   const processVideoUri = async (uri: string, durationMs: number) => {
     const threshold = SENSITIVITY_PRESETS[sensitivity].value;
-    const estimatedFrames = Math.ceil(durationMs / 300);
+    const estimatedFrames = Math.ceil(durationMs / extractionIntervalMs(durationMs));
 
     progressRef.current = 0;
     startTimeRef.current = Date.now();
@@ -805,7 +856,15 @@ export default function ScrollSnapScreen() {
       if (!res.ok) throw new Error("Crop failed");
       const data = await res.json();
       setResult((prev) =>
-        prev ? { ...prev, imageUrl: data.imageUrl, pdfUrl: data.pdfUrl } : prev
+        prev
+          ? {
+              ...prev,
+              imageUrl: data.imageUrl,
+              pdfUrl: data.pdfUrl,
+              previewUrl: data.previewUrl ?? data.imageUrl,
+              dimensions: data.dimensions ?? prev.dimensions,
+            }
+          : prev
       );
       setCropTop(0);
       setCropBottom(0);
@@ -1287,7 +1346,7 @@ export default function ScrollSnapScreen() {
               >
                 <Image
                   source={{
-                    uri: new URL(result.imageUrl, getApiUrl()).toString(),
+                    uri: new URL(result.previewUrl ?? result.imageUrl, getApiUrl()).toString(),
                   }}
                   style={{
                     width: SCREEN_WIDTH - 64,

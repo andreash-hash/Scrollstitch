@@ -30,6 +30,24 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Real-recording fixes (fast flicks, iOS preview)
+
+- **Denser frame sampling**: 300 ms sampling missed all overlap during flick
+  scrolls (a flick moves 1–1.5 screen heights per 300 ms → every seam became a
+  gap). Extraction now samples every 150 ms, widening adaptively so long videos
+  stay ≤ 240 frames; the dedup passes discard the surplus on slow sections.
+- **Blank-frame guards**: iOS Safari can fire `seeked` before the frame is
+  decoded, capturing all-black frames. The web extractor now probes the canvas
+  and retries/skips blanks; the server validation also drops uniform
+  near-black frames with a warning instead of letting them force gaps.
+- **Display preview**: iOS refuses to decode very large images (a long stitch
+  is easily 50+ MP and rendered black). Results above 12 MP now ship with a
+  downscaled JPEG `previewUrl` for on-screen use; saving/sharing still uses
+  the full-resolution image. The crop endpoint got the same treatment.
+- **Actionable gap summary**: when gaps dominate the seams, the result leads
+  with one clear warning ("scrolling was too fast — re-record with a slower,
+  steadier scroll") instead of dozens of per-seam messages.
+
 ### 2026-07 — RevenueCat merge repair
 
 - Restored the stitching-completion work below after a Replit push (RevenueCat

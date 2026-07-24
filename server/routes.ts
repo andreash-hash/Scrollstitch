@@ -10,6 +10,7 @@ import {
   detectAndRemoveStickyHeaders,
   selectFrames,
   stitchFrames,
+  generatePreviewImage,
   generatePdf,
   type Seam,
 } from "./video-processor";
@@ -188,6 +189,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               );
             }
 
+            // Downscaled display copy — very tall stitches will not decode on iOS
+            let previewUrl = `/api/output/${jobId}.${imgExt}`;
+            const previewPath = path.join(outputDir, `${jobId}_preview.jpg`);
+            const preview = await generatePreviewImage(outputImagePath, previewPath);
+            if (preview.scaled) {
+              previewUrl = `/api/output/${jobId}_preview.jpg`;
+            }
+
             const outputPdfPath = path.join(outputDir, `${jobId}.pdf`);
             updateJob(jobId, { stage: "Generating PDF", progress: STAGE_SPANS.pdf[0], detail: undefined });
             await generatePdf(outputImagePath, outputPdfPath);
@@ -206,6 +215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               detail: undefined,
               result: {
                 imageUrl: `/api/output/${jobId}.${imgExt}`,
+                previewUrl,
                 pdfUrl: `/api/output/${jobId}.pdf`,
                 frameCount: framePaths.length,
                 uniqueFrames: uniqueFrames.length,
@@ -318,12 +328,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .extract({ left: 0, top: cropTop, width: origWidth, height: newHeight })
         .toFile(croppedPath);
 
+      let previewUrl = `/api/output/${croppedFilename}`;
+      const previewFilename = `${baseName}_crop_preview.jpg`;
+      const preview = await generatePreviewImage(
+        croppedPath,
+        path.join(outputDir, previewFilename)
+      );
+      if (preview.scaled) {
+        previewUrl = `/api/output/${previewFilename}`;
+      }
+
       const pdfFilename = `${baseName}_crop.pdf`;
       const pdfPath = path.join(outputDir, pdfFilename);
       await generatePdf(croppedPath, pdfPath);
 
       res.json({
         imageUrl: `/api/output/${croppedFilename}`,
+        previewUrl,
         pdfUrl: `/api/output/${pdfFilename}`,
         dimensions: { width: origWidth, height: newHeight },
       });

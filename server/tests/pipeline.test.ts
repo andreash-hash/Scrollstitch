@@ -2,6 +2,8 @@ import { test, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
+import sharp from "sharp";
+import { generatePreviewImage } from "../video-processor";
 import {
   generatePage,
   renderFrames,
@@ -380,6 +382,83 @@ describe("scroll stitching pipeline (e2e on synthetic recordings)", () => {
       peakRss < 1.5 * 1024 * 1024 * 1024,
       `peak RSS ${(peakRss / 1e6).toFixed(0)} MB is unreasonable for 85 frames`
     );
+  });
+
+  test("blank (all-black) decoder-glitch frames are skipped with a warning", async () => {
+    const pageH = 3840;
+    const page = generatePage(WIDTH, pageH, 6161);
+    const positions = [0, 576, 1152, 1728, 2304, 2880];
+    const dir = makeTempDir("blank-mixed");
+    const frames = await renderFrames({
+      page,
+      outDir: dir,
+      frameHeight: FRAME_H,
+      frames: positions.map((position) => ({ position })),
+      jpegQuality: 80,
+    });
+
+    const blankPath = path.join(dir, "frame_black.jpg");
+    await sharp({
+      create: { width: WIDTH, height: FRAME_H, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .jpeg({ quality: 80 })
+      .toFile(blankPath);
+    const withBlank = [...frames.slice(0, 3), blankPath, ...frames.slice(3)];
+
+    const run = await runPipeline(withBlank);
+    assert.equal(run.validationWarnings.length, 1);
+    assert.match(run.validationWarnings[0], /blank/);
+    // The remaining frames stitch as if the glitch frame never existed
+    assert.equal(run.selection.gapCount, 0);
+    assert.ok(
+      Math.abs(run.stitch.height - pageH) <= 25,
+      `stitched height ${run.stitch.height} should be ≈${pageH}`
+    );
+  });
+
+  test("a scroll faster than the frame rate yields a leading 'too fast' warning", async () => {
+    const frameH = FRAME_H;
+    const positions = [0, 1200, 2400, 3600, 4800]; // every step > frame height
+    const pageH = 4800 + frameH;
+    const page = generatePage(WIDTH, pageH, 7272);
+    const frames = await renderFrames({
+      page,
+      outDir: makeTempDir("flick"),
+      frameHeight: frameH,
+      frames: positions.map((position) => ({ position })),
+      jpegQuality: 80,
+    });
+
+    const run = await runPipeline(frames);
+    assert.equal(run.selection.gapCount, 4);
+    assert.match(
+      run.selection.warnings[0],
+      /too fast/i,
+      "gap-majority runs should lead with actionable guidance"
+    );
+  });
+
+  test("very tall outputs get a downscaled preview image", async () => {
+    const dir = makeTempDir("preview");
+    const srcPath = path.join(dir, "tall.png");
+    const page = generatePage(400, 6000, 88); // 2.4MP source
+    await sharp(page.data, { raw: { width: 400, height: 6000, channels: 3 } })
+      .png()
+      .toFile(srcPath);
+
+    // Over budget → scaled JPEG
+    const scaledPath = path.join(dir, "preview.jpg");
+    const scaled = await generatePreviewImage(srcPath, scaledPath, 600_000);
+    assert.equal(scaled.scaled, true);
+    assert.ok(scaled.width * scaled.height <= 620_000, "preview must respect the pixel budget");
+    const meta = await sharp(scaledPath).metadata();
+    assert.equal(meta.format, "jpeg");
+    assert.equal(meta.width, scaled.width);
+
+    // Under budget → untouched
+    const small = await generatePreviewImage(srcPath, path.join(dir, "unused.jpg"), 10_000_000);
+    assert.equal(small.scaled, false);
+    assert.equal(small.width, 400);
   });
 
   test("a fully corrupt upload fails with a clear error", async () => {

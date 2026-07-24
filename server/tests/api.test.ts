@@ -53,6 +53,7 @@ interface JobStatus {
   error?: string;
   result?: {
     imageUrl: string;
+    previewUrl: string;
     pdfUrl: string;
     frameCount: number;
     uniqueFrames: number;
@@ -112,6 +113,8 @@ describe("/api/process-frames end to end", () => {
     assert.ok(Array.isArray(result.warnings));
     assert.equal(result.seams.length, result.selectedFrames);
     assert.ok(Math.abs(result.dimensions.height - pageH) <= 25);
+    // Small output → preview is the full image itself
+    assert.equal(result.previewUrl, result.imageUrl);
 
     // Both artifacts must be downloadable
     const imgRes = await fetch(`${baseUrl}${result.imageUrl}`);
