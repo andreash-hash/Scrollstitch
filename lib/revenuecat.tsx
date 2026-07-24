@@ -103,6 +103,8 @@ function useSubscriptionContext() {
     offeringsError: offeringsQuery.error,
     customerInfoIsError: customerInfoQuery.isError,
     customerInfoError: customerInfoQuery.error,
+    customerInfoIsLoading: customerInfoQuery.isLoading,
+    refetchCustomerInfo: customerInfoQuery.refetch,
     refetchOfferings: offeringsQuery.refetch,
     purchase: purchaseMutation.mutateAsync,
     restore: restoreMutation.mutateAsync,

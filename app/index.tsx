@@ -425,7 +425,7 @@ function openManageSubscriptions() {
 export default function ScrollSnapScreen() {
   const insets = useSafeAreaInsets();
   const { isPro, resetOnboarding } = useAppContext();
-  const { customerInfo, restore, isRestoring } = useSubscription();
+  const { customerInfo, restore, isRestoring, customerInfoIsError, refetchCustomerInfo } = useSubscription();
   const router = useRouter();
   const [stage, setStage] = useState<ProcessingStage>("idle");
   const [progress, setProgress] = useState(0);
@@ -968,7 +968,24 @@ export default function ScrollSnapScreen() {
             {showSettings && (
               <View style={styles.settingsPanel}>
                 {/* ── Subscription section ── */}
-                {isPro ? (
+                {customerInfoIsError ? (
+                  <View style={styles.subscriptionSection}>
+                    <Text style={styles.settingLabel}>Subscription</Text>
+                    <View style={styles.subErrorRow}>
+                      <Feather name="alert-circle" size={14} color={C.danger} />
+                      <Text style={styles.subErrorText}>
+                        Couldn't load subscription info
+                      </Text>
+                      <Pressable
+                        onPress={() => refetchCustomerInfo()}
+                        style={styles.subErrorRetryBtn}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.subErrorRetryText}>Retry</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : isPro ? (
                   <View style={styles.subscriptionSection}>
                     <Text style={styles.settingLabel}>Subscription</Text>
                     <View style={styles.subscriptionInfoRow}>
@@ -2105,5 +2122,33 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "rgba(255,255,255,0.06)",
     marginVertical: 4,
+  },
+  subErrorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,71,87,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255,71,87,0.25)",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  subErrorText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.75)",
+  },
+  subErrorRetryBtn: {
+    backgroundColor: "rgba(0,212,170,0.15)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  subErrorRetryText: {
+    color: C.accent,
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
   },
 });
