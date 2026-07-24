@@ -13,6 +13,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Modal,
+  Linking,
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -37,6 +38,7 @@ import Animated, { Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
+import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import Colors from "@/constants/colors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -406,9 +408,24 @@ function formatEta(ms: number): string {
   return `~${min}m ${rem}s remaining`;
 }
 
+function formatRenewalDate(dateString: string | null | undefined): string {
+  if (!dateString) return "—";
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+}
+
+function openManageSubscriptions() {
+  if (Platform.OS === "ios") {
+    Linking.openURL("itms-apps://apps.apple.com/account/subscriptions");
+  } else if (Platform.OS === "android") {
+    Linking.openURL("https://play.google.com/store/account/subscriptions");
+  }
+}
+
 export default function ScrollSnapScreen() {
   const insets = useSafeAreaInsets();
   const { isPro, resetOnboarding } = useAppContext();
+  const { customerInfo, restore, isRestoring } = useSubscription();
   const router = useRouter();
   const [stage, setStage] = useState<ProcessingStage>("idle");
   const [progress, setProgress] = useState(0);
@@ -936,35 +953,110 @@ export default function ScrollSnapScreen() {
             )}
 
             <Pressable
-              onPress={() => {
-                if (!isPro) {
-                  setShowUpgradeModal(true);
-                } else {
-                  setShowSettings((v) => !v);
-                }
-              }}
+              onPress={() => setShowSettings((v) => !v)}
               style={styles.settingsToggle}
             >
               <Feather name="sliders" size={15} color={C.textSecondary} />
               <Text style={styles.settingsToggleText}>Settings</Text>
-              {!isPro && (
-                <View style={styles.proLockBadge}>
-                  <Feather name="lock" size={10} color={C.accent} />
-                  <Text style={styles.proLockText}>PRO</Text>
-                </View>
-              )}
-              {isPro && (
-                <Feather
-                  name={showSettings ? "chevron-up" : "chevron-down"}
-                  size={14}
-                  color={C.textSecondary}
-                />
-              )}
+              <Feather
+                name={showSettings ? "chevron-up" : "chevron-down"}
+                size={14}
+                color={C.textSecondary}
+              />
             </Pressable>
 
-            {showSettings && isPro && (
+            {showSettings && (
               <View style={styles.settingsPanel}>
-                <Text style={styles.settingLabel}>Sensitivity</Text>
+                {/* ── Subscription section ── */}
+                {isPro ? (
+                  <View style={styles.subscriptionSection}>
+                    <Text style={styles.settingLabel}>Subscription</Text>
+                    <View style={styles.subscriptionInfoRow}>
+                      <View style={styles.subscriptionBadge}>
+                        <Feather name="zap" size={12} color={C.accent} />
+                        <Text style={styles.subscriptionBadgeText}>Pro</Text>
+                      </View>
+                      <Text style={styles.subscriptionPlanLabel}>
+                        {(() => {
+                          const productId =
+                            customerInfo?.entitlements.active?.[REVENUECAT_ENTITLEMENT_IDENTIFIER]
+                              ?.productIdentifier ?? "";
+                          if (productId.toLowerCase().includes("annual") || productId.toLowerCase().includes("yearly")) {
+                            return "Annual plan";
+                          }
+                          if (productId.toLowerCase().includes("month")) {
+                            return "Monthly plan";
+                          }
+                          return "Active plan";
+                        })()}
+                      </Text>
+                    </View>
+                    {customerInfo?.entitlements.active?.[REVENUECAT_ENTITLEMENT_IDENTIFIER]?.expirationDate && (
+                      <Text style={styles.subscriptionRenewal}>
+                        Renews{" "}
+                        {formatRenewalDate(
+                          customerInfo.entitlements.active[REVENUECAT_ENTITLEMENT_IDENTIFIER]?.expirationDate
+                        )}
+                      </Text>
+                    )}
+                    {Platform.OS !== "web" && (
+                      <Pressable onPress={openManageSubscriptions} style={styles.manageSubBtn}>
+                        <Feather name="external-link" size={13} color={C.accent} />
+                        <Text style={styles.manageSubBtnText}>Manage Subscription</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.subscriptionSection}>
+                    <Text style={styles.settingLabel}>Subscription</Text>
+                    <Pressable
+                      onPress={async () => {
+                        setShowSettings(false);
+                        await resetOnboarding();
+                        router.replace("/onboarding");
+                      }}
+                      style={styles.upgradeInlineBtn}
+                    >
+                      <LinearGradient
+                        colors={[C.accent, "#00E5B8"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.upgradeInlineBtnGrad}
+                      >
+                        <Feather name="zap" size={14} color="#0A0E17" />
+                        <Text style={styles.upgradeInlineBtnText}>Upgrade to Pro</Text>
+                      </LinearGradient>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* ── Restore Purchases ── */}
+                <Pressable
+                  onPress={async () => {
+                    try {
+                      await restore();
+                      Alert.alert("Restored", "Your purchases have been restored.");
+                    } catch {
+                      Alert.alert("Restore Failed", "Could not restore purchases. Please try again.");
+                    }
+                  }}
+                  disabled={isRestoring}
+                  style={styles.restoreBtn}
+                >
+                  {isRestoring ? (
+                    <ActivityIndicator size="small" color={C.textTertiary} />
+                  ) : (
+                    <Feather name="refresh-cw" size={13} color={C.textTertiary} />
+                  )}
+                  <Text style={styles.restoreBtnText}>
+                    {isRestoring ? "Restoring…" : "Restore Purchases"}
+                  </Text>
+                </Pressable>
+
+                {isPro && (
+                  <>
+                    <View style={styles.settingsDivider} />
+                    <Text style={styles.settingLabel}>Sensitivity</Text>
                 <View style={styles.settingRow}>
                   {(Object.keys(SENSITIVITY_PRESETS) as SensitivityKey[]).map((key) => (
                     <Pressable
@@ -1026,6 +1118,8 @@ export default function ScrollSnapScreen() {
                   <Feather name="play-circle" size={14} color={C.textTertiary} />
                   <Text style={styles.replayIntroText}>Replay intro</Text>
                 </Pressable>
+                  </>
+                )}
               </View>
             )}
           </Animated.View>
@@ -1927,5 +2021,89 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     color: C.textTertiary,
+  },
+  // Subscription section
+  subscriptionSection: {
+    gap: 8,
+    marginBottom: 4,
+  },
+  subscriptionInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  subscriptionBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,212,170,0.12)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  subscriptionBadgeText: {
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+    color: C.accent,
+  },
+  subscriptionPlanLabel: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    color: C.text,
+  },
+  subscriptionRenewal: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: C.textSecondary,
+  },
+  manageSubBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "rgba(0,212,170,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(0,212,170,0.25)",
+  },
+  manageSubBtnText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: C.accent,
+  },
+  upgradeInlineBtn: {
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  upgradeInlineBtnGrad: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+  },
+  upgradeInlineBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    color: "#0A0E17",
+  },
+  restoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+  },
+  restoreBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: C.textTertiary,
+  },
+  settingsDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    marginVertical: 4,
   },
 });
