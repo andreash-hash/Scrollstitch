@@ -27,12 +27,24 @@ try {
 
 /** Syncs RevenueCat subscription status into AppContext's isPro. */
 function SubscriptionSync() {
-  const { isSubscribed } = useSubscription();
+  const { isSubscribed, customerInfoIsError, customerInfoError, offeringsIsError, offeringsError } = useSubscription();
   const { setIsPro } = useAppContext();
 
   useEffect(() => {
     setIsPro(isSubscribed);
   }, [isSubscribed]);
+
+  useEffect(() => {
+    if (customerInfoIsError) {
+      console.warn("[SubscriptionSync] Failed to fetch customer info:", customerInfoError);
+    }
+  }, [customerInfoIsError, customerInfoError]);
+
+  useEffect(() => {
+    if (offeringsIsError) {
+      console.warn("[SubscriptionSync] Failed to fetch offerings:", offeringsError);
+    }
+  }, [offeringsIsError, offeringsError]);
 
   return null;
 }

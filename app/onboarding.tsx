@@ -270,6 +270,24 @@ const PRO_FEATURES = [
   { icon: "zap" as const, text: "Priority processing" },
 ];
 
+function PaywallSkeletonRow() {
+  const opacity = useSharedValue(0.4);
+
+  useEffect(() => {
+    opacity.value = withRepeat(
+      withSequence(withTiming(1, { duration: 700 }), withTiming(0.4, { duration: 700 })),
+      -1,
+      false
+    );
+  }, []);
+
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.View style={[paywall.skeletonRow, animStyle]} />
+  );
+}
+
 function PaywallSlide({
   onContinueFree,
   monthlyPackage,
@@ -278,6 +296,9 @@ function PaywallSlide({
   onRestore,
   isPurchasing,
   isRestoring,
+  offeringsIsLoading,
+  offeringsIsError,
+  onRetryOfferings,
 }: {
   onContinueFree: () => void;
   monthlyPackage: PurchasesPackage | null;
@@ -286,6 +307,9 @@ function PaywallSlide({
   onRestore: () => void;
   isPurchasing: boolean;
   isRestoring: boolean;
+  offeringsIsLoading: boolean;
+  offeringsIsError: boolean;
+  onRetryOfferings: () => void;
 }) {
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -339,47 +363,68 @@ function PaywallSlide({
           ))}
         </View>
 
-        <View style={paywall.billingToggle}>
-          {(["monthly", "annual"] as const).map((b) => (
-            <Pressable
-              key={b}
-              onPress={() => setBilling(b)}
-              style={[paywall.billingChip, billing === b && paywall.billingChipActive]}
-            >
-              <Text style={[paywall.billingChipText, billing === b && paywall.billingChipTextActive]}>
-                {b === "monthly" ? `${monthlyPrice} / mo` : `${annualPrice} / yr`}
-              </Text>
-              {b === "annual" && (
-                <View style={paywall.saveBadge}>
-                  <Text style={paywall.saveBadgeText}>SAVE 50%</Text>
-                </View>
-              )}
+        {/* Billing toggle & CTA — skeleton/error/ready states */}
+        {offeringsIsLoading ? (
+          <View style={paywall.skeletonWrap}>
+            <PaywallSkeletonRow />
+            <PaywallSkeletonRow />
+            <PaywallSkeletonRow />
+          </View>
+        ) : offeringsIsError ? (
+          <View style={paywall.errorWrap}>
+            <Feather name="wifi-off" size={22} color={C.textTertiary} />
+            <Text style={paywall.errorText}>
+              Couldn't load pricing. Check your connection and try again.
+            </Text>
+            <Pressable onPress={onRetryOfferings} style={paywall.retryBtn}>
+              <Text style={paywall.retryBtnText}>Retry</Text>
             </Pressable>
-          ))}
-        </View>
+          </View>
+        ) : (
+          <>
+            <View style={paywall.billingToggle}>
+              {(["monthly", "annual"] as const).map((b) => (
+                <Pressable
+                  key={b}
+                  onPress={() => setBilling(b)}
+                  style={[paywall.billingChip, billing === b && paywall.billingChipActive]}
+                >
+                  <Text style={[paywall.billingChipText, billing === b && paywall.billingChipTextActive]}>
+                    {b === "monthly" ? `${monthlyPrice} / mo` : `${annualPrice} / yr`}
+                  </Text>
+                  {b === "annual" && (
+                    <View style={paywall.saveBadge}>
+                      <Text style={paywall.saveBadgeText}>SAVE 50%</Text>
+                    </View>
+                  )}
+                </Pressable>
+              ))}
+            </View>
 
-        <Animated.View style={btnStyle}>
-          <Pressable
-            onPress={handleCtaPress}
-            disabled={isPurchasing || !selectedPackage}
-            style={paywall.ctaWrap}
-          >
-            <LinearGradient
-              colors={[C.accent, "#00E5B8"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={paywall.cta}
-            >
-              {isPurchasing ? (
-                <ActivityIndicator size="small" color="#0A0E17" />
-              ) : (
-                <Text style={paywall.ctaText}>
-                  Subscribe — {billing === "monthly" ? monthlyPrice + "/mo" : annualPrice + "/yr"}
-                </Text>
-              )}
-            </LinearGradient>
-          </Pressable>
-        </Animated.View>
+            <Animated.View style={btnStyle}>
+              <Pressable
+                onPress={handleCtaPress}
+                disabled={isPurchasing || !selectedPackage}
+                style={paywall.ctaWrap}
+              >
+                <LinearGradient
+                  colors={[C.accent, "#00E5B8"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={paywall.cta}
+                >
+                  {isPurchasing ? (
+                    <ActivityIndicator size="small" color="#0A0E17" />
+                  ) : (
+                    <Text style={paywall.ctaText}>
+                      Subscribe — {billing === "monthly" ? monthlyPrice + "/mo" : annualPrice + "/yr"}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </Pressable>
+            </Animated.View>
+          </>
+        )}
 
         <Pressable onPress={onContinueFree} style={paywall.skip}>
           <Text style={paywall.skipText}>Continue with limited access</Text>
@@ -462,7 +507,7 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { markOnboardingComplete } = useAppContext();
-  const { monthlyPackage, annualPackage, purchase, restore, isPurchasing, isRestoring } = useSubscription();
+  const { monthlyPackage, annualPackage, purchase, restore, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings } = useSubscription();
   const listRef = useRef<FlatList>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -522,12 +567,15 @@ export default function OnboardingScreen() {
             onRestore={handleRestore}
             isPurchasing={isPurchasing}
             isRestoring={isRestoring}
+            offeringsIsLoading={offeringsIsLoading}
+            offeringsIsError={offeringsIsError}
+            onRetryOfferings={refetchOfferings}
           />
         );
       }
       return <OnboardingSlide item={item} index={index} />;
     },
-    [monthlyPackage, annualPackage, isPurchasing, isRestoring]
+    [monthlyPackage, annualPackage, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings]
   );
 
   const data: ((typeof SLIDES)[number] | "paywall")[] = [...SLIDES, "paywall"];
@@ -944,6 +992,40 @@ const paywall = StyleSheet.create({
     textAlign: "center",
     lineHeight: 14,
     marginTop: 4,
+  },
+  skeletonWrap: {
+    gap: 10,
+    marginBottom: 20,
+  },
+  skeletonRow: {
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  errorWrap: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 20,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: C.textSecondary,
+    textAlign: "center",
+    lineHeight: 19,
+  },
+  retryBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: C.accent,
+  },
+  retryBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: C.accent,
   },
   modalOverlay: {
     flex: 1,
