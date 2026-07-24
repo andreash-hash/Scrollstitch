@@ -374,7 +374,7 @@ function PaywallSlide({
           <View style={paywall.errorWrap}>
             <Feather name="wifi-off" size={22} color={C.textTertiary} />
             <Text style={paywall.errorText}>
-              Couldn't load pricing. Check your connection and try again.
+              Couldn&apos;t load pricing. Check your connection and try again.
             </Text>
             <Pressable onPress={onRetryOfferings} style={paywall.retryBtn}>
               <Text style={paywall.retryBtnText}>Retry</Text>

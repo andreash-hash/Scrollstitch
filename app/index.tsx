@@ -58,8 +58,21 @@ interface ProcessingResult {
   pdfUrl: string;
   frameCount: number;
   uniqueFrames: number;
+  selectedFrames?: number;
+  gapCount?: number;
+  warnings?: string[];
   dimensions: { width: number; height: number };
 }
+
+const STAGE_LABELS: Record<string, string> = {
+  "Processing": "Preparing frames...",
+  "Validating frames": "Checking frames...",
+  "Removing duplicates": "Detecting duplicate frames...",
+  "Removing sticky headers": "Removing sticky headers & footers...",
+  "Selecting frames": "Selecting the best frames...",
+  "Stitching frames": "Stitching frames together...",
+  "Generating PDF": "Generating PDF...",
+};
 
 function PulsingDot() {
   const opacity = useSharedValue(0.3);
@@ -215,7 +228,8 @@ type SensitivityKey = keyof typeof SENSITIVITY_PRESETS;
 // return grayscale pixel values as hex string (512 pixels × 2 hex chars = 1024 chars).
 function getFrameThumbnailHashWeb(dataUrl: string): Promise<string> {
   return new Promise((resolve) => {
-    const img = new Image();
+    // document.createElement — `Image` is shadowed by the expo-image import
+    const img = document.createElement("img");
     img.onload = () => {
       try {
         const canvas = document.createElement("canvas");
@@ -524,22 +538,15 @@ export default function ScrollSnapScreen() {
             return;
           }
 
-          if (data.stage === "Removing duplicates") {
-            setStatusText("Detecting duplicate frames...");
-            advanceProgress(0.38);
-            startFakeTick(0.38, 0.48, 3000);
-          } else if (data.stage === "Removing sticky headers") {
-            setStatusText("Removing sticky headers & footers...");
-            advanceProgress(0.5);
-            startFakeTick(0.5, 0.58, 2000);
-          } else if (data.stage === "Stitching frames") {
-            setStatusText("Stitching frames together...");
-            advanceProgress(0.6);
-            startFakeTick(0.6, 0.75, 5000);
-          } else if (data.stage === "Generating PDF") {
-            setStatusText("Generating PDF...");
-            advanceProgress(0.78);
-            startFakeTick(0.78, 0.92, 4000);
+          // The server reports real progress (0..1) plus a per-frame counter
+          // in `detail` — map it into the client's processing window.
+          if (data.stage !== "Complete") {
+            const label = STAGE_LABELS[data.stage] ?? data.stage ?? "Processing...";
+            setStatusText(data.detail ? `${label} (${data.detail})` : label);
+            if (typeof data.progress === "number") {
+              stopFakeTick();
+              advanceProgress(0.34 + Math.min(1, Math.max(0, data.progress)) * 0.63);
+            }
           }
 
           if (data.stage === "Complete" && data.result) {
@@ -555,7 +562,7 @@ export default function ScrollSnapScreen() {
         } catch {}
       }, 500);
     },
-    [cleanupPolling, advanceProgress, startFakeTick, stopFakeTick]
+    [cleanupPolling, advanceProgress, stopFakeTick]
   );
 
   const processVideoUri = async (uri: string, durationMs: number) => {
@@ -919,7 +926,7 @@ export default function ScrollSnapScreen() {
               </View>
               <Text style={styles.heroTitle}>Convert Screen Recordings</Text>
               <Text style={styles.heroSubtitle}>
-                Pick a screen recording and we'll extract the unique frames,
+                Pick a screen recording and we&apos;ll extract the unique frames,
                 stitch them together, and create a seamless long image or PDF.
               </Text>
             </View>
@@ -974,7 +981,7 @@ export default function ScrollSnapScreen() {
                     <View style={styles.subErrorRow}>
                       <Feather name="alert-circle" size={14} color={C.danger} />
                       <Text style={styles.subErrorText}>
-                        Couldn't load subscription info
+                        Couldn&apos;t load subscription info
                       </Text>
                       <Pressable
                         onPress={() => refetchCustomerInfo()}
@@ -1227,8 +1234,10 @@ export default function ScrollSnapScreen() {
                 <Text style={styles.statLabel}>Total Frames</Text>
               </View>
               <View style={styles.statCard}>
-                <Text style={styles.statValue}>{result.uniqueFrames}</Text>
-                <Text style={styles.statLabel}>Unique</Text>
+                <Text style={styles.statValue}>
+                  {result.selectedFrames ?? result.uniqueFrames}
+                </Text>
+                <Text style={styles.statLabel}>Stitched</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statValue}>
@@ -1237,6 +1246,29 @@ export default function ScrollSnapScreen() {
                 <Text style={styles.statLabel}>Size</Text>
               </View>
             </View>
+
+            {((result.gapCount ?? 0) > 0 || (result.warnings?.length ?? 0) > 0) && (
+              <View style={styles.warningCard}>
+                <View style={styles.warningTitleRow}>
+                  <Feather name="alert-triangle" size={16} color={C.warning} />
+                  <Text style={styles.warningTitle}>
+                    {(result.gapCount ?? 0) > 0
+                      ? `${result.gapCount} scroll jump${(result.gapCount ?? 0) > 1 ? "s" : ""} detected`
+                      : "Heads up"}
+                  </Text>
+                </View>
+                {(result.warnings ?? []).slice(0, 3).map((w, idx) => (
+                  <Text key={idx} style={styles.warningText}>
+                    {w}
+                  </Text>
+                ))}
+                {(result.warnings?.length ?? 0) > 3 && (
+                  <Text style={styles.warningText}>
+                    +{(result.warnings?.length ?? 0) - 3} more warning(s)
+                  </Text>
+                )}
+              </View>
+            )}
 
             <View style={styles.previewContainer}>
               <View style={styles.previewLabelRow}>
@@ -1694,6 +1726,31 @@ const styles = StyleSheet.create({
     color: C.textTertiary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  warningCard: {
+    backgroundColor: "rgba(255, 183, 77, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 183, 77, 0.35)",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 20,
+    gap: 8,
+  },
+  warningTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: C.warning,
+  },
+  warningText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: C.textSecondary,
+    lineHeight: 17,
   },
   previewContainer: {
     backgroundColor: C.surface,

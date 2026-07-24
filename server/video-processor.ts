@@ -19,26 +19,57 @@ const HEADER_PIXEL_TOLERANCE = 10;
 // This eliminates false 20–50px matches on periodic UI chrome.
 const OVERLAP_MIN_FRACTION = 0.20;
 const OVERLAP_MIN_ABS = 40;           // absolute floor in px
+const OVERLAP_MAX_FRACTION = 0.90;    // search ceiling as fraction of frame height
 const NCC_SAMPLE_WIDTH = 64;          // downsample X to this width before NCC
 const NCC_COARSE_STEP = 8;            // px — coarse search step
 const NCC_FINE_RANGE = 16;            // px — fine-search ± around coarse winner
 const NCC_FINE_STEP = 1;              // px — fine-search resolution
-const NCC_CONFIDENCE = 0.85;          // minimum NCC to accept an overlap
+
+// Adaptive NCC confidence. A fixed 0.85 rejects valid matches on dark or
+// low-contrast screens where JPEG noise dominates the (small) signal, so the
+// threshold scales with the measured contrast (grayscale stddev) of the two
+// search regions: full 0.85 at/above NCC_CONTRAST_HIGH, floor 0.75 at/below
+// NCC_CONTRAST_LOW, linear in between.
+const NCC_CONFIDENCE_MAX = 0.85;
+const NCC_CONFIDENCE_MIN = 0.75;
+const NCC_CONTRAST_LOW = 8;
+const NCC_CONTRAST_HIGH = 40;
+
+// --- Greedy frame selection ---
+// Keep a frame when its overlap with the last kept frame is within the target
+// window; skip near-duplicates and overly redundant frames, hoping a later
+// frame gives a better seam. Skipped-but-measurable frames are remembered as a
+// fallback so a too-greedy skip never turns into a gap.
+const SELECT_TARGET_MAX_FRACTION = 0.60; // keep when overlap ≤ 60% of frame height
+const SELECT_NEAR_DUP_FRACTION = 0.80;   // overlap > 80% → near-duplicate, skip
+const SELECT_NEAR_DUP_SIMILARITY = 0.90; // perceptual similarity → near-duplicate, skip
+
+// --- Output safety limits ---
+const JPEG_MAX_DIMENSION = 65500;        // hard JPEG format limit
+const MAX_OUTPUT_PIXELS = 200_000_000;   // ~600 MB RGB — refuse absurd outputs
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+export type ProgressCallback = (done: number, total: number) => void;
+
+interface FrameSignature {
+  /** Plain 16×16 greyscale thumbnail. */
+  raw: Buffer;
+  /** Contrast-normalised 16×16 thumbnail — separates dark/low-contrast frames
+   * whose absolute pixel values all sit within the ±20 match tolerance. */
+  norm: Buffer;
+}
+
 async function getFrameSignature(
   framePath: string,
   size: number = DEDUP_HASH_SIZE
-): Promise<Buffer> {
-  const { data } = await sharp(framePath)
-    .resize(size, size, { fit: "fill" })
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  return data;
+): Promise<FrameSignature> {
+  const base = sharp(framePath).resize(size, size, { fit: "fill" }).greyscale();
+  const raw = await base.clone().raw().toBuffer();
+  const norm = await base.clone().normalise().raw().toBuffer();
+  return { raw, norm };
 }
 
 function bufferSimilarity(a: Buffer, b: Buffer): number {
@@ -48,6 +79,60 @@ function bufferSimilarity(a: Buffer, b: Buffer): number {
     if (Math.abs(a[i] - b[i]) < 20) matches++;
   }
   return matches / a.length;
+}
+
+/**
+ * Similarity of two frame signatures: the raw and the contrast-normalised
+ * channel must BOTH agree for a high score (min). On dark screens the raw
+ * channel saturates near 1.0 for any pair of frames, so the normalised
+ * channel is what tells scrolled content apart; on static solid screens the
+ * 16×16 cell averaging flattens sensor/JPEG noise, so both stay high and
+ * duplicates are still caught.
+ */
+function sigSimilarity(a: FrameSignature, b: FrameSignature): number {
+  return Math.min(bufferSimilarity(a.raw, b.raw), bufferSimilarity(a.norm, b.norm));
+}
+
+function greyStddev(buf: Buffer): number {
+  const n = buf.length;
+  if (n === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += buf[i];
+  const mean = sum / n;
+  let sq = 0;
+  for (let i = 0; i < n; i++) {
+    const d = buf[i] - mean;
+    sq += d * d;
+  }
+  return Math.sqrt(sq / n);
+}
+
+// ---------------------------------------------------------------------------
+// Frame validation — drop inputs sharp cannot decode
+// ---------------------------------------------------------------------------
+
+export async function validateFrames(
+  framePaths: string[],
+  onProgress?: ProgressCallback
+): Promise<{ valid: string[]; warnings: string[] }> {
+  const valid: string[] = [];
+  const warnings: string[] = [];
+
+  for (let i = 0; i < framePaths.length; i++) {
+    try {
+      // Tiny full decode: metadata() only reads the header and misses
+      // truncated scan data, so force an actual decode of the pixels.
+      await sharp(framePaths[i]).resize(8, 8, { fit: "fill" }).greyscale().raw().toBuffer();
+      valid.push(framePaths[i]);
+    } catch {
+      const msg = `Frame ${i + 1} of ${framePaths.length} could not be decoded and was skipped.`;
+      console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
+      warnings.push(msg);
+    }
+    onProgress?.(i + 1, framePaths.length);
+  }
+
+  return { valid, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -196,21 +281,24 @@ export async function detectAndRemoveStickyHeaders(
 // ---------------------------------------------------------------------------
 
 export async function deduplicateFrames(
-  framePaths: string[]
+  framePaths: string[],
+  onProgress?: ProgressCallback
 ): Promise<string[]> {
   if (framePaths.length === 0) return [];
   if (framePaths.length === 1) return framePaths;
 
   const unique: string[] = [framePaths[0]];
   let prevSig = await getFrameSignature(framePaths[0]);
+  onProgress?.(1, framePaths.length);
 
   for (let i = 1; i < framePaths.length; i++) {
     const sig = await getFrameSignature(framePaths[i]);
-    const sim = bufferSimilarity(prevSig, sig);
+    const sim = sigSimilarity(prevSig, sig);
     if (sim < SIMILARITY_THRESHOLD) {
       unique.push(framePaths[i]);
       prevSig = sig;
     }
+    onProgress?.(i + 1, framePaths.length);
   }
 
   return unique;
@@ -277,17 +365,46 @@ function computeNCC(
   return den > 0 ? num / den : 0;
 }
 
-async function findOverlap(
+function adaptiveNccThreshold(contrast: number): number {
+  if (contrast >= NCC_CONTRAST_HIGH) return NCC_CONFIDENCE_MAX;
+  if (contrast <= NCC_CONTRAST_LOW) return NCC_CONFIDENCE_MIN;
+  const t = (contrast - NCC_CONTRAST_LOW) / (NCC_CONTRAST_HIGH - NCC_CONTRAST_LOW);
+  return NCC_CONFIDENCE_MIN + t * (NCC_CONFIDENCE_MAX - NCC_CONFIDENCE_MIN);
+}
+
+export interface OverlapMeasurement {
+  /** True when the best NCC cleared the (adaptive) confidence threshold. */
+  matched: boolean;
+  /** Best-scoring overlap in pixels; 0 when !matched. */
+  overlapPx: number;
+  /** Best NCC observed in the search, even when below the threshold. */
+  ncc: number;
+  /** Confidence threshold that was applied (adaptive, 0.75–0.85). */
+  threshold: number;
+  /** Mean grayscale stddev of the two search regions. */
+  contrast: number;
+  /** Shorter of the two frame heights — the basis for overlap fractions. */
+  frameHeight: number;
+}
+
+export async function measureOverlap(
   topImagePath: string,
   bottomImagePath: string
-): Promise<number> {
-  const [topMeta, botMeta] = await Promise.all([
-    sharp(topImagePath).metadata(),
-    sharp(bottomImagePath).metadata(),
-  ]);
+): Promise<OverlapMeasurement> {
+  const none = (frameHeight: number): OverlapMeasurement => ({
+    matched: false,
+    overlapPx: 0,
+    ncc: 0,
+    threshold: NCC_CONFIDENCE_MAX,
+    contrast: 0,
+    frameHeight,
+  });
+
+  const topMeta = await sharp(topImagePath).metadata();
+  const botMeta = await sharp(bottomImagePath).metadata();
 
   if (!topMeta.width || !topMeta.height || !botMeta.width || !botMeta.height) {
-    return 0;
+    return none(0);
   }
 
   const frameH = Math.min(topMeta.height, botMeta.height);
@@ -295,31 +412,32 @@ async function findOverlap(
 
   // Minimum overlap: 20% of the shorter frame (eliminates false 20–50px matches)
   const minOverlap = Math.max(OVERLAP_MIN_ABS, Math.floor(frameH * OVERLAP_MIN_FRACTION));
-  // Maximum search: 90% of the shorter frame
-  const maxSearch = Math.floor(frameH * 0.90);
+  const maxSearch = Math.floor(frameH * OVERLAP_MAX_FRACTION);
 
   if (minOverlap >= maxSearch) {
     console.log(`  overlap: skipped (frame too short: ${frameH}px)`);
-    return 0;
+    return none(frameH);
   }
 
-  // Extract and downsample both search regions in parallel.
+  // Extract and downsample both search regions sequentially — only two small
+  // greyscale buffers (NCC_SAMPLE_WIDTH × maxSearch) live at any time.
   // topBuf: bottom maxSearch rows of Frame A, width→NCC_SAMPLE_WIDTH
   // botBuf: top    maxSearch rows of Frame B, width→NCC_SAMPLE_WIDTH
-  const [topBuf, botBuf] = await Promise.all([
-    sharp(topImagePath)
-      .extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch })
-      .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
-      .greyscale()
-      .raw()
-      .toBuffer(),
-    sharp(bottomImagePath)
-      .extract({ left: 0, top: 0, width: frameW, height: maxSearch })
-      .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
-      .greyscale()
-      .raw()
-      .toBuffer(),
-  ]);
+  const topBuf = await sharp(topImagePath)
+    .extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch })
+    .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
+    .greyscale()
+    .raw()
+    .toBuffer();
+  const botBuf = await sharp(bottomImagePath)
+    .extract({ left: 0, top: 0, width: frameW, height: maxSearch })
+    .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
+    .greyscale()
+    .raw()
+    .toBuffer();
+
+  const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
+  const threshold = adaptiveNccThreshold(contrast);
 
   // Coarse pass — iterate from minOverlap to maxSearch in NCC_COARSE_STEP steps.
   // Track GLOBAL maximum NCC; no "prefer smallest" or "prefer largest" bias.
@@ -334,13 +452,10 @@ async function findOverlap(
     }
   }
 
-  // Reject if best NCC is below confidence threshold
-  if (bestNCC < NCC_CONFIDENCE) {
-    console.log(`  overlap: 0px (bestNCC=${bestNCC.toFixed(3)} < ${NCC_CONFIDENCE}, no confident match)`);
-    return 0;
-  }
-
-  // Fine pass — 1px resolution within ±NCC_FINE_RANGE of the coarse winner
+  // Fine pass — 1px resolution within ±NCC_FINE_RANGE of the coarse winner.
+  // Run it BEFORE the confidence check: the true peak can sit up to
+  // NCC_COARSE_STEP/2 px off the coarse grid, where JPEG noise already costs
+  // enough correlation to fail the threshold even for a genuine overlap.
   const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
   const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
   for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
@@ -351,92 +466,382 @@ async function findOverlap(
     }
   }
 
-  console.log(`  overlap: ${bestOverlap}px (NCC=${bestNCC.toFixed(3)}, min=${minOverlap}px, max=${maxSearch}px)`);
-  return bestOverlap;
+  if (bestNCC < threshold) {
+    console.log(
+      `  overlap: none (best NCC=${bestNCC.toFixed(3)} < threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)})`
+    );
+    return { matched: false, overlapPx: 0, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
+  }
+
+  console.log(
+    `  overlap: ${bestOverlap}px (NCC=${bestNCC.toFixed(3)}, threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)}, min=${minOverlap}px, max=${maxSearch}px)`
+  );
+  return { matched: true, overlapPx: bestOverlap, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
 }
 
 // ---------------------------------------------------------------------------
-// Frame stitching
+// Greedy frame selection
 // ---------------------------------------------------------------------------
 
+export type SeamType = "start" | "overlap" | "gap";
+
+export interface Seam {
+  /** Joint between paths[index-1] and paths[index]; seams[0] is the "start" marker. */
+  type: SeamType;
+  overlapPx: number;
+  ncc: number;
+  nccThreshold: number;
+  contrast: number;
+}
+
+export interface FrameSelection {
+  paths: string[];
+  /** Parallel to paths: seams[i] joins paths[i-1] → paths[i]. */
+  seams: Seam[];
+  warnings: string[];
+  gapCount: number;
+  skippedNearDuplicates: number;
+  skippedRedundant: number;
+}
+
+const START_SEAM: Seam = { type: "start", overlapPx: 0, ncc: 0, nccThreshold: 0, contrast: 0 };
+
+function seamFromMeasurement(m: OverlapMeasurement): Seam {
+  return {
+    type: m.matched ? "overlap" : "gap",
+    overlapPx: m.overlapPx,
+    ncc: m.ncc,
+    nccThreshold: m.threshold,
+    contrast: m.contrast,
+  };
+}
+
+/**
+ * Walk the frames chronologically and greedily pick the subset to stitch.
+ *
+ * Against the last KEPT frame, each candidate is:
+ *  - skipped when it is a near-duplicate (perceptual similarity ≥ 0.90, or a
+ *    measured overlap > 80% of frame height);
+ *  - skipped-but-remembered when the overlap is measurable yet above the
+ *    60% target window (redundant — a later frame will give a better seam);
+ *  - kept when the overlap lands inside the target window (~20–60%);
+ *  - and when NO measurable overlap exists (scroll jump), the last remembered
+ *    skipped frame is promoted first to bridge the seam; if none exists the
+ *    candidate is kept anyway with the seam marked "gap" and a warning that is
+ *    surfaced to the client.
+ *
+ * Frames are processed strictly sequentially: only one 16×16 signature and two
+ * downsampled NCC buffers are alive at any time, so 80+ frames are fine.
+ */
+export async function selectFrames(
+  framePaths: string[],
+  onProgress?: ProgressCallback
+): Promise<FrameSelection> {
+  const empty: FrameSelection = {
+    paths: [],
+    seams: [],
+    warnings: [],
+    gapCount: 0,
+    skippedNearDuplicates: 0,
+    skippedRedundant: 0,
+  };
+  if (framePaths.length === 0) return empty;
+
+  const selection: FrameSelection = {
+    ...empty,
+    paths: [framePaths[0]],
+    seams: [{ ...START_SEAM }],
+  };
+  if (framePaths.length === 1) return selection;
+
+  let refPath = framePaths[0];
+  let refSig: FrameSignature | null = null;
+  try {
+    refSig = await getFrameSignature(refPath);
+  } catch {
+    refSig = null; // frame decodes (validated upstream) — signature is best-effort
+  }
+
+  // Last frame skipped as redundant/near-duplicate that still had a measured
+  // overlap against the current reference. Promoted when a gap would occur so
+  // greedy skipping never manufactures a gap, and at end-of-stream so the
+  // bottom of the scroll is never dropped.
+  let fallback: { path: string; seam: Seam; sig: FrameSignature | null } | null = null;
+
+  const keep = (p: string, seam: Seam, sig: FrameSignature | null) => {
+    selection.paths.push(p);
+    selection.seams.push(seam);
+    if (seam.type === "gap") selection.gapCount++;
+    refPath = p;
+    refSig = sig;
+    fallback = null;
+  };
+
+  const total = framePaths.length - 1;
+  let i = 1;
+  while (i < framePaths.length) {
+    const candidate = framePaths[i];
+
+    let sig: FrameSignature | null = null;
+    try {
+      sig = await getFrameSignature(candidate);
+    } catch {
+      sig = null;
+    }
+
+    // Near-identical to the reference (e.g. paused scroll, blinking cursor,
+    // sub-minimum scroll step): skip without measuring. These are useless as
+    // fallbacks too — they contain nothing the reference does not.
+    if (sig && refSig && sigSimilarity(refSig, sig) >= SELECT_NEAR_DUP_SIMILARITY) {
+      selection.skippedNearDuplicates++;
+      console.log(`  select: frame ${i} skipped (near-duplicate of last kept)`);
+      onProgress?.(i, total);
+      i++;
+      continue;
+    }
+
+    const m = await measureOverlap(refPath, candidate);
+
+    if (m.matched) {
+      const fraction = m.overlapPx / Math.max(1, m.frameHeight);
+      if (fraction > SELECT_NEAR_DUP_FRACTION) {
+        selection.skippedNearDuplicates++;
+        fallback = { path: candidate, seam: seamFromMeasurement(m), sig };
+        console.log(
+          `  select: frame ${i} skipped (overlap ${(fraction * 100).toFixed(0)}% > ${SELECT_NEAR_DUP_FRACTION * 100}%, near-duplicate)`
+        );
+      } else if (fraction > SELECT_TARGET_MAX_FRACTION) {
+        selection.skippedRedundant++;
+        fallback = { path: candidate, seam: seamFromMeasurement(m), sig };
+        console.log(
+          `  select: frame ${i} skipped (overlap ${(fraction * 100).toFixed(0)}% above target window, waiting for a better seam)`
+        );
+      } else {
+        keep(candidate, seamFromMeasurement(m), sig);
+        console.log(
+          `  select: frame ${i} kept (overlap=${m.overlapPx}px ${(fraction * 100).toFixed(0)}%, NCC=${m.ncc.toFixed(3)}, threshold=${m.threshold.toFixed(3)})`
+        );
+      }
+      onProgress?.(i, total);
+      i++;
+      continue;
+    }
+
+    // No measurable overlap against the reference.
+    if (fallback) {
+      // Bridge with the remembered frame, then re-evaluate this candidate
+      // against the new reference (same i — no infinite loop, since promoting
+      // clears the fallback and the retry either matches or gap-keeps).
+      console.log(`  select: promoting skipped frame to bridge a potential gap`);
+      keep(fallback.path, fallback.seam, fallback.sig);
+      continue;
+    }
+
+    const warning =
+      `Scroll jump detected at frame ${i + 1} of ${framePaths.length}: ` +
+      `no reliable overlap with the previous frame (best match ${(Math.max(0, m.ncc) * 100).toFixed(0)}%, ` +
+      `needed ${(m.threshold * 100).toFixed(0)}%). Content may be missing at this seam.`;
+    console.warn(`  select: GAP — ${warning}`);
+    selection.warnings.push(warning);
+    keep(candidate, seamFromMeasurement(m), sig);
+    onProgress?.(i, total);
+    i++;
+  }
+
+  // End of stream: if measurable frames were skipped after the last keep, the
+  // bottom of the scroll only exists in them. Promote the newest one — the
+  // stitcher cuts at the measured overlap, so this never duplicates content.
+  if (fallback !== null) {
+    const f: { path: string; seam: Seam; sig: FrameSignature | null } = fallback;
+    console.log(`  select: promoting final skipped frame to preserve the end of the scroll`);
+    keep(f.path, f.seam, f.sig);
+  }
+
+  if (framePaths.length > 1 && selection.paths.length === 1) {
+    selection.warnings.push(
+      "All frames were near-duplicates of the first frame — the result is a single frame. " +
+        "Make sure the recording actually scrolls."
+    );
+  }
+
+  console.log(
+    `Selection: ${framePaths.length} → ${selection.paths.length} frames ` +
+      `(${selection.skippedNearDuplicates} near-duplicates, ${selection.skippedRedundant} redundant, ${selection.gapCount} gaps)`
+  );
+
+  return selection;
+}
+
+// ---------------------------------------------------------------------------
+// Frame stitching — sequential decode into one preallocated canvas
+// ---------------------------------------------------------------------------
+
+export interface StitchResult {
+  width: number;
+  height: number;
+  /** Actual encoded format — may fall back to png when jpeg cannot fit. */
+  format: "png" | "jpeg";
+}
+
+/** Decode one frame to raw RGB at the target width, normalizing channel count. */
+async function decodeFrameRgb(
+  framePath: string,
+  targetWidth: number
+): Promise<{ data: Buffer; width: number; height: number }> {
+  const meta = await sharp(framePath).metadata();
+  const srcWidth = meta.width || 0;
+  const srcHeight = meta.height || 0;
+  if (!srcWidth || !srcHeight) {
+    throw new Error(`Frame could not be decoded: ${path.basename(framePath)}`);
+  }
+
+  let pipeline = sharp(framePath);
+  if (srcWidth !== targetWidth) {
+    pipeline = pipeline.resize(targetWidth, srcHeight, { fit: "fill" });
+  }
+  const { data, info } = await pipeline
+    .removeAlpha()
+    .toColourspace("srgb")
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  if (info.channels === 3) {
+    return { data, width: info.width, height: info.height };
+  }
+
+  // Defensive: expand grayscale (or collapse other channel counts) to RGB.
+  const px = info.width * info.height;
+  const rgb = Buffer.allocUnsafe(px * 3);
+  for (let p = 0; p < px; p++) {
+    const src = p * info.channels;
+    const v0 = data[src];
+    rgb[p * 3] = v0;
+    rgb[p * 3 + 1] = info.channels >= 2 ? data[src + 1] : v0;
+    rgb[p * 3 + 2] = info.channels >= 3 ? data[src + 2] : v0;
+  }
+  return { data: rgb, width: info.width, height: info.height };
+}
+
+/**
+ * Stitch frames using a precomputed seam plan (from selectFrames). When no
+ * plan is given, overlaps are measured pairwise here (unmatched pairs become
+ * butt-joined "gap" seams).
+ *
+ * Memory: frames are decoded ONE at a time and copied into a single
+ * preallocated RGB canvas — no per-frame buffers are retained, so 80+ frames
+ * stay within a bounded footprint (canvas + one decoded frame).
+ */
 export async function stitchFrames(
   framePaths: string[],
   outputPath: string,
-  quality: "png" | "jpeg" = "png"
-): Promise<{ width: number; height: number }> {
+  quality: "png" | "jpeg" = "png",
+  seams: Seam[] | null = null,
+  onProgress?: ProgressCallback
+): Promise<StitchResult> {
   if (framePaths.length === 0) {
     throw new Error("No frames to stitch");
   }
 
   if (framePaths.length === 1) {
+    const meta = await sharp(framePaths[0]).metadata();
+    const width = meta.width || 0;
+    const height = meta.height || 0;
+    const format: "png" | "jpeg" =
+      quality === "jpeg" && height <= JPEG_MAX_DIMENSION && width <= JPEG_MAX_DIMENSION
+        ? "jpeg"
+        : "png";
     const single = sharp(framePaths[0]);
-    if (quality === "jpeg") {
+    if (format === "jpeg") {
       await single.jpeg({ quality: 90 }).toFile(outputPath);
     } else {
       await single.png().toFile(outputPath);
     }
-    const meta = await sharp(framePaths[0]).metadata();
-    return { width: meta.width || 0, height: meta.height || 0 };
+    onProgress?.(1, 1);
+    return { width, height, format };
   }
 
-  const metadata = await Promise.all(
-    framePaths.map((f) => sharp(f).metadata())
-  );
+  // Metadata reads are header-only — cheap even for many frames.
+  const heights: number[] = [];
+  const widths: number[] = [];
+  for (const p of framePaths) {
+    const meta = await sharp(p).metadata();
+    if (!meta.width || !meta.height) {
+      throw new Error(`Frame could not be decoded: ${path.basename(p)}`);
+    }
+    widths.push(meta.width);
+    heights.push(meta.height);
+  }
 
-  const targetWidth = metadata[0].width || 0;
+  const targetWidth = widths[0];
 
-  const overlaps: number[] = [0];
-  for (let i = 1; i < framePaths.length; i++) {
-    const overlap = await findOverlap(framePaths[i - 1], framePaths[i]);
-    overlaps.push(overlap);
+  let seamPlan: Seam[];
+  if (seams) {
+    if (seams.length !== framePaths.length) {
+      throw new Error(
+        `Seam plan length ${seams.length} does not match frame count ${framePaths.length}`
+      );
+    }
+    seamPlan = seams;
+  } else {
+    seamPlan = [{ ...START_SEAM }];
+    for (let i = 1; i < framePaths.length; i++) {
+      const m = await measureOverlap(framePaths[i - 1], framePaths[i]);
+      seamPlan.push(seamFromMeasurement(m));
+    }
   }
 
   let totalHeight = 0;
   for (let i = 0; i < framePaths.length; i++) {
-    const h = metadata[i].height || 0;
-    totalHeight += h - overlaps[i];
+    const overlap = Math.min(seamPlan[i].overlapPx, heights[i] - 1);
+    totalHeight += heights[i] - (i === 0 ? 0 : Math.max(0, overlap));
   }
 
-  const composites: { input: Buffer; top: number; left: number }[] = [];
+  if (totalHeight <= 0) {
+    throw new Error("Stitch plan produced an empty image");
+  }
+  if (targetWidth * totalHeight > MAX_OUTPUT_PIXELS) {
+    throw new Error(
+      `Stitched image would be too large (${targetWidth}×${totalHeight}px). ` +
+        `Try a shorter recording or split it into parts.`
+    );
+  }
+
+  let format: "png" | "jpeg" = quality;
+  if (format === "jpeg" && (totalHeight > JPEG_MAX_DIMENSION || targetWidth > JPEG_MAX_DIMENSION)) {
+    console.log(
+      `stitch: output ${targetWidth}×${totalHeight}px exceeds the JPEG limit — falling back to PNG`
+    );
+    format = "png";
+  }
+
+  const rowBytes = targetWidth * 3;
+  const canvas = Buffer.alloc(rowBytes * totalHeight); // zero-filled → black
   let currentY = 0;
 
   for (let i = 0; i < framePaths.length; i++) {
-    const frameWidth = metadata[i].width || 0;
-    let inputBuffer: Buffer;
-
-    if (frameWidth !== targetWidth) {
-      inputBuffer = await sharp(framePaths[i])
-        .resize(targetWidth, metadata[i].height || 0, { fit: "fill" })
-        .toBuffer();
-    } else {
-      inputBuffer = await sharp(framePaths[i]).toBuffer();
-    }
-
-    composites.push({
-      input: inputBuffer,
-      top: currentY - overlaps[i],
-      left: 0,
-    });
-
-    currentY += (metadata[i].height || 0) - overlaps[i];
+    const { data, height } = await decodeFrameRgb(framePaths[i], targetWidth);
+    const overlap = i === 0 ? 0 : Math.max(0, Math.min(seamPlan[i].overlapPx, currentY, height - 1));
+    const top = currentY - overlap;
+    // Later frames overwrite the overlap zone of the previous frame — the
+    // content is the same rows, and the newer frame is the cleaner source for
+    // what follows below the seam.
+    data.copy(canvas, top * rowBytes);
+    currentY = top + height;
+    onProgress?.(i + 1, framePaths.length);
   }
 
-  const pipeline = sharp({
-    create: {
-      width: targetWidth,
-      height: totalHeight,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
-    },
-  }).composite(composites);
+  const pipeline = sharp(canvas, {
+    raw: { width: targetWidth, height: totalHeight, channels: 3 },
+    limitInputPixels: false,
+  });
 
-  if (quality === "jpeg") {
+  if (format === "jpeg") {
     await pipeline.jpeg({ quality: 90 }).toFile(outputPath);
   } else {
     await pipeline.png().toFile(outputPath);
   }
 
-  return { width: targetWidth, height: totalHeight };
+  return { width: targetWidth, height: totalHeight, format };
 }
 
 // ---------------------------------------------------------------------------

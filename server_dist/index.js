@@ -22,14 +22,25 @@ var HEADER_MAX_RATIO = 0.5;
 var HEADER_PIXEL_TOLERANCE = 10;
 var OVERLAP_MIN_FRACTION = 0.2;
 var OVERLAP_MIN_ABS = 40;
+var OVERLAP_MAX_FRACTION = 0.9;
 var NCC_SAMPLE_WIDTH = 64;
 var NCC_COARSE_STEP = 8;
 var NCC_FINE_RANGE = 16;
 var NCC_FINE_STEP = 1;
-var NCC_CONFIDENCE = 0.85;
+var NCC_CONFIDENCE_MAX = 0.85;
+var NCC_CONFIDENCE_MIN = 0.75;
+var NCC_CONTRAST_LOW = 8;
+var NCC_CONTRAST_HIGH = 40;
+var SELECT_TARGET_MAX_FRACTION = 0.6;
+var SELECT_NEAR_DUP_FRACTION = 0.8;
+var SELECT_NEAR_DUP_SIMILARITY = 0.9;
+var JPEG_MAX_DIMENSION = 65500;
+var MAX_OUTPUT_PIXELS = 2e8;
 async function getFrameSignature(framePath, size = DEDUP_HASH_SIZE) {
-  const { data } = await sharp(framePath).resize(size, size, { fit: "fill" }).greyscale().raw().toBuffer({ resolveWithObject: true });
-  return data;
+  const base = sharp(framePath).resize(size, size, { fit: "fill" }).greyscale();
+  const raw = await base.clone().raw().toBuffer();
+  const norm = await base.clone().normalise().raw().toBuffer();
+  return { raw, norm };
 }
 function bufferSimilarity(a, b) {
   if (a.length !== b.length) return 0;
@@ -38,6 +49,38 @@ function bufferSimilarity(a, b) {
     if (Math.abs(a[i] - b[i]) < 20) matches++;
   }
   return matches / a.length;
+}
+function sigSimilarity(a, b) {
+  return Math.min(bufferSimilarity(a.raw, b.raw), bufferSimilarity(a.norm, b.norm));
+}
+function greyStddev(buf) {
+  const n = buf.length;
+  if (n === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += buf[i];
+  const mean = sum / n;
+  let sq = 0;
+  for (let i = 0; i < n; i++) {
+    const d = buf[i] - mean;
+    sq += d * d;
+  }
+  return Math.sqrt(sq / n);
+}
+async function validateFrames(framePaths, onProgress) {
+  const valid = [];
+  const warnings = [];
+  for (let i = 0; i < framePaths.length; i++) {
+    try {
+      await sharp(framePaths[i]).resize(8, 8, { fit: "fill" }).greyscale().raw().toBuffer();
+      valid.push(framePaths[i]);
+    } catch {
+      const msg = `Frame ${i + 1} of ${framePaths.length} could not be decoded and was skipped.`;
+      console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
+      warnings.push(msg);
+    }
+    onProgress?.(i + 1, framePaths.length);
+  }
+  return { valid, warnings };
 }
 async function detectStickyRegion(framePaths, region) {
   if (framePaths.length < 3) return 0;
@@ -115,8 +158,8 @@ async function detectAndRemoveStickyHeaders(framePaths) {
   if (headerHeight === 0 && footerHeight === 0) {
     return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
   }
-  const outputDir = path.join(os.tmpdir(), "scrollsnap-cropped");
-  fs.mkdirSync(outputDir, { recursive: true });
+  const outputDir2 = path.join(os.tmpdir(), "scrollsnap-cropped");
+  fs.mkdirSync(outputDir2, { recursive: true });
   const croppedPaths = [];
   for (let i = 0; i < framePaths.length; i++) {
     const meta = await sharp(framePaths[i]).metadata();
@@ -133,24 +176,26 @@ async function detectAndRemoveStickyHeaders(framePaths) {
       croppedPaths.push(framePaths[i]);
       continue;
     }
-    const outPath = path.join(outputDir, `cropped_${i}_${path.basename(framePaths[i])}.png`);
+    const outPath = path.join(outputDir2, `cropped_${i}_${path.basename(framePaths[i])}.png`);
     await sharp(framePaths[i]).extract({ left: 0, top: cropTop, width: w, height: newHeight }).png().toFile(outPath);
     croppedPaths.push(outPath);
   }
   return { paths: croppedPaths, headerHeight, footerHeight };
 }
-async function deduplicateFrames(framePaths) {
+async function deduplicateFrames(framePaths, onProgress) {
   if (framePaths.length === 0) return [];
   if (framePaths.length === 1) return framePaths;
   const unique = [framePaths[0]];
   let prevSig = await getFrameSignature(framePaths[0]);
+  onProgress?.(1, framePaths.length);
   for (let i = 1; i < framePaths.length; i++) {
     const sig = await getFrameSignature(framePaths[i]);
-    const sim = bufferSimilarity(prevSig, sig);
+    const sim = sigSimilarity(prevSig, sig);
     if (sim < SIMILARITY_THRESHOLD) {
       unique.push(framePaths[i]);
       prevSig = sig;
     }
+    onProgress?.(i + 1, framePaths.length);
   }
   return unique;
 }
@@ -188,26 +233,38 @@ function computeNCC(topBuf, botBuf, maxSearch, overlap) {
   const den = Math.sqrt(denA * denB);
   return den > 0 ? num / den : 0;
 }
-async function findOverlap(topImagePath, bottomImagePath) {
-  const [topMeta, botMeta] = await Promise.all([
-    sharp(topImagePath).metadata(),
-    sharp(bottomImagePath).metadata()
-  ]);
+function adaptiveNccThreshold(contrast) {
+  if (contrast >= NCC_CONTRAST_HIGH) return NCC_CONFIDENCE_MAX;
+  if (contrast <= NCC_CONTRAST_LOW) return NCC_CONFIDENCE_MIN;
+  const t = (contrast - NCC_CONTRAST_LOW) / (NCC_CONTRAST_HIGH - NCC_CONTRAST_LOW);
+  return NCC_CONFIDENCE_MIN + t * (NCC_CONFIDENCE_MAX - NCC_CONFIDENCE_MIN);
+}
+async function measureOverlap(topImagePath, bottomImagePath) {
+  const none = (frameHeight) => ({
+    matched: false,
+    overlapPx: 0,
+    ncc: 0,
+    threshold: NCC_CONFIDENCE_MAX,
+    contrast: 0,
+    frameHeight
+  });
+  const topMeta = await sharp(topImagePath).metadata();
+  const botMeta = await sharp(bottomImagePath).metadata();
   if (!topMeta.width || !topMeta.height || !botMeta.width || !botMeta.height) {
-    return 0;
+    return none(0);
   }
   const frameH = Math.min(topMeta.height, botMeta.height);
   const frameW = Math.min(topMeta.width, botMeta.width);
   const minOverlap = Math.max(OVERLAP_MIN_ABS, Math.floor(frameH * OVERLAP_MIN_FRACTION));
-  const maxSearch = Math.floor(frameH * 0.9);
+  const maxSearch = Math.floor(frameH * OVERLAP_MAX_FRACTION);
   if (minOverlap >= maxSearch) {
     console.log(`  overlap: skipped (frame too short: ${frameH}px)`);
-    return 0;
+    return none(frameH);
   }
-  const [topBuf, botBuf] = await Promise.all([
-    sharp(topImagePath).extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer(),
-    sharp(bottomImagePath).extract({ left: 0, top: 0, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer()
-  ]);
+  const topBuf = await sharp(topImagePath).extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer();
+  const botBuf = await sharp(bottomImagePath).extract({ left: 0, top: 0, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer();
+  const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
+  const threshold = adaptiveNccThreshold(contrast);
   let bestOverlap = 0;
   let bestNCC = -1;
   for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
@@ -216,10 +273,6 @@ async function findOverlap(topImagePath, bottomImagePath) {
       bestNCC = ncc;
       bestOverlap = ov;
     }
-  }
-  if (bestNCC < NCC_CONFIDENCE) {
-    console.log(`  overlap: 0px (bestNCC=${bestNCC.toFixed(3)} < ${NCC_CONFIDENCE}, no confident match)`);
-    return 0;
   }
   const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
   const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
@@ -230,68 +283,239 @@ async function findOverlap(topImagePath, bottomImagePath) {
       bestOverlap = ov;
     }
   }
-  console.log(`  overlap: ${bestOverlap}px (NCC=${bestNCC.toFixed(3)}, min=${minOverlap}px, max=${maxSearch}px)`);
-  return bestOverlap;
+  if (bestNCC < threshold) {
+    console.log(
+      `  overlap: none (best NCC=${bestNCC.toFixed(3)} < threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)})`
+    );
+    return { matched: false, overlapPx: 0, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
+  }
+  console.log(
+    `  overlap: ${bestOverlap}px (NCC=${bestNCC.toFixed(3)}, threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)}, min=${minOverlap}px, max=${maxSearch}px)`
+  );
+  return { matched: true, overlapPx: bestOverlap, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
 }
-async function stitchFrames(framePaths, outputPath, quality = "png") {
+var START_SEAM = { type: "start", overlapPx: 0, ncc: 0, nccThreshold: 0, contrast: 0 };
+function seamFromMeasurement(m) {
+  return {
+    type: m.matched ? "overlap" : "gap",
+    overlapPx: m.overlapPx,
+    ncc: m.ncc,
+    nccThreshold: m.threshold,
+    contrast: m.contrast
+  };
+}
+async function selectFrames(framePaths, onProgress) {
+  const empty = {
+    paths: [],
+    seams: [],
+    warnings: [],
+    gapCount: 0,
+    skippedNearDuplicates: 0,
+    skippedRedundant: 0
+  };
+  if (framePaths.length === 0) return empty;
+  const selection = {
+    ...empty,
+    paths: [framePaths[0]],
+    seams: [{ ...START_SEAM }]
+  };
+  if (framePaths.length === 1) return selection;
+  let refPath = framePaths[0];
+  let refSig = null;
+  try {
+    refSig = await getFrameSignature(refPath);
+  } catch {
+    refSig = null;
+  }
+  let fallback = null;
+  const keep = (p, seam, sig) => {
+    selection.paths.push(p);
+    selection.seams.push(seam);
+    if (seam.type === "gap") selection.gapCount++;
+    refPath = p;
+    refSig = sig;
+    fallback = null;
+  };
+  const total = framePaths.length - 1;
+  let i = 1;
+  while (i < framePaths.length) {
+    const candidate = framePaths[i];
+    let sig = null;
+    try {
+      sig = await getFrameSignature(candidate);
+    } catch {
+      sig = null;
+    }
+    if (sig && refSig && sigSimilarity(refSig, sig) >= SELECT_NEAR_DUP_SIMILARITY) {
+      selection.skippedNearDuplicates++;
+      console.log(`  select: frame ${i} skipped (near-duplicate of last kept)`);
+      onProgress?.(i, total);
+      i++;
+      continue;
+    }
+    const m = await measureOverlap(refPath, candidate);
+    if (m.matched) {
+      const fraction = m.overlapPx / Math.max(1, m.frameHeight);
+      if (fraction > SELECT_NEAR_DUP_FRACTION) {
+        selection.skippedNearDuplicates++;
+        fallback = { path: candidate, seam: seamFromMeasurement(m), sig };
+        console.log(
+          `  select: frame ${i} skipped (overlap ${(fraction * 100).toFixed(0)}% > ${SELECT_NEAR_DUP_FRACTION * 100}%, near-duplicate)`
+        );
+      } else if (fraction > SELECT_TARGET_MAX_FRACTION) {
+        selection.skippedRedundant++;
+        fallback = { path: candidate, seam: seamFromMeasurement(m), sig };
+        console.log(
+          `  select: frame ${i} skipped (overlap ${(fraction * 100).toFixed(0)}% above target window, waiting for a better seam)`
+        );
+      } else {
+        keep(candidate, seamFromMeasurement(m), sig);
+        console.log(
+          `  select: frame ${i} kept (overlap=${m.overlapPx}px ${(fraction * 100).toFixed(0)}%, NCC=${m.ncc.toFixed(3)}, threshold=${m.threshold.toFixed(3)})`
+        );
+      }
+      onProgress?.(i, total);
+      i++;
+      continue;
+    }
+    if (fallback) {
+      console.log(`  select: promoting skipped frame to bridge a potential gap`);
+      keep(fallback.path, fallback.seam, fallback.sig);
+      continue;
+    }
+    const warning = `Scroll jump detected at frame ${i + 1} of ${framePaths.length}: no reliable overlap with the previous frame (best match ${(Math.max(0, m.ncc) * 100).toFixed(0)}%, needed ${(m.threshold * 100).toFixed(0)}%). Content may be missing at this seam.`;
+    console.warn(`  select: GAP \u2014 ${warning}`);
+    selection.warnings.push(warning);
+    keep(candidate, seamFromMeasurement(m), sig);
+    onProgress?.(i, total);
+    i++;
+  }
+  if (fallback !== null) {
+    const f = fallback;
+    console.log(`  select: promoting final skipped frame to preserve the end of the scroll`);
+    keep(f.path, f.seam, f.sig);
+  }
+  if (framePaths.length > 1 && selection.paths.length === 1) {
+    selection.warnings.push(
+      "All frames were near-duplicates of the first frame \u2014 the result is a single frame. Make sure the recording actually scrolls."
+    );
+  }
+  console.log(
+    `Selection: ${framePaths.length} \u2192 ${selection.paths.length} frames (${selection.skippedNearDuplicates} near-duplicates, ${selection.skippedRedundant} redundant, ${selection.gapCount} gaps)`
+  );
+  return selection;
+}
+async function decodeFrameRgb(framePath, targetWidth) {
+  const meta = await sharp(framePath).metadata();
+  const srcWidth = meta.width || 0;
+  const srcHeight = meta.height || 0;
+  if (!srcWidth || !srcHeight) {
+    throw new Error(`Frame could not be decoded: ${path.basename(framePath)}`);
+  }
+  let pipeline = sharp(framePath);
+  if (srcWidth !== targetWidth) {
+    pipeline = pipeline.resize(targetWidth, srcHeight, { fit: "fill" });
+  }
+  const { data, info } = await pipeline.removeAlpha().toColourspace("srgb").raw().toBuffer({ resolveWithObject: true });
+  if (info.channels === 3) {
+    return { data, width: info.width, height: info.height };
+  }
+  const px = info.width * info.height;
+  const rgb = Buffer.allocUnsafe(px * 3);
+  for (let p = 0; p < px; p++) {
+    const src = p * info.channels;
+    const v0 = data[src];
+    rgb[p * 3] = v0;
+    rgb[p * 3 + 1] = info.channels >= 2 ? data[src + 1] : v0;
+    rgb[p * 3 + 2] = info.channels >= 3 ? data[src + 2] : v0;
+  }
+  return { data: rgb, width: info.width, height: info.height };
+}
+async function stitchFrames(framePaths, outputPath, quality = "png", seams = null, onProgress) {
   if (framePaths.length === 0) {
     throw new Error("No frames to stitch");
   }
   if (framePaths.length === 1) {
+    const meta = await sharp(framePaths[0]).metadata();
+    const width = meta.width || 0;
+    const height = meta.height || 0;
+    const format2 = quality === "jpeg" && height <= JPEG_MAX_DIMENSION && width <= JPEG_MAX_DIMENSION ? "jpeg" : "png";
     const single = sharp(framePaths[0]);
-    if (quality === "jpeg") {
+    if (format2 === "jpeg") {
       await single.jpeg({ quality: 90 }).toFile(outputPath);
     } else {
       await single.png().toFile(outputPath);
     }
-    const meta = await sharp(framePaths[0]).metadata();
-    return { width: meta.width || 0, height: meta.height || 0 };
+    onProgress?.(1, 1);
+    return { width, height, format: format2 };
   }
-  const metadata = await Promise.all(
-    framePaths.map((f) => sharp(f).metadata())
-  );
-  const targetWidth = metadata[0].width || 0;
-  const overlaps = [0];
-  for (let i = 1; i < framePaths.length; i++) {
-    const overlap = await findOverlap(framePaths[i - 1], framePaths[i]);
-    overlaps.push(overlap);
+  const heights = [];
+  const widths = [];
+  for (const p of framePaths) {
+    const meta = await sharp(p).metadata();
+    if (!meta.width || !meta.height) {
+      throw new Error(`Frame could not be decoded: ${path.basename(p)}`);
+    }
+    widths.push(meta.width);
+    heights.push(meta.height);
+  }
+  const targetWidth = widths[0];
+  let seamPlan;
+  if (seams) {
+    if (seams.length !== framePaths.length) {
+      throw new Error(
+        `Seam plan length ${seams.length} does not match frame count ${framePaths.length}`
+      );
+    }
+    seamPlan = seams;
+  } else {
+    seamPlan = [{ ...START_SEAM }];
+    for (let i = 1; i < framePaths.length; i++) {
+      const m = await measureOverlap(framePaths[i - 1], framePaths[i]);
+      seamPlan.push(seamFromMeasurement(m));
+    }
   }
   let totalHeight = 0;
   for (let i = 0; i < framePaths.length; i++) {
-    const h = metadata[i].height || 0;
-    totalHeight += h - overlaps[i];
+    const overlap = Math.min(seamPlan[i].overlapPx, heights[i] - 1);
+    totalHeight += heights[i] - (i === 0 ? 0 : Math.max(0, overlap));
   }
-  const composites = [];
+  if (totalHeight <= 0) {
+    throw new Error("Stitch plan produced an empty image");
+  }
+  if (targetWidth * totalHeight > MAX_OUTPUT_PIXELS) {
+    throw new Error(
+      `Stitched image would be too large (${targetWidth}\xD7${totalHeight}px). Try a shorter recording or split it into parts.`
+    );
+  }
+  let format = quality;
+  if (format === "jpeg" && (totalHeight > JPEG_MAX_DIMENSION || targetWidth > JPEG_MAX_DIMENSION)) {
+    console.log(
+      `stitch: output ${targetWidth}\xD7${totalHeight}px exceeds the JPEG limit \u2014 falling back to PNG`
+    );
+    format = "png";
+  }
+  const rowBytes = targetWidth * 3;
+  const canvas = Buffer.alloc(rowBytes * totalHeight);
   let currentY = 0;
   for (let i = 0; i < framePaths.length; i++) {
-    const frameWidth = metadata[i].width || 0;
-    let inputBuffer;
-    if (frameWidth !== targetWidth) {
-      inputBuffer = await sharp(framePaths[i]).resize(targetWidth, metadata[i].height || 0, { fit: "fill" }).toBuffer();
-    } else {
-      inputBuffer = await sharp(framePaths[i]).toBuffer();
-    }
-    composites.push({
-      input: inputBuffer,
-      top: currentY - overlaps[i],
-      left: 0
-    });
-    currentY += (metadata[i].height || 0) - overlaps[i];
+    const { data, height } = await decodeFrameRgb(framePaths[i], targetWidth);
+    const overlap = i === 0 ? 0 : Math.max(0, Math.min(seamPlan[i].overlapPx, currentY, height - 1));
+    const top = currentY - overlap;
+    data.copy(canvas, top * rowBytes);
+    currentY = top + height;
+    onProgress?.(i + 1, framePaths.length);
   }
-  const pipeline = sharp({
-    create: {
-      width: targetWidth,
-      height: totalHeight,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 1 }
-    }
-  }).composite(composites);
-  if (quality === "jpeg") {
+  const pipeline = sharp(canvas, {
+    raw: { width: targetWidth, height: totalHeight, channels: 3 },
+    limitInputPixels: false
+  });
+  if (format === "jpeg") {
     await pipeline.jpeg({ quality: 90 }).toFile(outputPath);
   } else {
     await pipeline.png().toFile(outputPath);
   }
-  return { width: targetWidth, height: totalHeight };
+  return { width: targetWidth, height: totalHeight, format };
 }
 async function generatePdf(imagePath, outputPath) {
   const PDFDocument = (await import("pdfkit")).default;
@@ -343,7 +567,20 @@ setInterval(() => {
       jobProgress.delete(id);
     }
   }
-}, 5 * 60 * 1e3);
+}, 5 * 60 * 1e3).unref();
+function firstString(value) {
+  if (Array.isArray(value)) value = value[0];
+  return typeof value === "string" ? value : "";
+}
+var outputDir = path2.join(os2.tmpdir(), "scrollsnap-output");
+var STAGE_SPANS = {
+  validate: [0, 0.05],
+  dedup: [0.05, 0.2],
+  sticky: [0.2, 0.3],
+  select: [0.3, 0.55],
+  stitch: [0.55, 0.85],
+  pdf: [0.85, 0.98]
+};
 async function registerRoutes(app2) {
   app2.get("/privacy", (_req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -357,75 +594,141 @@ async function registerRoutes(app2) {
       try {
         const files = req.files;
         if (!files || files.length === 0) {
-          return res.status(400).json({ error: "No frames provided" });
+          return res.status(400).json({
+            error: "No frames were received. Record a scrolling screen video and try again."
+          });
         }
         console.log(`Received ${files.length} frames for job ${jobId}`);
+        const quality = firstString(req.query.quality) === "jpeg" ? "jpeg" : "png";
         jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
         res.json({ jobId, frameCount: files.length });
         (async () => {
+          const framePaths = files.map((f) => f.path);
+          const tempOutputs = [];
           try {
-            const framePaths = files.map((f) => f.path);
-            updateJob(jobId, { stage: "Removing duplicates", progress: 0.2 });
-            const uniqueFrames = await deduplicateFrames(framePaths);
-            console.log(
-              `Deduplicated: ${framePaths.length} -> ${uniqueFrames.length} frames`
+            const warnings = [];
+            const stageProgress = (stage, span) => (done, total) => {
+              const t = total > 0 ? done / total : 1;
+              updateJob(jobId, {
+                stage,
+                progress: span[0] + t * (span[1] - span[0]),
+                detail: `${done}/${total}`
+              });
+            };
+            updateJob(jobId, { stage: "Validating frames", progress: 0 });
+            const { valid: validFrames, warnings: validationWarnings } = await validateFrames(framePaths, stageProgress("Validating frames", STAGE_SPANS.validate));
+            warnings.push(...validationWarnings);
+            if (validFrames.length === 0) {
+              throw new Error(
+                "None of the uploaded frames could be read as images. The recording may be corrupt \u2014 please try recording again."
+              );
+            }
+            if (validFrames.length < framePaths.length) {
+              console.warn(
+                `Job ${jobId}: ${framePaths.length - validFrames.length} corrupt frame(s) skipped`
+              );
+            }
+            updateJob(jobId, { stage: "Removing duplicates", progress: STAGE_SPANS.dedup[0], detail: void 0 });
+            const uniqueFrames = await deduplicateFrames(
+              validFrames,
+              stageProgress("Removing duplicates", STAGE_SPANS.dedup)
             );
-            updateJob(jobId, { stage: "Removing sticky headers", progress: 0.4 });
+            console.log(
+              `Deduplicated: ${validFrames.length} -> ${uniqueFrames.length} frames`
+            );
+            updateJob(jobId, { stage: "Removing sticky headers", progress: STAGE_SPANS.sticky[0], detail: void 0 });
             const { paths: cleanedFrames, headerHeight, footerHeight } = await detectAndRemoveStickyHeaders(uniqueFrames);
             if (headerHeight > 0 || footerHeight > 0) {
               console.log(`Removed sticky: header=${headerHeight}px, footer=${footerHeight}px`);
             }
-            const quality = req.query.quality === "jpeg" ? "jpeg" : "png";
-            const outputDir = path2.join(os2.tmpdir(), "scrollsnap-output");
-            fs2.mkdirSync(outputDir, { recursive: true });
-            const imgExt = quality === "jpeg" ? "jpg" : "png";
-            const outputImagePath = path2.join(outputDir, `${jobId}.${imgExt}`);
-            updateJob(jobId, { stage: "Stitching frames", progress: 0.55 });
-            const dimensions = await stitchFrames(
+            tempOutputs.push(...cleanedFrames.filter((p) => !framePaths.includes(p)));
+            updateJob(jobId, { stage: "Selecting frames", progress: STAGE_SPANS.select[0], detail: void 0 });
+            const selection = await selectFrames(
               cleanedFrames,
-              outputImagePath,
-              quality
+              stageProgress("Selecting frames", STAGE_SPANS.select)
             );
+            warnings.push(...selection.warnings);
+            if (selection.paths.length === 0) {
+              throw new Error(
+                "No stitchable frames were found in the recording. Please try again."
+              );
+            }
+            console.log(
+              `Selected ${selection.paths.length}/${cleanedFrames.length} frames, ${selection.gapCount} gap(s)`
+            );
+            fs2.mkdirSync(outputDir, { recursive: true });
+            updateJob(jobId, { stage: "Stitching frames", progress: STAGE_SPANS.stitch[0], detail: void 0 });
+            const tmpStitchPath = path2.join(outputDir, `${jobId}.stitch.tmp`);
+            tempOutputs.push(tmpStitchPath);
+            const stitchResult = await stitchFrames(
+              selection.paths,
+              tmpStitchPath,
+              quality,
+              selection.seams,
+              stageProgress("Stitching frames", STAGE_SPANS.stitch)
+            );
+            const imgExt = stitchResult.format === "jpeg" ? "jpg" : "png";
+            const outputImagePath = path2.join(outputDir, `${jobId}.${imgExt}`);
+            fs2.renameSync(tmpStitchPath, outputImagePath);
+            if (quality === "jpeg" && stitchResult.format === "png") {
+              warnings.push(
+                "The stitched image is too tall for JPEG \u2014 it was saved as PNG instead."
+              );
+            }
             const outputPdfPath = path2.join(outputDir, `${jobId}.pdf`);
-            updateJob(jobId, { stage: "Generating PDF", progress: 0.8 });
+            updateJob(jobId, { stage: "Generating PDF", progress: STAGE_SPANS.pdf[0], detail: void 0 });
             await generatePdf(outputImagePath, outputPdfPath);
+            const seamSummary = selection.seams.map((s, i) => ({
+              index: i,
+              type: s.type,
+              overlapPx: s.overlapPx,
+              ncc: Math.round(s.ncc * 1e3) / 1e3,
+              nccThreshold: Math.round(s.nccThreshold * 1e3) / 1e3
+            }));
             updateJob(jobId, {
               stage: "Complete",
               progress: 1,
+              detail: void 0,
               result: {
                 imageUrl: `/api/output/${jobId}.${imgExt}`,
                 pdfUrl: `/api/output/${jobId}.pdf`,
                 frameCount: framePaths.length,
                 uniqueFrames: uniqueFrames.length,
-                dimensions
+                selectedFrames: selection.paths.length,
+                gapCount: selection.gapCount,
+                warnings,
+                seams: seamSummary,
+                dimensions: { width: stitchResult.width, height: stitchResult.height }
               }
             });
-            for (const f of files) {
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Processing failed unexpectedly.";
+            console.error(`Processing error (job ${jobId}):`, err);
+            updateJob(jobId, { stage: "Error", progress: 0, error: message });
+          } finally {
+            for (const f of [...framePaths, ...tempOutputs]) {
               try {
-                fs2.unlinkSync(f.path);
+                fs2.unlinkSync(f);
               } catch {
               }
             }
-          } catch (err) {
-            console.error("Processing error:", err);
-            updateJob(jobId, { stage: "Error", progress: 0, error: err.message });
           }
         })();
       } catch (err) {
-        return res.status(500).json({ error: err.message });
+        const message = err instanceof Error ? err.message : "Upload failed.";
+        return res.status(500).json({ error: message });
       }
     }
   );
   app2.get("/api/progress/:jobId", (req, res) => {
-    const job = jobProgress.get(req.params.jobId);
+    const job = jobProgress.get(firstString(req.params.jobId));
     if (!job) {
       return res.status(404).json({ error: "Job not found" });
     }
     res.json(job);
   });
   app2.get("/api/output/:filename", (req, res) => {
-    const outputDir = path2.join(os2.tmpdir(), "scrollsnap-output");
-    const filename = path2.basename(req.params.filename);
+    const filename = path2.basename(firstString(req.params.filename));
     const filePath = path2.join(outputDir, filename);
     if (!fs2.existsSync(filePath)) {
       return res.status(404).json({ error: "File not found" });
@@ -440,8 +743,7 @@ async function registerRoutes(app2) {
     fs2.createReadStream(filePath).pipe(res);
   });
   app2.get("/api/output-base64/:filename", (req, res) => {
-    const outputDir = path2.join(os2.tmpdir(), "scrollsnap-output");
-    const filename = path2.basename(req.params.filename);
+    const filename = path2.basename(firstString(req.params.filename));
     const filePath = path2.join(outputDir, filename);
     if (!fs2.existsSync(filePath)) {
       return res.status(404).json({ error: "File not found" });
@@ -449,20 +751,19 @@ async function registerRoutes(app2) {
     const data = fs2.readFileSync(filePath);
     const base64 = data.toString("base64");
     const ext = path2.extname(filePath).toLowerCase();
-    const mimeType = ext === ".pdf" ? "application/pdf" : "image/png";
+    const mimeType = ext === ".pdf" ? "application/pdf" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
     res.json({ base64, mimeType, filename });
   });
   app2.get("/api/crop/:filename", async (req, res) => {
     try {
       const sharp2 = (await import("sharp")).default;
-      const outputDir = path2.join(os2.tmpdir(), "scrollsnap-output");
-      const filename = path2.basename(req.params.filename);
+      const filename = path2.basename(firstString(req.params.filename));
       const filePath = path2.join(outputDir, filename);
       if (!fs2.existsSync(filePath)) {
         return res.status(404).json({ error: "File not found" });
       }
-      const cropTop = Math.max(0, parseInt(req.query.top) || 0);
-      const cropBottom = Math.max(0, parseInt(req.query.bottom) || 0);
+      const cropTop = Math.max(0, parseInt(firstString(req.query.top), 10) || 0);
+      const cropBottom = Math.max(0, parseInt(firstString(req.query.bottom), 10) || 0);
       if (cropTop === 0 && cropBottom === 0) {
         return res.status(400).json({ error: "No crop values provided" });
       }
@@ -484,8 +785,9 @@ async function registerRoutes(app2) {
         dimensions: { width: origWidth, height: newHeight }
       });
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Crop failed.";
       console.error("Crop error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: message });
     }
   });
   const httpServer = createServer(app2);

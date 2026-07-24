@@ -11,6 +11,7 @@ const Colors = {
     textTertiary: "rgba(255, 255, 255, 0.35)",
     border: "rgba(255, 255, 255, 0.08)",
     danger: "#FF4757",
+    warning: "#FFB74D",
     success: "#00D4AA",
     tint: "#00D4AA",
     tabIconDefault: "rgba(255, 255, 255, 0.4)",

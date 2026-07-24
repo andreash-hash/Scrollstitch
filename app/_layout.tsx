@@ -81,7 +81,7 @@ function SubscriptionSync() {
       <View style={syncStyles.inner}>
         <Feather name="alert-circle" size={15} color={C.danger} style={syncStyles.icon} />
         <Text style={syncStyles.message} numberOfLines={2}>
-          Couldn't load subscription info
+          Couldn&apos;t load subscription info
         </Text>
         <Pressable onPress={handleRetry} style={syncStyles.retryBtn} hitSlop={8}>
           <Text style={syncStyles.retryText}>Retry</Text>

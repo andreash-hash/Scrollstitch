@@ -24,6 +24,7 @@ import {
   type Offering,
   type Package,
   type CreateProductData,
+  type Duration,
 } from "@replit/revenuecat-sdk";
 
 const PROJECT_NAME = "ScrollSnap";
@@ -149,7 +150,7 @@ async function seedRevenueCat() {
     label: string,
     productIdentifier: string,
     displayName: string,
-    duration: string,
+    duration: Duration,
     isTestStore: boolean
   ): Promise<Product> => {
     const existingProduct = existingProducts.items?.find(
