@@ -321,8 +321,8 @@ function PaywallSlide({
 
   const selectedPackage = billing === "monthly" ? monthlyPackage : annualPackage;
 
-  const monthlyPrice = monthlyPackage?.product.priceString ?? "$4.99";
-  const annualPrice = annualPackage?.product.priceString ?? "$29.99";
+  const monthlyPrice = monthlyPackage?.product.priceString ?? "…";
+  const annualPrice = annualPackage?.product.priceString ?? "…";
 
   const handleCtaPress = () => {
     btnScale.value = withSequence(withSpring(0.96), withSpring(1));
