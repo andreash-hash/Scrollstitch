@@ -1,5 +1,5 @@
-import React, { createContext, useContext } from "react";
-import { Platform } from "react-native";
+import React, { createContext, useContext, useEffect, useRef } from "react";
+import { AppState, AppStateStatus, Platform } from "react-native";
 import Purchases, { PurchasesPackage } from "react-native-purchases";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Constants from "expo-constants";
@@ -53,6 +53,17 @@ function useSubscriptionContext() {
     },
     staleTime: 60 * 1000,
   });
+
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+      if (appStateRef.current !== "active" && nextState === "active") {
+        customerInfoQuery.refetch();
+      }
+      appStateRef.current = nextState;
+    });
+    return () => subscription.remove();
+  }, [customerInfoQuery.refetch]);
 
   const offeringsQuery = useQuery({
     queryKey: ["revenuecat", "offerings"],
