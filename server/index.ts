@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
@@ -161,6 +162,40 @@ function serveLandingPage({
 }
 
 function configureExpoAndLanding(app: express.Application) {
+  const isDev = process.env.NODE_ENV === "development";
+  // In dev mode, proxy all Expo/Metro traffic to the Metro bundler on port 8081.
+  // Metro advertises the main Replit dev domain (port 5000) as its URL, so Expo
+  // Go hits this Express server first. Without the proxy, manifest requests fail
+  // because there are no pre-built static files in dev mode.
+  if (isDev) {
+    const metroProxy = createProxyMiddleware({
+      target: "http://localhost:8081",
+      changeOrigin: false,
+      ws: true,
+    });
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith("/api")) return next();
+      // Expo manifest request (Expo Go)
+      const platform = req.header("expo-platform");
+      if (platform === "ios" || platform === "android") {
+        return metroProxy(req, res, next);
+      }
+      // Metro bundle / asset / HMR / debugger paths
+      const isMetroPath =
+        req.path.startsWith("/node_modules/") ||
+        req.path.startsWith("/_expo/") ||
+        req.path.startsWith("/assets/") ||
+        req.path.startsWith("/__metro") ||
+        req.path.startsWith("/debugger") ||
+        req.path.endsWith(".bundle") ||
+        req.path.endsWith(".map");
+      if (isMetroPath) return metroProxy(req, res, next);
+      next();
+    });
+    log("Dev mode: proxying Expo/Metro requests to localhost:8081");
+    return;
+  }
+
   const templatePath = path.resolve(
     process.cwd(),
     "server",

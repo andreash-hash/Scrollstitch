@@ -1,5 +1,6 @@
 // server/index.ts
 import express from "express";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 // server/routes.ts
 import { createServer } from "node:http";
@@ -960,6 +961,26 @@ function serveLandingPage({
   res.status(200).send(html);
 }
 function configureExpoAndLanding(app2) {
+  const isDev = process.env.NODE_ENV === "development";
+  if (isDev) {
+    const metroProxy = createProxyMiddleware({
+      target: "http://localhost:8081",
+      changeOrigin: false,
+      ws: true
+    });
+    app2.use((req, res, next) => {
+      if (req.path.startsWith("/api")) return next();
+      const platform = req.header("expo-platform");
+      if (platform === "ios" || platform === "android") {
+        return metroProxy(req, res, next);
+      }
+      const isMetroPath = req.path.startsWith("/node_modules/") || req.path.startsWith("/_expo/") || req.path.startsWith("/assets/") || req.path.startsWith("/__metro") || req.path.startsWith("/debugger") || req.path.endsWith(".bundle") || req.path.endsWith(".map");
+      if (isMetroPath) return metroProxy(req, res, next);
+      next();
+    });
+    log("Dev mode: proxying Expo/Metro requests to localhost:8081");
+    return;
+  }
   const templatePath = path3.resolve(
     process.cwd(),
     "server",
