@@ -391,7 +391,7 @@ describe("scroll stitching pipeline (e2e on synthetic recordings)", () => {
     const page = generatePage(WIDTH, 4000, 4711);
     const dir = makeTempDir("range");
 
-    for (const step of [890, 48]) {
+    for (const step of [890, 48, 20]) {
       const frames = await renderFrames({
         page,
         outDir: path.join(dir, `step_${step}`),
@@ -399,7 +399,7 @@ describe("scroll stitching pipeline (e2e on synthetic recordings)", () => {
         frames: [{ position: 0 }, { position: step }],
         jpegQuality: 80,
       });
-      const expected = FRAME_H - step; // 70px (7%) and 912px (95%)
+      const expected = FRAME_H - step; // 70px (7%), 912px (95%), 940px (98%)
       const m = await measureOverlap(frames[0], frames[1]);
       assert.ok(
         m.matched,

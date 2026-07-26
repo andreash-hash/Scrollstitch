@@ -23,7 +23,11 @@ const HEADER_PIXEL_TOLERANCE = 10;
 // nccThresholdFor: small overlaps carry fewer rows, so they must score higher).
 const OVERLAP_MIN_FRACTION = 0.04;
 const OVERLAP_MIN_ABS = 24;           // absolute floor in px
-const OVERLAP_MAX_FRACTION = 0.97;    // search ceiling as fraction of frame height
+// Ceiling sits just under a whole frame: dense sampling of a slow scroll leaves
+// almost everything shared, and a pair that lands above the ceiling would score
+// noise and be called a gap. Matching at 98% is not a false positive — the
+// selection step recognises it as a near-duplicate and skips the frame.
+const OVERLAP_MAX_FRACTION = 0.99;    // search ceiling as fraction of frame height
 // Below this fraction an overlap is "small": too few rows for a modest NCC to
 // be trustworthy, so the confidence requirement ramps up to +SMALL_PENALTY.
 const OVERLAP_SMALL_FRACTION = 0.25;

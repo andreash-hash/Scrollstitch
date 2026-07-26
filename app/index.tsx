@@ -67,13 +67,14 @@ interface ProcessingResult {
   dimensions: { width: number; height: number };
 }
 
-// 300ms sampling misses all overlap during fast flick-scrolls (a flick moves
-// 1-1.5 screen heights per 300ms), which turns every seam into a gap. 150ms
-// keeps consecutive frames overlapping even mid-flick; the dedup passes throw
-// away the surplus on slow sections. Long videos widen the interval so the
-// frame count stays bounded.
-const EXTRACT_INTERVAL_MS = 150;
-const MAX_EXTRACT_FRAMES = 240;
+// Sampling has to be dense enough that even a fast flick leaves shared content
+// between consecutive frames: a flick moves 1-1.5 screen heights per 300ms, so
+// 300ms lost every seam and 150ms still lost the fastest ones. At 100ms even a
+// hard flick overlaps, and the surplus on slow sections costs nothing — dedup
+// and greedy selection discard it (a recent run: 65 frames in, 23 stitched).
+// Long videos widen the interval so the frame count stays bounded.
+const EXTRACT_INTERVAL_MS = 100;
+const MAX_EXTRACT_FRAMES = 300;
 
 function extractionIntervalMs(durationMs: number): number {
   return Math.max(EXTRACT_INTERVAL_MS, Math.ceil(durationMs / MAX_EXTRACT_FRAMES));

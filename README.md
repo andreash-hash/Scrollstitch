@@ -30,6 +30,21 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Denser sampling, ceiling raised to 99 %
+
+Measured on a real recording after the range fix: gaps fell from 30 of 45 seams
+to 7 of 22, and the output shrank from 37 793 px to 14 076 px (duplicate
+content actually trimmed). The remaining gaps scored 26–39 % — noise, meaning
+those pairs genuinely share no content because the flick outran the sampling.
+
+- Extraction interval 150 ms → **100 ms** (cap 300 frames) so even a hard flick
+  leaves shared content. The surplus costs nothing: dedup and greedy selection
+  discard it — that run turned 65 uploaded frames into 23 stitched.
+- Search ceiling 97 % → **99 %**. Denser sampling pushes slow-scroll pairs
+  toward total overlap; a pair above the ceiling scores noise and would be
+  called a gap. Matching at 98 % is not a false positive — the selection step
+  recognises it as a near-duplicate and skips the frame.
+
 ### 2026-07 — Overlap search covered only the middle of the range
 
 - **The matcher had blind spots at both ends.** It searched overlaps from 20 %
