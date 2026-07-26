@@ -25,6 +25,14 @@ const NCC_COARSE_STEP = 8;            // px — coarse search step
 const NCC_FINE_RANGE = 16;            // px — fine-search ± around coarse winner
 const NCC_FINE_STEP = 1;              // px — fine-search resolution
 
+// Undetected sticky chrome (an OS status bar with a live clock, a recording
+// timer, a home indicator) defeats sticky DETECTION because its pixels change
+// between sampled frames — yet it still sits at the same screen position in
+// every frame, poisoning the edges of every overlap comparison and dragging
+// true seams just below the confidence threshold. Excluding a guard band at
+// both ends of the compared window makes the measurement immune to it.
+const STICKY_GUARD_FRACTION = 0.08;  // of frame height, capped at 25% of the overlap
+
 // Adaptive NCC confidence. A fixed 0.85 rejects valid matches on dark or
 // low-contrast screens where JPEG noise dominates the (small) signal, so the
 // threshold scales with the measured contrast (grayscale stddev) of the two
@@ -344,18 +352,24 @@ function computeNCC(
   topBuf: Buffer,
   botBuf: Buffer,
   maxSearch: number,
-  overlap: number
+  overlap: number,
+  guard: number = 0
 ): number {
   const W = NCC_SAMPLE_WIDTH;
-  const n = overlap * W;
-  if (n === 0) return 0;
+  // Skip `guard` rows at both ends of the compared window: the start of B's
+  // region and the end of A's region are where undetected sticky chrome
+  // (status bar, home indicator, tab bar) sits when detection missed it.
+  const lo = guard;
+  const hi = overlap - guard;
+  const n = (hi - lo) * W;
+  if (n <= 0) return 0;
 
   const rowOffset = maxSearch - overlap;
 
   // Pass 1: compute means
   let sumA = 0;
   let sumB = 0;
-  for (let r = 0; r < overlap; r++) {
+  for (let r = lo; r < hi; r++) {
     const ti = (rowOffset + r) * W;
     const bi = r * W;
     for (let x = 0; x < W; x++) {
@@ -370,7 +384,7 @@ function computeNCC(
   let num = 0;
   let denA = 0;
   let denB = 0;
-  for (let r = 0; r < overlap; r++) {
+  for (let r = lo; r < hi; r++) {
     const ti = (rowOffset + r) * W;
     const bi = r * W;
     for (let x = 0; x < W; x++) {
@@ -460,13 +474,16 @@ export async function measureOverlap(
   const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
   const threshold = adaptiveNccThreshold(contrast);
 
+  const stickyGuard = Math.round(frameH * STICKY_GUARD_FRACTION);
+  const guardFor = (ov: number) => Math.min(stickyGuard, Math.floor(ov / 4));
+
   // Coarse pass — iterate from minOverlap to maxSearch in NCC_COARSE_STEP steps.
   // Track GLOBAL maximum NCC; no "prefer smallest" or "prefer largest" bias.
   let bestOverlap = 0;
   let bestNCC = -1;
 
   for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
-    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov);
+    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
     if (ncc > bestNCC) {
       bestNCC = ncc;
       bestOverlap = ov;
@@ -480,7 +497,7 @@ export async function measureOverlap(
   const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
   const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
   for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
-    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov);
+    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
     if (ncc > bestNCC) {
       bestNCC = ncc;
       bestOverlap = ov;
@@ -854,10 +871,13 @@ export async function stitchFrames(
     const { data, height } = await decodeFrameRgb(framePaths[i], targetWidth);
     const overlap = i === 0 ? 0 : Math.max(0, Math.min(seamPlan[i].overlapPx, currentY, height - 1));
     const top = currentY - overlap;
-    // Later frames overwrite the overlap zone of the previous frame — the
-    // content is the same rows, and the newer frame is the cleaner source for
-    // what follows below the seam.
-    data.copy(canvas, top * rowBytes);
+    // Cut the seam in the MIDDLE of the overlap zone: the first half keeps the
+    // previous frame's pixels, the second half takes this frame's. The content
+    // is identical either way, but sticky chrome that escaped detection sits at
+    // the very edges (this frame's top, the previous frame's bottom) — cutting
+    // mid-overlap keeps both out of the output.
+    const cut = overlap > 0 ? Math.floor(overlap / 2) : 0;
+    data.copy(canvas, (top + cut) * rowBytes, cut * rowBytes);
     currentY = top + height;
     onProgress?.(i + 1, framePaths.length);
   }

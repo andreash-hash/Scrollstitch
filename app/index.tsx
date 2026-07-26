@@ -780,6 +780,23 @@ export default function ScrollSnapScreen() {
     }
   };
 
+  // Web: MediaLibrary/Sharing don't exist in the browser (and RN-web's Alert
+  // is a no-op, so their failures were invisible). Download the file instead.
+  const webDownloadOutput = async (urlPath: string, filename: string): Promise<void> => {
+    const url = new URL(urlPath, getApiUrl()).toString();
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to fetch file");
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+  };
+
   const fetchAndSaveFile = async (urlPath: string, filename: string): Promise<string> => {
     const baseUrl = getApiUrl();
     const jobFile = urlPath.split("/").pop();
@@ -802,6 +819,11 @@ export default function ScrollSnapScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsSaving(true);
     try {
+      if (Platform.OS === "web") {
+        const ext = result.imageUrl.endsWith(".jpg") ? "jpg" : "png";
+        await webDownloadOutput(result.imageUrl, `scrollsnap_${Date.now()}.${ext}`);
+        return;
+      }
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== "granted") {
         Alert.alert("Permission needed", "Please grant access to save images.");
@@ -824,6 +846,10 @@ export default function ScrollSnapScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsSharing(true);
     try {
+      if (Platform.OS === "web") {
+        await webDownloadOutput(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
+        return;
+      }
       const localUri = await fetchAndSaveFile(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {

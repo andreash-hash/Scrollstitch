@@ -132,6 +132,9 @@ export interface RenderOptions {
   frames: FrameSpec[];
   headerHeight?: number;
   footerHeight?: number;
+  /** Regenerate the header per frame (a status bar with a live clock/timer) —
+   * pixels change every frame, so sticky detection cannot catch it. */
+  dynamicHeader?: boolean;
   /** JPEG quality (1–100); 0 or undefined writes lossless PNG frames. */
   jpegQuality?: number;
   seed?: number;
@@ -151,6 +154,7 @@ export async function renderFrames(opts: RenderOptions): Promise<string[]> {
     frames,
     headerHeight = 0,
     footerHeight = 0,
+    dynamicHeader = false,
     jpegQuality = 80,
     seed = 999,
   } = opts;
@@ -172,7 +176,11 @@ export async function renderFrames(opts: RenderOptions): Promise<string[]> {
     const pos = Math.max(0, Math.min(page.height - contentH, Math.round(spec.position)));
     const frame = Buffer.alloc(frameHeight * rowBytes);
 
-    if (header) header.copy(frame, 0);
+    const frameHeader =
+      headerHeight > 0 && dynamicHeader
+        ? generatePage(width, headerHeight, seed + 4000 + i).data
+        : header;
+    if (frameHeader) frameHeader.copy(frame, 0);
     page.data.copy(
       frame,
       headerHeight * rowBytes,

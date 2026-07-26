@@ -30,6 +30,23 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Status-bar chrome and web downloads
+
+- **Guard band in overlap matching**: sticky detection only catches chrome
+  whose pixels are *identical* across frames, so an OS status bar with a live
+  clock (or a screen-recording timer) slips through — yet it still occupies the
+  same screen rows in every frame and poisons both edges of every comparison,
+  pushing true seams just under the confidence threshold. NCC now excludes an
+  8 %-of-frame guard band at both ends of the compared window. Measured on the
+  synthetic case: NCC 0.78 (rejected) without the guard, ≥0.85 (accepted) with.
+- **Seams cut mid-overlap**: the stitcher now takes the previous frame's pixels
+  for the first half of an overlap and the new frame's for the second half.
+  Content is identical either way, but undetected chrome lives at the frame
+  edges — cutting in the middle keeps it out of the output entirely.
+- **Web save/share**: `MediaLibrary` and `Sharing` don't exist in the browser,
+  and React Native Web's `Alert` is a no-op, so both buttons failed silently in
+  the Replit preview. On web they now download the file via a blob URL instead.
+
 ### 2026-07 — Real-recording fixes (fast flicks, iOS preview)
 
 - **Denser frame sampling**: 300 ms sampling missed all overlap during flick

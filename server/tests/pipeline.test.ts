@@ -384,6 +384,62 @@ describe("scroll stitching pipeline (e2e on synthetic recordings)", () => {
     );
   });
 
+  test("a status bar with a live clock (undetectable sticky) still stitches", async () => {
+    // The header changes every frame, so sticky detection cannot remove it —
+    // the guard band in the overlap comparison must absorb it instead.
+    const headerH = 64;
+    const contentH = FRAME_H - headerH; // 896
+    const step = 480; // overlap 480px = 50% of frame height — inside the keep window
+    const positions = [0, 480, 960, 1440, 1920, 2400];
+    const pageH = 2400 + contentH;
+    const page = generatePage(WIDTH, pageH, 5150);
+
+    const frames = await renderFrames({
+      page,
+      outDir: makeTempDir("statusbar"),
+      frameHeight: FRAME_H,
+      frames: positions.map((position) => ({ position })),
+      headerHeight: headerH,
+      dynamicHeader: true,
+      jpegQuality: 80,
+    });
+
+    const run = await runPipeline(frames);
+
+    assert.equal(
+      run.selection.gapCount,
+      0,
+      "dynamic status bar must not break overlap detection"
+    );
+    // Every seam: overlap = frameH − step (header included in the geometry)
+    for (const seam of run.selection.seams.slice(1)) {
+      assert.equal(seam.type, "overlap");
+      assert.ok(
+        Math.abs(seam.overlapPx - (FRAME_H - step)) <= 10,
+        `seam overlap ${seam.overlapPx}px should be ≈${FRAME_H - step}px`
+      );
+    }
+    // Height = one header + the covered page span
+    const expected = headerH + 2400 + contentH;
+    assert.ok(
+      Math.abs(run.stitch.height - expected) <= 30,
+      `stitched height ${run.stitch.height} should be ≈${expected}`
+    );
+
+    // Content strips land at pageY + headerH — and mid-overlap seam cutting
+    // must keep the per-frame header chrome out of the middle of the output
+    const stitched = await greyFromFile(run.outputPath);
+    const pageGrey = await greyFromPage(page);
+    for (const y of [500, 1600, 3000]) {
+      const { bestY, bestNcc } = locateStrip(stitched, pageGrey, y);
+      assert.ok(bestNcc >= 0.75, `strip at ${y}: best NCC ${bestNcc.toFixed(3)} too low`);
+      assert.ok(
+        Math.abs(bestY - (y + headerH)) <= 45,
+        `strip at ${y} found at ${bestY}, expected ≈${y + headerH}`
+      );
+    }
+  });
+
   test("blank (all-black) decoder-glitch frames are skipped with a warning", async () => {
     const pageH = 3840;
     const page = generatePage(WIDTH, pageH, 6161);

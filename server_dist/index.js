@@ -28,6 +28,7 @@ var NCC_SAMPLE_WIDTH = 64;
 var NCC_COARSE_STEP = 8;
 var NCC_FINE_RANGE = 16;
 var NCC_FINE_STEP = 1;
+var STICKY_GUARD_FRACTION = 0.08;
 var NCC_CONFIDENCE_MAX = 0.85;
 var NCC_CONFIDENCE_MIN = 0.75;
 var NCC_CONTRAST_LOW = 8;
@@ -212,14 +213,16 @@ async function deduplicateFrames(framePaths, onProgress) {
   }
   return unique;
 }
-function computeNCC(topBuf, botBuf, maxSearch, overlap) {
+function computeNCC(topBuf, botBuf, maxSearch, overlap, guard = 0) {
   const W = NCC_SAMPLE_WIDTH;
-  const n = overlap * W;
-  if (n === 0) return 0;
+  const lo = guard;
+  const hi = overlap - guard;
+  const n = (hi - lo) * W;
+  if (n <= 0) return 0;
   const rowOffset = maxSearch - overlap;
   let sumA = 0;
   let sumB = 0;
-  for (let r = 0; r < overlap; r++) {
+  for (let r = lo; r < hi; r++) {
     const ti = (rowOffset + r) * W;
     const bi = r * W;
     for (let x = 0; x < W; x++) {
@@ -232,7 +235,7 @@ function computeNCC(topBuf, botBuf, maxSearch, overlap) {
   let num = 0;
   let denA = 0;
   let denB = 0;
-  for (let r = 0; r < overlap; r++) {
+  for (let r = lo; r < hi; r++) {
     const ti = (rowOffset + r) * W;
     const bi = r * W;
     for (let x = 0; x < W; x++) {
@@ -278,10 +281,12 @@ async function measureOverlap(topImagePath, bottomImagePath) {
   const botBuf = await sharp(bottomImagePath).extract({ left: 0, top: 0, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer();
   const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
   const threshold = adaptiveNccThreshold(contrast);
+  const stickyGuard = Math.round(frameH * STICKY_GUARD_FRACTION);
+  const guardFor = (ov) => Math.min(stickyGuard, Math.floor(ov / 4));
   let bestOverlap = 0;
   let bestNCC = -1;
   for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
-    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov);
+    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
     if (ncc > bestNCC) {
       bestNCC = ncc;
       bestOverlap = ov;
@@ -290,7 +295,7 @@ async function measureOverlap(topImagePath, bottomImagePath) {
   const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
   const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
   for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
-    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov);
+    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
     if (ncc > bestNCC) {
       bestNCC = ncc;
       bestOverlap = ov;
@@ -521,7 +526,8 @@ async function stitchFrames(framePaths, outputPath, quality = "png", seams = nul
     const { data, height } = await decodeFrameRgb(framePaths[i], targetWidth);
     const overlap = i === 0 ? 0 : Math.max(0, Math.min(seamPlan[i].overlapPx, currentY, height - 1));
     const top = currentY - overlap;
-    data.copy(canvas, top * rowBytes);
+    const cut = overlap > 0 ? Math.floor(overlap / 2) : 0;
+    data.copy(canvas, (top + cut) * rowBytes, cut * rowBytes);
     currentY = top + height;
     onProgress?.(i + 1, framePaths.length);
   }
