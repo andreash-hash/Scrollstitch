@@ -759,11 +759,15 @@ export async function selectFrames(
       continue;
     }
 
+    // User-facing text stays plain: the NCC/threshold numbers are diagnostics
+    // for the log, not something to explain on a result screen.
     const warning =
-      `Scroll jump detected at frame ${i + 1} of ${framePaths.length}: ` +
-      `no reliable overlap with the previous frame (best match ${(Math.max(0, m.ncc) * 100).toFixed(0)}%, ` +
-      `needed ${(m.threshold * 100).toFixed(0)}%). Content may be missing at this seam.`;
-    console.warn(`  select: GAP — ${warning}`);
+      `Scroll jump around frame ${i + 1} of ${framePaths.length} — ` +
+      `the scroll moved too fast here, so some content may be missing at this join.`;
+    console.warn(
+      `  select: GAP at frame ${i + 1}/${framePaths.length} ` +
+        `(best NCC ${Math.max(0, m.ncc).toFixed(3)} < threshold ${m.threshold.toFixed(3)})`
+    );
     selection.warnings.push(warning);
     keep(candidate, seamFromMeasurement(m), sig);
     onProgress?.(i, total);

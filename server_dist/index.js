@@ -434,8 +434,10 @@ async function selectFrames(framePaths, onProgress) {
       keep(fallback.path, fallback.seam, fallback.sig);
       continue;
     }
-    const warning = `Scroll jump detected at frame ${i + 1} of ${framePaths.length}: no reliable overlap with the previous frame (best match ${(Math.max(0, m.ncc) * 100).toFixed(0)}%, needed ${(m.threshold * 100).toFixed(0)}%). Content may be missing at this seam.`;
-    console.warn(`  select: GAP \u2014 ${warning}`);
+    const warning = `Scroll jump around frame ${i + 1} of ${framePaths.length} \u2014 the scroll moved too fast here, so some content may be missing at this join.`;
+    console.warn(
+      `  select: GAP at frame ${i + 1}/${framePaths.length} (best NCC ${Math.max(0, m.ncc).toFixed(3)} < threshold ${m.threshold.toFixed(3)})`
+    );
     selection.warnings.push(warning);
     keep(candidate, seamFromMeasurement(m), sig);
     onProgress?.(i, total);

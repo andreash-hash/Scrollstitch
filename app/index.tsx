@@ -830,7 +830,10 @@ export default function ScrollSnapScreen() {
         Alert.alert("Permission needed", "Please grant access to save images.");
         return;
       }
-      const localUri = await fetchAndSaveFile(result.imageUrl, `scrollsnap_${Date.now()}.png`);
+      // Match the real format — a JPEG saved as .png confuses Photos and any
+      // app the user later opens it in.
+      const ext = result.imageUrl.endsWith(".jpg") ? "jpg" : "png";
+      const localUri = await fetchAndSaveFile(result.imageUrl, `scrollsnap_${Date.now()}.${ext}`);
       await MediaLibrary.saveToLibraryAsync(localUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", "Image saved to your photo library.");
@@ -965,10 +968,11 @@ export default function ScrollSnapScreen() {
               Crop controls, sensitivity settings, and output quality are available in ScrollSnap Pro.
             </Text>
             <Pressable
-              onPress={async () => {
+              onPress={() => {
                 setShowUpgradeModal(false);
-                await resetOnboarding();
-                router.replace("/onboarding");
+                // Straight to the paywall — replaying the whole intro (and
+                // clearing the onboarding flag) is not what "View Plans" means.
+                router.push("/onboarding?directPaywall=1");
               }}
               style={styles.upgradeBtn}
             >
