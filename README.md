@@ -30,6 +30,30 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Accessibility pass
+
+Every interactive element in the app now carries a role and a label — 37
+controls across the main screen, onboarding/paywall, the subscription banner
+and the error fallback (audited programmatically; none left unlabelled).
+
+- **Roles and labels** on every button, with `accessibilityHint` where the
+  outcome isn't obvious from the label ("Manage subscription" opens the App
+  Store, "View plans" leaves the current screen).
+- **State is exposed, not just drawn**: sensitivity and output-quality chips
+  and the billing toggle are `radio` with a `selected` state; buttons that
+  work in the background report `busy` and `disabled`; the settings toggle
+  reports `expanded`.
+- **Progress is announced.** An animated bar tells a screen-reader user
+  nothing, and the poll rewrites the status text several times a second, so
+  the bar is a `progressbar` with a live value and each stage change is
+  announced once via `AccessibilityInfo`.
+- **Warnings and errors are alerts** (`accessibilityRole="alert"` plus a live
+  region), so scroll-jump warnings, processing failures and the subscription
+  banner reach the user instead of appearing silently.
+- **Composite readouts**: each stat tile reads as one phrase ("23 frames used
+  in the stitch") instead of a number and a label read separately, and the
+  result image is described with its dimensions.
+
 ### 2026-07 — Local changes no longer sink a seam
 
 A real Reddit-feed recording produced near-misses rather than noise: seams

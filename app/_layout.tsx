@@ -77,16 +77,30 @@ function SubscriptionSync() {
         { bottom: Math.max(insets.bottom, 8) + 8 },
       ]}
       pointerEvents="box-none"
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
     >
       <View style={syncStyles.inner}>
         <Feather name="alert-circle" size={15} color={C.danger} style={syncStyles.icon} />
         <Text style={syncStyles.message} numberOfLines={2}>
           Couldn&apos;t load subscription info
         </Text>
-        <Pressable onPress={handleRetry} style={syncStyles.retryBtn} hitSlop={8}>
+        <Pressable
+          onPress={handleRetry}
+          style={syncStyles.retryBtn}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading subscription info"
+        >
           <Text style={syncStyles.retryText}>Retry</Text>
         </Pressable>
-        <Pressable onPress={() => setDismissed(true)} style={syncStyles.closeBtn} hitSlop={8}>
+        <Pressable
+          onPress={() => setDismissed(true)}
+          style={syncStyles.closeBtn}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss"
+        >
           <Feather name="x" size={14} color={C.textSecondary} />
         </Pressable>
       </View>

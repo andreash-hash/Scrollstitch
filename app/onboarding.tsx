@@ -376,7 +376,12 @@ function PaywallSlide({
             <Text style={paywall.errorText}>
               Couldn&apos;t load pricing. Check your connection and try again.
             </Text>
-            <Pressable onPress={onRetryOfferings} style={paywall.retryBtn}>
+            <Pressable
+              onPress={onRetryOfferings}
+              style={paywall.retryBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading pricing"
+            >
               <Text style={paywall.retryBtnText}>Retry</Text>
             </Pressable>
           </View>
@@ -388,6 +393,13 @@ function PaywallSlide({
                   key={b}
                   onPress={() => setBilling(b)}
                   style={[paywall.billingChip, billing === b && paywall.billingChipActive]}
+                  accessibilityRole="radio"
+                  accessibilityLabel={
+                    b === "monthly"
+                      ? `Monthly plan, ${monthlyPrice} per month`
+                      : `Annual plan, ${annualPrice} per year, save 50 percent`
+                  }
+                  accessibilityState={{ selected: billing === b }}
                 >
                   <Text style={[paywall.billingChipText, billing === b && paywall.billingChipTextActive]}>
                     {b === "monthly" ? `${monthlyPrice} / mo` : `${annualPrice} / yr`}
@@ -406,6 +418,16 @@ function PaywallSlide({
                 onPress={handleCtaPress}
                 disabled={isPurchasing || !selectedPackage}
                 style={paywall.ctaWrap}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isPurchasing
+                    ? "Processing purchase"
+                    : `Subscribe for ${billing === "monthly" ? monthlyPrice + " per month" : annualPrice + " per year"}`
+                }
+                accessibilityState={{
+                  disabled: isPurchasing || !selectedPackage,
+                  busy: isPurchasing,
+                }}
               >
                 <LinearGradient
                   colors={[C.accent, "#00E5B8"]}
@@ -426,7 +448,12 @@ function PaywallSlide({
           </>
         )}
 
-        <Pressable onPress={onContinueFree} style={paywall.skip}>
+        <Pressable
+          onPress={onContinueFree}
+          style={paywall.skip}
+          accessibilityRole="button"
+          accessibilityLabel="Continue with limited access"
+        >
           <Text style={paywall.skipText}>Continue with limited access</Text>
         </Pressable>
 
@@ -434,6 +461,9 @@ function PaywallSlide({
           onPress={onRestore}
           disabled={isRestoring}
           style={paywall.restoreWrap}
+          accessibilityRole="button"
+          accessibilityLabel="Restore purchases"
+          accessibilityState={{ disabled: isRestoring, busy: isRestoring }}
         >
           {isRestoring ? (
             <ActivityIndicator size="small" color={C.textTertiary} />
@@ -464,6 +494,8 @@ function PaywallSlide({
               <Pressable
                 onPress={() => setConfirmVisible(false)}
                 style={[paywall.modalBtn, paywall.modalBtnCancel]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel purchase"
               >
                 <Text style={paywall.modalBtnCancelText}>Cancel</Text>
               </Pressable>
@@ -473,6 +505,8 @@ function PaywallSlide({
                   if (selectedPackage) onPurchase(selectedPackage);
                 }}
                 style={[paywall.modalBtn, paywall.modalBtnConfirm]}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm purchase"
               >
                 <Text style={paywall.modalBtnConfirmText}>Confirm</Text>
               </Pressable>
@@ -610,6 +644,8 @@ export default function OnboardingScreen() {
         <Pressable
           onPress={handleContinueFree}
           style={[container.skip, { top: insets.top + webTopInset + 10 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Skip introduction"
         >
           <Text style={container.skipText}>Skip</Text>
         </Pressable>
@@ -640,6 +676,10 @@ export default function OnboardingScreen() {
           <Pressable
             onPress={goNext}
             style={container.nextBtn}
+            accessibilityRole="button"
+            accessibilityLabel={
+              activeIndex < SLIDES.length - 1 ? "Next slide" : "Continue to plans"
+            }
           >
             <LinearGradient
               colors={[C.accent, "#00E5B8"]}

@@ -12,6 +12,7 @@ import {
   Dimensions,
   StatusBar,
   ActivityIndicator,
+  AccessibilityInfo,
   Modal,
   Linking,
 } from "react-native";
@@ -117,7 +118,11 @@ function ProgressBar({ progress }: { progress: number }) {
     width: `${animatedWidth.value}%` as any,
   }));
   return (
-    <View style={styles.progressBarContainer}>
+    <View
+      style={styles.progressBarContainer}
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }}
+    >
       <Animated.View style={[styles.progressBarFill, barStyle]}>
         <LinearGradient
           colors={[C.accent, "#00E5B8"]}
@@ -512,6 +517,7 @@ export default function ScrollSnapScreen() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fakeTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressRef = useRef(0);
+  const statusTextRef = useRef("");
   const startTimeRef = useRef(0);
   const buttonScale = useSharedValue(1);
 
@@ -565,6 +571,20 @@ export default function ScrollSnapScreen() {
   useEffect(() => {
     return cleanupPolling;
   }, [cleanupPolling]);
+
+  // Screen readers get nothing from an animated bar, and the poll rewrites the
+  // status text several times a second — announce once per stage instead.
+  useEffect(() => {
+    if (stage === "idle") return;
+    const message =
+      stage === "complete"
+        ? "Done. Your long screenshot is ready."
+        : stage === "error"
+          ? `Processing failed. ${errorMessage}`
+          : statusTextRef.current || "Processing";
+    AccessibilityInfo.announceForAccessibility(message);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
 
   const pollProgress = useCallback(
     (jobId: string) => {
@@ -924,6 +944,8 @@ export default function ScrollSnapScreen() {
     setCropBottom(0);
   };
 
+  statusTextRef.current = statusText;
+
   const isProcessing =
     stage === "extracting" || stage === "filtering" || stage === "uploading" || stage === "processing";
 
@@ -942,7 +964,13 @@ export default function ScrollSnapScreen() {
           )}
         </View>
         {(stage === "complete" || stage === "error") && (
-          <Pressable onPress={reset} style={styles.headerButton}>
+          <Pressable
+            onPress={reset}
+            style={styles.headerButton}
+            accessibilityRole="button"
+            accessibilityLabel="Start over"
+            accessibilityHint="Clears the result and returns to the start screen"
+          >
             <Feather name="rotate-ccw" size={20} color={C.textSecondary} />
           </Pressable>
         )}
@@ -975,6 +1003,8 @@ export default function ScrollSnapScreen() {
                 router.push("/onboarding?directPaywall=1");
               }}
               style={styles.upgradeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="View plans"
             >
               <LinearGradient
                 colors={[C.accent, "#00E5B8"]}
@@ -988,6 +1018,8 @@ export default function ScrollSnapScreen() {
             <Pressable
               onPress={() => setShowUpgradeModal(false)}
               style={styles.upgradeDismiss}
+              accessibilityRole="button"
+              accessibilityLabel="Not now"
             >
               <Text style={styles.upgradeDismissText}>Not now</Text>
             </Pressable>
@@ -1027,6 +1059,11 @@ export default function ScrollSnapScreen() {
                 onPressIn={() => { buttonScale.value = withSpring(0.96); }}
                 onPressOut={() => { buttonScale.value = withSpring(1); }}
                 style={styles.pickButton}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  Platform.OS === "web" ? "Pick a screen recording" : "Use latest recording"
+                }
+                accessibilityHint="Extracts frames and stitches them into one long screenshot"
               >
                 <LinearGradient
                   colors={[C.accent, "#00E5B8"]}
@@ -1043,7 +1080,12 @@ export default function ScrollSnapScreen() {
             </Animated.View>
 
             {Platform.OS !== "web" && (
-              <Pressable onPress={pickVideo} style={styles.secondaryButton}>
+              <Pressable
+                onPress={pickVideo}
+                style={styles.secondaryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Pick from library"
+              >
                 <Feather name="folder" size={18} color={C.accent} />
                 <Text style={styles.secondaryButtonText}>Pick from Library</Text>
               </Pressable>
@@ -1052,6 +1094,9 @@ export default function ScrollSnapScreen() {
             <Pressable
               onPress={() => setShowSettings((v) => !v)}
               style={styles.settingsToggle}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+              accessibilityState={{ expanded: showSettings }}
             >
               <Feather name="sliders" size={15} color={C.textSecondary} />
               <Text style={styles.settingsToggleText}>Settings</Text>
@@ -1077,6 +1122,8 @@ export default function ScrollSnapScreen() {
                         onPress={() => refetchCustomerInfo()}
                         style={styles.subErrorRetryBtn}
                         hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Retry loading subscription info"
                       >
                         <Text style={styles.subErrorRetryText}>Retry</Text>
                       </Pressable>
@@ -1114,7 +1161,13 @@ export default function ScrollSnapScreen() {
                       </Text>
                     )}
                     {Platform.OS !== "web" && (
-                      <Pressable onPress={openManageSubscriptions} style={styles.manageSubBtn}>
+                      <Pressable
+                        onPress={openManageSubscriptions}
+                        style={styles.manageSubBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Manage subscription"
+                        accessibilityHint="Opens your subscription settings in the App Store"
+                      >
                         <Feather name="external-link" size={13} color={C.accent} />
                         <Text style={styles.manageSubBtnText}>Manage Subscription</Text>
                       </Pressable>
@@ -1129,6 +1182,9 @@ export default function ScrollSnapScreen() {
                         router.push("/onboarding?directPaywall=1");
                       }}
                       style={styles.upgradeInlineBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Upgrade to Pro"
+                      accessibilityHint="Shows the available subscription plans"
                     >
                       <LinearGradient
                         colors={[C.accent, "#00E5B8"]}
@@ -1155,6 +1211,9 @@ export default function ScrollSnapScreen() {
                   }}
                   disabled={isRestoring}
                   style={styles.restoreBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Restore purchases"
+                  accessibilityState={{ disabled: isRestoring, busy: isRestoring }}
                 >
                   {isRestoring ? (
                     <ActivityIndicator size="small" color={C.textTertiary} />
@@ -1179,6 +1238,9 @@ export default function ScrollSnapScreen() {
                         styles.chipButton,
                         sensitivity === key && styles.chipButtonActive,
                       ]}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`Sensitivity: ${SENSITIVITY_PRESETS[key].label}. ${SENSITIVITY_PRESETS[key].desc}`}
+                      accessibilityState={{ selected: sensitivity === key }}
                     >
                       <Text
                         style={[
@@ -1205,6 +1267,13 @@ export default function ScrollSnapScreen() {
                         styles.chipButton,
                         outputQuality === q && styles.chipButtonActive,
                       ]}
+                      accessibilityRole="radio"
+                      accessibilityLabel={
+                        q === "png"
+                          ? "Output quality: PNG, lossless, larger file"
+                          : "Output quality: JPEG, smaller file, slight compression"
+                      }
+                      accessibilityState={{ selected: outputQuality === q }}
                     >
                       <Text
                         style={[
@@ -1227,6 +1296,9 @@ export default function ScrollSnapScreen() {
                     router.replace("/onboarding");
                   }}
                   style={styles.replayIntroBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Replay intro"
+                  accessibilityHint="Shows the introduction screens again"
                 >
                   <Feather name="play-circle" size={14} color={C.textTertiary} />
                   <Text style={styles.replayIntroText}>Replay intro</Text>
@@ -1304,11 +1376,20 @@ export default function ScrollSnapScreen() {
 
         {stage === "error" && (
           <Animated.View entering={FadeInDown.duration(400)} style={styles.errorContainer}>
-            <View style={styles.errorCard}>
+            <View
+              style={styles.errorCard}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+            >
               <Feather name="alert-circle" size={40} color={C.danger} />
               <Text style={styles.errorTitle}>Processing Failed</Text>
               <Text style={styles.errorMessage}>{errorMessage}</Text>
-              <Pressable onPress={reset} style={styles.retryButton}>
+              <Pressable
+                onPress={reset}
+                style={styles.retryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Try again"
+              >
                 <Feather name="rotate-ccw" size={18} color={C.accent} />
                 <Text style={styles.retryText}>Try Again</Text>
               </Pressable>
@@ -1319,17 +1400,29 @@ export default function ScrollSnapScreen() {
         {stage === "complete" && result && (
           <Animated.View entering={FadeInDown.duration(400)} style={styles.resultContainer}>
             <View style={styles.statsRow}>
-              <View style={styles.statCard}>
+              <View
+                style={styles.statCard}
+                accessible
+                accessibilityLabel={`${result.frameCount} frames captured in total`}
+              >
                 <Text style={styles.statValue}>{result.frameCount}</Text>
                 <Text style={styles.statLabel}>Total Frames</Text>
               </View>
-              <View style={styles.statCard}>
+              <View
+                style={styles.statCard}
+                accessible
+                accessibilityLabel={`${result.selectedFrames ?? result.uniqueFrames} frames used in the stitch`}
+              >
                 <Text style={styles.statValue}>
                   {result.selectedFrames ?? result.uniqueFrames}
                 </Text>
                 <Text style={styles.statLabel}>Stitched</Text>
               </View>
-              <View style={styles.statCard}>
+              <View
+                style={styles.statCard}
+                accessible
+                accessibilityLabel={`Result size: ${result.dimensions.width} by ${result.dimensions.height} pixels`}
+              >
                 <Text style={styles.statValue}>
                   {result.dimensions.width}x{result.dimensions.height}
                 </Text>
@@ -1338,7 +1431,11 @@ export default function ScrollSnapScreen() {
             </View>
 
             {((result.gapCount ?? 0) > 0 || (result.warnings?.length ?? 0) > 0) && (
-              <View style={styles.warningCard}>
+              <View
+                style={styles.warningCard}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
                 <View style={styles.warningTitleRow}>
                   <Feather name="alert-triangle" size={16} color={C.warning} />
                   <Text style={styles.warningTitle}>
@@ -1376,6 +1473,9 @@ export default function ScrollSnapScreen() {
                 bouncesZoom={true}
               >
                 <Image
+                  accessible
+                  accessibilityRole="image"
+                  accessibilityLabel={`Stitched screenshot, ${result.dimensions.width} by ${result.dimensions.height} pixels`}
                   source={{
                     uri: new URL(result.previewUrl ?? result.imageUrl, getApiUrl()).toString(),
                   }}
@@ -1404,6 +1504,10 @@ export default function ScrollSnapScreen() {
                       <Pressable
                         onPress={() => setCropTop((v) => Math.max(0, v - 50))}
                         style={styles.stepperBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Decrease top trim by 50 pixels"
+                        accessibilityValue={{ text: `${cropTop} pixels` }}
+                        accessibilityState={{ disabled: cropTop === 0 }}
                       >
                         <Feather name="minus" size={16} color={C.textSecondary} />
                       </Pressable>
@@ -1411,6 +1515,9 @@ export default function ScrollSnapScreen() {
                       <Pressable
                         onPress={() => setCropTop((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
                         style={styles.stepperBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Increase top trim by 50 pixels"
+                        accessibilityValue={{ text: `${cropTop} pixels` }}
                       >
                         <Feather name="plus" size={16} color={C.accent} />
                       </Pressable>
@@ -1422,6 +1529,10 @@ export default function ScrollSnapScreen() {
                       <Pressable
                         onPress={() => setCropBottom((v) => Math.max(0, v - 50))}
                         style={styles.stepperBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Decrease bottom trim by 50 pixels"
+                        accessibilityValue={{ text: `${cropBottom} pixels` }}
+                        accessibilityState={{ disabled: cropBottom === 0 }}
                       >
                         <Feather name="minus" size={16} color={C.textSecondary} />
                       </Pressable>
@@ -1429,6 +1540,9 @@ export default function ScrollSnapScreen() {
                       <Pressable
                         onPress={() => setCropBottom((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
                         style={styles.stepperBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Increase bottom trim by 50 pixels"
+                        accessibilityValue={{ text: `${cropBottom} pixels` }}
                       >
                         <Feather name="plus" size={16} color={C.accent} />
                       </Pressable>
@@ -1440,6 +1554,9 @@ export default function ScrollSnapScreen() {
                     onPress={applyCrop}
                     disabled={isCropping}
                     style={styles.cropApplyBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={isCropping ? "Cropping" : "Apply crop"}
+                    accessibilityState={{ disabled: isCropping, busy: isCropping }}
                   >
                     {isCropping ? (
                       <ActivityIndicator size="small" color="#0A0E17" />
@@ -1456,6 +1573,9 @@ export default function ScrollSnapScreen() {
               <Pressable
                 onPress={() => setShowUpgradeModal(true)}
                 style={styles.cropPanelLocked}
+                accessibilityRole="button"
+                accessibilityLabel="Trim edges, a Pro feature"
+                accessibilityHint="Shows the available subscription plans"
               >
                 <Feather name="lock" size={14} color={C.accent} />
                 <Text style={styles.cropPanelLockedText}>Trim edges — Pro feature</Text>
@@ -1479,6 +1599,12 @@ export default function ScrollSnapScreen() {
                   pressed && styles.actionButtonPressed,
                   (isSaving || isSharing || isCropping) && styles.actionButtonDisabled,
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={isSaving ? "Saving image" : "Save to Photos"}
+                accessibilityState={{
+                  disabled: isSaving || isSharing || isCropping,
+                  busy: isSaving,
+                }}
               >
                 {isSaving ? (
                   <ActivityIndicator size="small" color="#0A0E17" />
@@ -1499,6 +1625,12 @@ export default function ScrollSnapScreen() {
                   pressed && styles.actionButtonPressed,
                   (isSaving || isSharing || isCropping) && styles.actionButtonDisabled,
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={isSharing ? "Preparing PDF" : "Share as PDF"}
+                accessibilityState={{
+                  disabled: isSaving || isSharing || isCropping,
+                  busy: isSharing,
+                }}
               >
                 {isSharing ? (
                   <ActivityIndicator size="small" color={C.accent} />
@@ -1511,7 +1643,12 @@ export default function ScrollSnapScreen() {
               </Pressable>
             </View>
 
-            <Pressable onPress={reset} style={styles.newVideoButton}>
+            <Pressable
+              onPress={reset}
+              style={styles.newVideoButton}
+              accessibilityRole="button"
+              accessibilityLabel="Process another video"
+            >
               <Feather name="plus" size={18} color={C.textSecondary} />
               <Text style={styles.newVideoText}>Process Another Video</Text>
             </Pressable>
