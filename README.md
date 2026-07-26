@@ -30,6 +30,21 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Local changes no longer sink a seam
+
+A real Reddit-feed recording produced near-misses rather than noise: seams
+scoring 0.75–0.80 against a 0.85 bar, i.e. content that plainly lines up. Feeds
+mutate locally while you scroll — an image finishes loading, a video starts, a
+counter ticks — and a single correlation over the whole overlap lets one
+changed band outvote everything that matches.
+
+- Each candidate overlap is now also scored **band by band (9 slices) and the
+  median taken**, with the final score the better of global and median. A
+  minority of changed bands cannot move the median, while unrelated content
+  leaves every band at noise — so this is more permissive only where most of
+  the overlap genuinely agrees. Verified: a seam with one repainted band scores
+  0.808 (rejected) on the global measure alone, and matches with the median.
+
 ### 2026-07 — Denser sampling, ceiling raised to 99 %
 
 Measured on a real recording after the range fix: gaps fell from 30 of 45 seams

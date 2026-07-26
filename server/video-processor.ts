@@ -36,6 +36,10 @@ const NCC_SAMPLE_WIDTH = 64;          // downsample X to this width before NCC
 const NCC_COARSE_STEP = 8;            // px — coarse search step
 const NCC_FINE_RANGE = 16;            // px — fine-search ± around coarse winner
 const NCC_FINE_STEP = 1;              // px — fine-search resolution
+// Banded scoring: the overlap is also scored in this many slices so a locally
+// changed region (a loaded image, a playing video) cannot sink the whole match.
+const NCC_MAX_BANDS = 9;
+const NCC_MIN_BAND_ROWS = 12;         // below this a band is too noisy to score
 
 // Undetected sticky chrome (an OS status bar with a live clock, a recording
 // timer, a home indicator) defeats sticky DETECTION because its pixels change
@@ -360,23 +364,17 @@ export async function deduplicateFrames(
  *
  * Returns a value in [-1, 1]; 1.0 = perfect match.
  */
-function computeNCC(
+/** NCC over rows [lo, hi) of the compared window; rowOffset shifts into topBuf. */
+function nccOverRows(
   topBuf: Buffer,
   botBuf: Buffer,
-  maxSearch: number,
-  overlap: number,
-  guard: number = 0
+  rowOffset: number,
+  lo: number,
+  hi: number
 ): number {
   const W = NCC_SAMPLE_WIDTH;
-  // Skip `guard` rows at both ends of the compared window: the start of B's
-  // region and the end of A's region are where undetected sticky chrome
-  // (status bar, home indicator, tab bar) sits when detection missed it.
-  const lo = guard;
-  const hi = overlap - guard;
   const n = (hi - lo) * W;
   if (n <= 0) return 0;
-
-  const rowOffset = maxSearch - overlap;
 
   // Pass 1: compute means
   let sumA = 0;
@@ -410,6 +408,58 @@ function computeNCC(
 
   const den = Math.sqrt(denA * denB);
   return den > 0 ? num / den : 0;
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Score a candidate overlap.
+ *
+ * A single correlation over the whole overlap is fragile: real feeds change
+ * *locally* between frames — an image finishes loading, a video plays, a
+ * timestamp ticks — and one changed band drags the global score below the
+ * threshold even though everything else lines up perfectly (observed on a real
+ * recording: 0.75–0.80 for seams that were plainly correct).
+ *
+ * So the window is also scored band-by-band and the MEDIAN band taken: a
+ * minority of changed bands cannot move it, while unrelated content leaves
+ * every band at noise. The result is the better of the two measures, which
+ * makes this strictly more permissive than the global score alone — and safely
+ * so, since the median can only be high when most of the overlap agrees.
+ */
+function computeNCC(
+  topBuf: Buffer,
+  botBuf: Buffer,
+  maxSearch: number,
+  overlap: number,
+  guard: number = 0
+): number {
+  // Skip `guard` rows at both ends of the compared window: the start of B's
+  // region and the end of A's region are where undetected sticky chrome
+  // (status bar, home indicator, tab bar) sits when detection missed it.
+  const lo = guard;
+  const hi = overlap - guard;
+  const rows = hi - lo;
+  if (rows <= 0) return 0;
+
+  const rowOffset = maxSearch - overlap;
+  const global = nccOverRows(topBuf, botBuf, rowOffset, lo, hi);
+
+  const bands = Math.min(NCC_MAX_BANDS, Math.floor(rows / NCC_MIN_BAND_ROWS));
+  if (bands < 3) return global; // too few rows for a median to mean anything
+
+  const bandScores: number[] = [];
+  for (let b = 0; b < bands; b++) {
+    const bandLo = lo + Math.floor((rows * b) / bands);
+    const bandHi = lo + Math.floor((rows * (b + 1)) / bands);
+    bandScores.push(nccOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi));
+  }
+
+  return Math.max(global, median(bandScores));
 }
 
 function adaptiveNccThreshold(contrast: number): number {

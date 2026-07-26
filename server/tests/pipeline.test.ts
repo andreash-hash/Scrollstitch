@@ -412,6 +412,54 @@ describe("scroll stitching pipeline (e2e on synthetic recordings)", () => {
     }
   });
 
+  test("a region that changes between frames does not sink a good seam", async () => {
+    // Real feeds mutate locally while you scroll: an image finishes loading, a
+    // video starts playing, a counter ticks. Everything else still lines up, so
+    // the seam must survive — one changed band must not outvote eight good ones.
+    const pageH = 3000;
+    const page = generatePage(WIDTH, pageH, 2468);
+    const dir = makeTempDir("localchange");
+    const step = 480;
+
+    const frames = await renderFrames({
+      page,
+      outDir: dir,
+      frameHeight: FRAME_H,
+      frames: [{ position: 0 }, { position: step }],
+      jpegQuality: 80,
+    });
+
+    // Repaint an 80px band inside frame B's overlap region — about a quarter of
+    // the rows actually compared, i.e. a loaded image, not a new page.
+    const patchH = 80;
+    const patched = path.join(dir, "frame_patched.png");
+    const patch = generatePage(WIDTH, patchH, 13579);
+    await sharp(frames[1])
+      .composite([
+        {
+          input: await sharp(patch.data, {
+            raw: { width: WIDTH, height: patchH, channels: 3 },
+          })
+            .png()
+            .toBuffer(),
+          top: 160,
+          left: 0,
+        },
+      ])
+      .png()
+      .toFile(patched);
+
+    const m = await measureOverlap(frames[0], patched);
+    assert.ok(
+      m.matched,
+      `a seam with one changed band was rejected (best NCC ${m.ncc.toFixed(3)})`
+    );
+    assert.ok(
+      Math.abs(m.overlapPx - (FRAME_H - step)) <= 10,
+      `measured ${m.overlapPx}px, expected ≈${FRAME_H - step}px`
+    );
+  });
+
   test("small overlaps must clear a stricter confidence bar", async () => {
     // Few compared rows make a chance alignment cheap, so the threshold rises
     // as the overlap shrinks. Unrelated pages must not match at a tiny offset.

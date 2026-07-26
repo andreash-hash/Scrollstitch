@@ -30,6 +30,8 @@ var NCC_SAMPLE_WIDTH = 64;
 var NCC_COARSE_STEP = 8;
 var NCC_FINE_RANGE = 16;
 var NCC_FINE_STEP = 1;
+var NCC_MAX_BANDS = 9;
+var NCC_MIN_BAND_ROWS = 12;
 var STICKY_GUARD_FRACTION = 0.08;
 var NCC_CONFIDENCE_MAX = 0.85;
 var NCC_CONFIDENCE_MIN = 0.75;
@@ -215,13 +217,10 @@ async function deduplicateFrames(framePaths, onProgress) {
   }
   return unique;
 }
-function computeNCC(topBuf, botBuf, maxSearch, overlap, guard = 0) {
+function nccOverRows(topBuf, botBuf, rowOffset, lo, hi) {
   const W = NCC_SAMPLE_WIDTH;
-  const lo = guard;
-  const hi = overlap - guard;
   const n = (hi - lo) * W;
   if (n <= 0) return 0;
-  const rowOffset = maxSearch - overlap;
   let sumA = 0;
   let sumB = 0;
   for (let r = lo; r < hi; r++) {
@@ -250,6 +249,28 @@ function computeNCC(topBuf, botBuf, maxSearch, overlap, guard = 0) {
   }
   const den = Math.sqrt(denA * denB);
   return den > 0 ? num / den : 0;
+}
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+function computeNCC(topBuf, botBuf, maxSearch, overlap, guard = 0) {
+  const lo = guard;
+  const hi = overlap - guard;
+  const rows = hi - lo;
+  if (rows <= 0) return 0;
+  const rowOffset = maxSearch - overlap;
+  const global = nccOverRows(topBuf, botBuf, rowOffset, lo, hi);
+  const bands = Math.min(NCC_MAX_BANDS, Math.floor(rows / NCC_MIN_BAND_ROWS));
+  if (bands < 3) return global;
+  const bandScores = [];
+  for (let b = 0; b < bands; b++) {
+    const bandLo = lo + Math.floor(rows * b / bands);
+    const bandHi = lo + Math.floor(rows * (b + 1) / bands);
+    bandScores.push(nccOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi));
+  }
+  return Math.max(global, median(bandScores));
 }
 function adaptiveNccThreshold(contrast) {
   if (contrast >= NCC_CONTRAST_HIGH) return NCC_CONFIDENCE_MAX;
