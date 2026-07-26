@@ -15,11 +15,19 @@ const HEADER_MAX_RATIO = 0.50;        // search up to 50% of frame (was 15%)
 const HEADER_PIXEL_TOLERANCE = 10;
 
 // --- Overlap / NCC ---
-// Minimum overlap is 20% of the shorter frame height.
-// This eliminates false 20–50px matches on periodic UI chrome.
-const OVERLAP_MIN_FRACTION = 0.20;
-const OVERLAP_MIN_ABS = 40;           // absolute floor in px
-const OVERLAP_MAX_FRACTION = 0.90;    // search ceiling as fraction of frame height
+// The search must span every overlap a real recording can produce: a fast
+// flick leaves only a sliver of shared content, while dense sampling of a slow
+// scroll leaves almost the whole frame shared. Anything outside this window is
+// invisible to the matcher and silently becomes a "gap", so the bounds are
+// wide and false matches are rejected by confidence instead (see
+// nccThresholdFor: small overlaps carry fewer rows, so they must score higher).
+const OVERLAP_MIN_FRACTION = 0.04;
+const OVERLAP_MIN_ABS = 24;           // absolute floor in px
+const OVERLAP_MAX_FRACTION = 0.97;    // search ceiling as fraction of frame height
+// Below this fraction an overlap is "small": too few rows for a modest NCC to
+// be trustworthy, so the confidence requirement ramps up to +SMALL_PENALTY.
+const OVERLAP_SMALL_FRACTION = 0.25;
+const OVERLAP_SMALL_PENALTY = 0.10;
 const NCC_SAMPLE_WIDTH = 64;          // downsample X to this width before NCC
 const NCC_COARSE_STEP = 8;            // px — coarse search step
 const NCC_FINE_RANGE = 16;            // px — fine-search ± around coarse winner
@@ -407,6 +415,20 @@ function adaptiveNccThreshold(contrast: number): number {
   return NCC_CONFIDENCE_MIN + t * (NCC_CONFIDENCE_MAX - NCC_CONFIDENCE_MIN);
 }
 
+/**
+ * Confidence required for a candidate overlap of `overlapPx` rows.
+ *
+ * Base comes from contrast; on top of that, small overlaps must score higher:
+ * they compare few rows, so a chance alignment of a couple of UI elements can
+ * reach an NCC that would be impossible across half a screen of content.
+ */
+export function nccThresholdFor(base: number, overlapPx: number, frameHeight: number): number {
+  const fraction = overlapPx / Math.max(1, frameHeight);
+  if (fraction >= OVERLAP_SMALL_FRACTION) return base;
+  const smallness = (OVERLAP_SMALL_FRACTION - fraction) / OVERLAP_SMALL_FRACTION;
+  return Math.min(0.98, base + smallness * OVERLAP_SMALL_PENALTY);
+}
+
 export interface OverlapMeasurement {
   /** True when the best NCC cleared the (adaptive) confidence threshold. */
   matched: boolean;
@@ -445,7 +467,6 @@ export async function measureOverlap(
   const frameH = Math.min(topMeta.height, botMeta.height);
   const frameW = Math.min(topMeta.width, botMeta.width);
 
-  // Minimum overlap: 20% of the shorter frame (eliminates false 20–50px matches)
   const minOverlap = Math.max(OVERLAP_MIN_ABS, Math.floor(frameH * OVERLAP_MIN_FRACTION));
   const maxSearch = Math.floor(frameH * OVERLAP_MAX_FRACTION);
 
@@ -472,22 +493,32 @@ export async function measureOverlap(
     .toBuffer();
 
   const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
-  const threshold = adaptiveNccThreshold(contrast);
+  const baseThreshold = adaptiveNccThreshold(contrast);
 
   const stickyGuard = Math.round(frameH * STICKY_GUARD_FRACTION);
   const guardFor = (ov: number) => Math.min(stickyGuard, Math.floor(ov / 4));
 
-  // Coarse pass — iterate from minOverlap to maxSearch in NCC_COARSE_STEP steps.
-  // Track GLOBAL maximum NCC; no "prefer smallest" or "prefer largest" bias.
+  // Candidates are ranked by MARGIN (ncc − required threshold), not raw NCC:
+  // the requirement varies with overlap size, so a barely-passing large overlap
+  // must not beat a decisively-passing small one, or vice versa.
   let bestOverlap = 0;
   let bestNCC = -1;
+  let bestMargin = -Infinity;
 
-  for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
+  const consider = (ov: number) => {
     const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
-    if (ncc > bestNCC) {
+    const margin = ncc - nccThresholdFor(baseThreshold, ov, frameH);
+    if (margin > bestMargin) {
+      bestMargin = margin;
       bestNCC = ncc;
       bestOverlap = ov;
     }
+  };
+
+  // Coarse pass — iterate from minOverlap to maxSearch in NCC_COARSE_STEP steps.
+  // No "prefer smallest" or "prefer largest" bias.
+  for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
+    consider(ov);
   }
 
   // Fine pass — 1px resolution within ±NCC_FINE_RANGE of the coarse winner.
@@ -497,22 +528,21 @@ export async function measureOverlap(
   const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
   const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
   for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
-    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
-    if (ncc > bestNCC) {
-      bestNCC = ncc;
-      bestOverlap = ov;
-    }
+    consider(ov);
   }
+
+  const threshold = nccThresholdFor(baseThreshold, bestOverlap, frameH);
+  const pct = ((bestOverlap / frameH) * 100).toFixed(0);
 
   if (bestNCC < threshold) {
     console.log(
-      `  overlap: none (best NCC=${bestNCC.toFixed(3)} < threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)})`
+      `  overlap: none (best NCC=${bestNCC.toFixed(3)} at ${bestOverlap}px/${pct}% < threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)}, searched ${minOverlap}–${maxSearch}px)`
     );
     return { matched: false, overlapPx: 0, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
   }
 
   console.log(
-    `  overlap: ${bestOverlap}px (NCC=${bestNCC.toFixed(3)}, threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)}, min=${minOverlap}px, max=${maxSearch}px)`
+    `  overlap: ${bestOverlap}px/${pct}% (NCC=${bestNCC.toFixed(3)}, threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)})`
   );
   return { matched: true, overlapPx: bestOverlap, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
 }

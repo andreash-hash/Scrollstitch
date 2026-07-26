@@ -21,9 +21,11 @@ var HEADER_ROW_MATCH_THRESHOLD = 0.96;
 var HEADER_MIN_HEIGHT = 40;
 var HEADER_MAX_RATIO = 0.5;
 var HEADER_PIXEL_TOLERANCE = 10;
-var OVERLAP_MIN_FRACTION = 0.2;
-var OVERLAP_MIN_ABS = 40;
-var OVERLAP_MAX_FRACTION = 0.9;
+var OVERLAP_MIN_FRACTION = 0.04;
+var OVERLAP_MIN_ABS = 24;
+var OVERLAP_MAX_FRACTION = 0.97;
+var OVERLAP_SMALL_FRACTION = 0.25;
+var OVERLAP_SMALL_PENALTY = 0.1;
 var NCC_SAMPLE_WIDTH = 64;
 var NCC_COARSE_STEP = 8;
 var NCC_FINE_RANGE = 16;
@@ -255,6 +257,12 @@ function adaptiveNccThreshold(contrast) {
   const t = (contrast - NCC_CONTRAST_LOW) / (NCC_CONTRAST_HIGH - NCC_CONTRAST_LOW);
   return NCC_CONFIDENCE_MIN + t * (NCC_CONFIDENCE_MAX - NCC_CONFIDENCE_MIN);
 }
+function nccThresholdFor(base, overlapPx, frameHeight) {
+  const fraction = overlapPx / Math.max(1, frameHeight);
+  if (fraction >= OVERLAP_SMALL_FRACTION) return base;
+  const smallness = (OVERLAP_SMALL_FRACTION - fraction) / OVERLAP_SMALL_FRACTION;
+  return Math.min(0.98, base + smallness * OVERLAP_SMALL_PENALTY);
+}
 async function measureOverlap(topImagePath, bottomImagePath) {
   const none = (frameHeight) => ({
     matched: false,
@@ -280,35 +288,39 @@ async function measureOverlap(topImagePath, bottomImagePath) {
   const topBuf = await sharp(topImagePath).extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer();
   const botBuf = await sharp(bottomImagePath).extract({ left: 0, top: 0, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer();
   const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
-  const threshold = adaptiveNccThreshold(contrast);
+  const baseThreshold = adaptiveNccThreshold(contrast);
   const stickyGuard = Math.round(frameH * STICKY_GUARD_FRACTION);
   const guardFor = (ov) => Math.min(stickyGuard, Math.floor(ov / 4));
   let bestOverlap = 0;
   let bestNCC = -1;
-  for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
+  let bestMargin = -Infinity;
+  const consider = (ov) => {
     const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
-    if (ncc > bestNCC) {
+    const margin = ncc - nccThresholdFor(baseThreshold, ov, frameH);
+    if (margin > bestMargin) {
+      bestMargin = margin;
       bestNCC = ncc;
       bestOverlap = ov;
     }
+  };
+  for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
+    consider(ov);
   }
   const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
   const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
   for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
-    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
-    if (ncc > bestNCC) {
-      bestNCC = ncc;
-      bestOverlap = ov;
-    }
+    consider(ov);
   }
+  const threshold = nccThresholdFor(baseThreshold, bestOverlap, frameH);
+  const pct = (bestOverlap / frameH * 100).toFixed(0);
   if (bestNCC < threshold) {
     console.log(
-      `  overlap: none (best NCC=${bestNCC.toFixed(3)} < threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)})`
+      `  overlap: none (best NCC=${bestNCC.toFixed(3)} at ${bestOverlap}px/${pct}% < threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)}, searched ${minOverlap}\u2013${maxSearch}px)`
     );
     return { matched: false, overlapPx: 0, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
   }
   console.log(
-    `  overlap: ${bestOverlap}px (NCC=${bestNCC.toFixed(3)}, threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)}, min=${minOverlap}px, max=${maxSearch}px)`
+    `  overlap: ${bestOverlap}px/${pct}% (NCC=${bestNCC.toFixed(3)}, threshold=${threshold.toFixed(3)}, contrast=${contrast.toFixed(1)})`
   );
   return { matched: true, overlapPx: bestOverlap, ncc: bestNCC, threshold, contrast, frameHeight: frameH };
 }

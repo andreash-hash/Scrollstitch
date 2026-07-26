@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 import sharp from "sharp";
-import { generatePreviewImage } from "../video-processor";
+import { generatePreviewImage, measureOverlap, nccThresholdFor } from "../video-processor";
 import {
   generatePage,
   renderFrames,
@@ -382,6 +382,102 @@ describe("scroll stitching pipeline (e2e on synthetic recordings)", () => {
       peakRss < 1.5 * 1024 * 1024 * 1024,
       `peak RSS ${(peakRss / 1e6).toFixed(0)} MB is unreasonable for 85 frames`
     );
+  });
+
+  test("overlaps far outside the common range are still found", async () => {
+    // Both ends used to be blind spots: the matcher only searched 20–90% of the
+    // frame, so a fast flick (tiny overlap) and dense sampling of a slow scroll
+    // (near-total overlap) both looked like "no overlap at all".
+    const page = generatePage(WIDTH, 4000, 4711);
+    const dir = makeTempDir("range");
+
+    for (const step of [890, 48]) {
+      const frames = await renderFrames({
+        page,
+        outDir: path.join(dir, `step_${step}`),
+        frameHeight: FRAME_H,
+        frames: [{ position: 0 }, { position: step }],
+        jpegQuality: 80,
+      });
+      const expected = FRAME_H - step; // 70px (7%) and 912px (95%)
+      const m = await measureOverlap(frames[0], frames[1]);
+      assert.ok(
+        m.matched,
+        `overlap of ${expected}px (${Math.round((expected / FRAME_H) * 100)}%) was not detected (best NCC ${m.ncc.toFixed(3)})`
+      );
+      assert.ok(
+        Math.abs(m.overlapPx - expected) <= 8,
+        `measured ${m.overlapPx}px, expected ≈${expected}px`
+      );
+    }
+  });
+
+  test("small overlaps must clear a stricter confidence bar", async () => {
+    // Few compared rows make a chance alignment cheap, so the threshold rises
+    // as the overlap shrinks. Unrelated pages must not match at a tiny offset.
+    const dir = makeTempDir("smallconf");
+    const pageA = generatePage(WIDTH, 2000, 100);
+    const pageB = generatePage(WIDTH, 2000, 200);
+    const a = await renderFrames({
+      page: pageA,
+      outDir: path.join(dir, "a"),
+      frameHeight: FRAME_H,
+      frames: [{ position: 0 }],
+      jpegQuality: 80,
+    });
+    const b = await renderFrames({
+      page: pageB,
+      outDir: path.join(dir, "b"),
+      frameHeight: FRAME_H,
+      frames: [{ position: 900 }],
+      jpegQuality: 80,
+    });
+
+    const m = await measureOverlap(a[0], b[0]);
+    assert.equal(m.matched, false, `unrelated frames matched at ${m.overlapPx}px`);
+
+    // The bar rises as the overlap shrinks, and never below the base
+    const base = 0.85;
+    assert.equal(nccThresholdFor(base, 500, 1000), base, "half a frame uses the base threshold");
+    assert.equal(nccThresholdFor(base, 250, 1000), base, "25% is the edge of the ramp");
+    assert.ok(
+      nccThresholdFor(base, 100, 1000) > base,
+      "10% overlap must demand more than the base"
+    );
+    assert.ok(
+      nccThresholdFor(base, 40, 1000) > nccThresholdFor(base, 100, 1000),
+      "the requirement keeps rising as the overlap shrinks"
+    );
+    assert.ok(nccThresholdFor(base, 10, 1000) <= 0.98, "the requirement stays attainable");
+  });
+
+  test("a fast flick with only a sliver of overlap still stitches", async () => {
+    const step = 845; // overlap 115px ≈ 12% of the frame
+    const positions = [0, 845, 1690, 2535, 3380];
+    const pageH = 3380 + FRAME_H;
+    const page = generatePage(WIDTH, pageH, 8899);
+    const frames = await renderFrames({
+      page,
+      outDir: makeTempDir("sliver"),
+      frameHeight: FRAME_H,
+      frames: positions.map((position) => ({ position })),
+      jpegQuality: 80,
+    });
+
+    const run = await runPipeline(frames);
+    assert.equal(run.selection.gapCount, 0, "a sliver of overlap is still an overlap");
+    assert.ok(
+      Math.abs(run.stitch.height - pageH) <= 25,
+      `stitched height ${run.stitch.height} should be ≈${pageH}`
+    );
+
+    const stitched = await greyFromFile(run.outputPath);
+    const pageGrey = await greyFromPage(page);
+    for (const y of [400, 2000, 3800]) {
+      const { bestY, bestNcc } = locateStrip(stitched, pageGrey, y);
+      assert.ok(bestNcc >= 0.8, `strip at ${y}: NCC ${bestNcc.toFixed(3)} too low`);
+      assert.ok(Math.abs(bestY - y) <= 30, `strip at ${y} found at ${bestY}`);
+    }
   });
 
   test("a status bar with a live clock (undetectable sticky) still stitches", async () => {

@@ -30,6 +30,23 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Overlap search covered only the middle of the range
+
+- **The matcher had blind spots at both ends.** It searched overlaps from 20 %
+  to 90 % of the frame height only. A fast flick leaves a sliver of shared
+  content (well under 20 %), and dense 150 ms sampling of an ordinary scroll
+  leaves nearly the whole frame shared (well over 90 %) — in both cases the
+  true correlation peak sat outside the searched window, so the pair scored
+  noise (0.2–0.45) and was reported as a scroll jump. The search now spans
+  4 %–97 %; measured on the synthetic case, a 7 % overlap scored 0.227 under
+  the old bounds versus a clean match now.
+- **Confidence scales with overlap size**: few compared rows make a chance
+  alignment cheap, so the required NCC ramps up by as much as +0.10 as the
+  overlap shrinks below 25 % of the frame. Candidates are ranked by margin
+  over their own requirement rather than by raw NCC.
+- Overlap logs now include the overlap as a percentage of frame height and the
+  range that was searched, so a future mismatch is diagnosable from one line.
+
 ### 2026-07 — Status-bar chrome and web downloads
 
 - **Guard band in overlap matching**: sticky detection only catches chrome
