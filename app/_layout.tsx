@@ -160,18 +160,29 @@ const syncStyles = StyleSheet.create({
 
 function RootLayoutNav() {
   const { hasSeenOnboarding, isLoading } = useAppContext();
+  const { isSubscribed, customerInfoIsLoading } = useSubscription();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
-    if (isLoading) return;
+    // Wait for both the stored onboarding flag and the entitlement check —
+    // redirecting early would flash the paywall at paying subscribers.
+    if (isLoading || customerInfoIsLoading) return;
+
     const inOnboarding = segments[0] === "onboarding";
-    if (!hasSeenOnboarding && !inOnboarding) {
-      router.replace("/onboarding");
-    } else if (hasSeenOnboarding && inOnboarding) {
-      router.replace("/");
+
+    // Hard paywall: without an active entitlement the only screen is the
+    // onboarding flow, which ends in the plans.
+    if (!isSubscribed) {
+      if (!inOnboarding) router.replace("/onboarding");
+      return;
     }
-  }, [isLoading, hasSeenOnboarding, segments]);
+
+    // Subscribed: never hold them in onboarding, whether they just paid or
+    // arrived with an entitlement already on the account.
+    if (inOnboarding) router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, customerInfoIsLoading, isSubscribed, hasSeenOnboarding, segments]);
 
   return (
     <>

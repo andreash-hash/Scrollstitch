@@ -23,7 +23,7 @@ Inside your new app → **In-App Purchases** → **+**:
 
 | Product ID | Type | Price |
 |---|---|---|
-| `scrollsnap_pro_monthly` | Auto-Renewable Subscription | $4.99 / month |
+| `scrollsnap_pro_weekly` | Auto-Renewable Subscription | $4.99 / week — **add a 3-day free trial as an Introductory Offer** |
 | `scrollsnap_pro_annual` | Auto-Renewable Subscription | $29.99 / year |
 
 For each product:
@@ -74,11 +74,11 @@ Reduces Apple's commission from 30 % to 15 % for developers earning under $1 M/y
 
 | Product ID | Base plan ID | Price |
 |---|---|---|
-| `scrollsnap_pro_monthly` | `monthly` | $4.99 / month |
+| `scrollsnap_pro_weekly` | `weekly` | $4.99 / week — add a 3-day free trial |
 | `scrollsnap_pro_annual` | `annual` | $29.99 / year |
 
 The full Play Store identifiers used by RevenueCat are:
-- `scrollsnap_pro_monthly:monthly`
+- `scrollsnap_pro_weekly:weekly`
 - `scrollsnap_pro_annual:annual`
 
 These already match the identifiers in `scripts/seedRevenueCat.ts`.
@@ -138,6 +138,39 @@ Before going live:
 | Android App ID | env: `REVENUECAT_GOOGLE_PLAY_STORE_APP_ID` |
 | Entitlement | `pro` |
 | Offerings | `default` (current) |
-| Monthly package | `$rc_monthly` → `scrollsnap_pro_monthly` |
+| Weekly package | `$rc_weekly` → `scrollsnap_pro_weekly` |
 | Annual package | `$rc_annual` → `scrollsnap_pro_annual` |
 | Privacy Policy URL | `https://<production-domain>/privacy` |
+
+
+## Free trial (required for the paywall copy to appear)
+
+The paywall only says "Start 3 days free" when the store actually reports an
+introductory offer the current user is eligible for. Configure it in both
+stores, or the button silently falls back to "Subscribe — $4.99/week":
+
+**App Store Connect** → your weekly subscription → *Subscription Prices* →
+**Introductory Offer** → Free trial, 3 days, all territories, no end date.
+
+**Google Play Console** → *Monetize → Subscriptions* → the weekly base plan →
+**Add offer** → Free trial, 3 days, eligibility "New customers only".
+
+RevenueCat picks these up automatically — nothing to configure there.
+
+## Hard paywall and App Review
+
+The app has no free tier: without an active `pro` entitlement the only screen
+is the onboarding flow, which ends in the plans. That is allowed, but App
+Review will check three things, all of which are already in place:
+
+- **Restore Purchases** is on the paywall (required, and reviewers use it).
+- **Subscription terms** — length, price and auto-renewal — are stated next to
+  the button, including the trial terms when a trial is offered.
+- **Links to Terms of Use and Privacy Policy** sit under the button. Terms
+  points at Apple's standard EULA; Privacy points at `/privacy` on the server,
+  so that route must be reachable on the production domain before submitting.
+
+Reviewers test purchases in the sandbox, so no demo account is needed — but do
+make sure the sandbox products are live in App Store Connect before submitting,
+or the paywall shows the "Couldn't load pricing" state and the app gets
+rejected as non-functional.

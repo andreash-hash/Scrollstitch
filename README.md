@@ -30,6 +30,32 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Hard paywall, weekly plan, day-3 win-back, review prompt
+
+Monetisation reworked to a hard-paywall model: weekly $4.99 with a 3-day
+trial as the primary plan, annual $29.99 as the win-back.
+
+- **No free tier.** Without an active `pro` entitlement the router allows only
+  the onboarding flow, which ends in the plans. The redirect waits for the
+  entitlement check so paying subscribers never see the paywall flash, and
+  "Skip" now jumps to the plans instead of into the app.
+- **Weekly replaces monthly** in the seed script, the entitlement, the offering
+  (`$rc_weekly`) and the paywall. Annual is the second option.
+- **Trial copy follows the store, not the code**: the button says "Start 3 days
+  free" only when the store reports an introductory offer this user is eligible
+  for, and falls back to the plain price otherwise — so it can never promise a
+  trial the store will not grant.
+- **Day-3 win-back**: after three days, the first successful stitch offers
+  weekly subscribers the annual plan, once, and never alongside the review
+  prompt.
+- **Review prompt** after the second *clean* stitch (no gap warnings) — asking
+  right after a result the user can see worked, rather than on launch.
+- **Paywall copy sells outcomes** ("One clean image instead of 12 screenshots")
+  rather than listing features, and now carries the subscription terms plus
+  Terms of Use and Privacy Policy links that App Review requires.
+- Removed "Replay intro": with the intro ending in a hard paywall, a subscriber
+  replaying it would be redirected straight back out.
+
 ### 2026-07 — Accessibility pass
 
 Every interactive element in the app now carries a role and a label — 37

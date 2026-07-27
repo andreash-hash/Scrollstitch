@@ -40,6 +40,7 @@ import Animated, { Easing,
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
+import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -495,8 +496,26 @@ function openManageSubscriptions() {
 
 export default function ScrollSnapScreen() {
   const insets = useSafeAreaInsets();
-  const { isPro, resetOnboarding } = useAppContext();
-  const { customerInfo, restore, isRestoring, customerInfoIsError, refetchCustomerInfo } = useSubscription();
+  const {
+    isPro,
+    daysSinceFirstLaunch,
+    winBackShown,
+    reviewPrompted,
+    recordSuccessfulStitch,
+    markWinBackShown,
+    markReviewPrompted,
+  } = useAppContext();
+  const {
+    customerInfo,
+    restore,
+    isRestoring,
+    customerInfoIsError,
+    refetchCustomerInfo,
+    annualPackage,
+    isAnnualSubscriber,
+    purchase,
+    isPurchasing,
+  } = useSubscription();
   const router = useRouter();
   const [stage, setStage] = useState<ProcessingStage>("idle");
   const [progress, setProgress] = useState(0);
@@ -514,6 +533,7 @@ export default function ScrollSnapScreen() {
   const [isCropping, setIsCropping] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showWinBack, setShowWinBack] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fakeTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressRef = useRef(0);
@@ -586,6 +606,73 @@ export default function ScrollSnapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage]);
 
+  /**
+   * Runs once a stitch lands. Two prompts hang off this moment, and both are
+   * deliberately gated: the App Store rate-limits review requests and ignores
+   * extras silently, and a win-back shown too early just reads as a second
+   * paywall.
+   */
+  const onStitchSucceeded = useCallback(
+    async (res: ProcessingResult) => {
+      const count = await recordSuccessfulStitch();
+
+      // Offer the annual plan once, from day 3, only to weekly subscribers.
+      if (
+        daysSinceFirstLaunch >= 3 &&
+        !winBackShown &&
+        !isAnnualSubscriber &&
+        annualPackage
+      ) {
+        setTimeout(() => setShowWinBack(true), 1200);
+        return;
+      }
+
+      // Ask for a review only after the app has clearly worked: the second
+      // clean stitch, and never alongside the win-back.
+      const cleanResult = (res.gapCount ?? 0) === 0;
+      if (count >= 2 && cleanResult && !reviewPrompted) {
+        try {
+          if (await StoreReview.hasAction()) {
+            setTimeout(async () => {
+              await StoreReview.requestReview();
+              await markReviewPrompted();
+            }, 1500);
+          }
+        } catch {
+          // Review prompts are best-effort; never let one break the result screen.
+        }
+      }
+    },
+    [
+      recordSuccessfulStitch,
+      daysSinceFirstLaunch,
+      winBackShown,
+      isAnnualSubscriber,
+      annualPackage,
+      reviewPrompted,
+      markReviewPrompted,
+    ]
+  );
+
+  const acceptWinBack = useCallback(async () => {
+    if (!annualPackage) return;
+    try {
+      await purchase(annualPackage);
+      await markWinBackShown();
+      setShowWinBack(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      if (!err?.userCancelled) {
+        Alert.alert("Purchase failed", "Please try again.");
+      }
+    }
+  }, [annualPackage, purchase, markWinBackShown]);
+
+  const dismissWinBack = useCallback(async () => {
+    await markWinBackShown();
+    setShowWinBack(false);
+  }, [markWinBackShown]);
+
   const pollProgress = useCallback(
     (jobId: string) => {
       const baseUrl = getApiUrl();
@@ -630,10 +717,12 @@ export default function ScrollSnapScreen() {
             Haptics.notificationAsync(
               Haptics.NotificationFeedbackType.Success
             );
+            onStitchSucceeded(data.result);
           }
         } catch {}
       }, 500);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [cleanupPolling, advanceProgress, stopFakeTick]
   );
 
@@ -1027,6 +1116,59 @@ export default function ScrollSnapScreen() {
         </View>
       </Modal>
 
+      {/* Day-3 win-back: switch weekly subscribers to annual */}
+      <Modal
+        visible={showWinBack}
+        transparent
+        animationType="fade"
+        onRequestClose={dismissWinBack}
+      >
+        <View style={styles.upgradeOverlay}>
+          <View style={styles.upgradeCard}>
+            <LinearGradient
+              colors={["rgba(0,212,170,0.2)", "rgba(0,212,170,0.04)"]}
+              style={styles.upgradeIconBg}
+            >
+              <Feather name="trending-down" size={24} color={C.accent} />
+            </LinearGradient>
+            <Text style={styles.upgradeTitle}>Pay less for the same thing</Text>
+            <Text style={styles.upgradeBody}>
+              You&apos;ve been stitching for a few days now. Switch to yearly for{" "}
+              {annualPackage?.product.priceString ?? "…"} and stop paying weekly.
+            </Text>
+            <Pressable
+              onPress={acceptWinBack}
+              disabled={isPurchasing}
+              style={styles.upgradeBtn}
+              accessibilityRole="button"
+              accessibilityLabel={`Switch to yearly for ${annualPackage?.product.priceString ?? ""}`}
+              accessibilityState={{ disabled: isPurchasing, busy: isPurchasing }}
+            >
+              <LinearGradient
+                colors={[C.accent, "#00E5B8"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.upgradeBtnGrad}
+              >
+                {isPurchasing ? (
+                  <ActivityIndicator size="small" color="#0A0E17" />
+                ) : (
+                  <Text style={styles.upgradeBtnText}>Switch to yearly</Text>
+                )}
+              </LinearGradient>
+            </Pressable>
+            <Pressable
+              onPress={dismissWinBack}
+              style={styles.upgradeDismiss}
+              accessibilityRole="button"
+              accessibilityLabel="Keep paying weekly"
+            >
+              <Text style={styles.upgradeDismissText}>Keep weekly</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
@@ -1290,19 +1432,7 @@ export default function ScrollSnapScreen() {
                   {outputQuality === "png" ? "Lossless, larger file" : "Smaller file, slight compression"}
                 </Text>
 
-                <Pressable
-                  onPress={async () => {
-                    await resetOnboarding();
-                    router.replace("/onboarding");
-                  }}
-                  style={styles.replayIntroBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="Replay intro"
-                  accessibilityHint="Shows the introduction screens again"
-                >
-                  <Feather name="play-circle" size={14} color={C.textTertiary} />
-                  <Text style={styles.replayIntroText}>Replay intro</Text>
-                </Pressable>
+
                   </>
                 )}
               </View>

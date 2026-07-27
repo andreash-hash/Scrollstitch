@@ -32,14 +32,19 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { Platform } from "react-native";
+import { Platform, Linking } from "react-native";
 import Colors from "@/constants/colors";
 import { useAppContext } from "@/contexts/AppContext";
 import { useSubscription } from "@/lib/revenuecat";
+import { getApiUrl } from "@/lib/query-client";
 import { PurchasesPackage } from "react-native-purchases";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const C = Colors.dark;
+
+// Apple's standard EULA — required link on an auto-renewing subscription
+// paywall unless the app ships its own terms.
+const TERMS_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
 
 const webTopInset = Platform.OS === "web" ? 67 : 0;
 const webBottomInset = Platform.OS === "web" ? 34 : 0;
@@ -263,11 +268,11 @@ function OnboardingSlide({ item, index }: SlideProps) {
 // ─── Paywall Slide ────────────────────────────────────────────────────────────
 
 const PRO_FEATURES = [
-  { icon: "film" as const, text: "Unlimited recordings, any scroll length" },
-  { icon: "layers" as const, text: "Export as PNG, JPEG or PDF" },
-  { icon: "crop" as const, text: "Trim sticky headers & footers" },
-  { icon: "sliders" as const, text: "Fine-tune dedup sensitivity" },
-  { icon: "zap" as const, text: "Priority processing" },
+  { icon: "image" as const, text: "One clean image instead of 12 screenshots" },
+  { icon: "message-square" as const, text: "Send a whole chat without cropping" },
+  { icon: "file-text" as const, text: "Save receipts and threads as PDF" },
+  { icon: "crop" as const, text: "No repeated headers, no duplicated content" },
+  { icon: "repeat" as const, text: "Any length, as many as you like" },
 ];
 
 function PaywallSkeletonRow() {
@@ -289,9 +294,9 @@ function PaywallSkeletonRow() {
 }
 
 function PaywallSlide({
-  onContinueFree,
-  monthlyPackage,
+  weeklyPackage,
   annualPackage,
+  trialDays,
   onPurchase,
   onRestore,
   isPurchasing,
@@ -300,9 +305,9 @@ function PaywallSlide({
   offeringsIsError,
   onRetryOfferings,
 }: {
-  onContinueFree: () => void;
-  monthlyPackage: PurchasesPackage | null;
+  weeklyPackage: PurchasesPackage | null;
   annualPackage: PurchasesPackage | null;
+  trialDays: number | null;
   onPurchase: (pkg: PurchasesPackage) => void;
   onRestore: () => void;
   isPurchasing: boolean;
@@ -311,7 +316,7 @@ function PaywallSlide({
   offeringsIsError: boolean;
   onRetryOfferings: () => void;
 }) {
-  const [billing, setBilling] = useState<"monthly" | "annual">("annual");
+  const [billing, setBilling] = useState<"weekly" | "annual">("weekly");
   const [confirmVisible, setConfirmVisible] = useState(false);
   const btnScale = useSharedValue(1);
 
@@ -319,10 +324,12 @@ function PaywallSlide({
     transform: [{ scale: btnScale.value }],
   }));
 
-  const selectedPackage = billing === "monthly" ? monthlyPackage : annualPackage;
+  const selectedPackage = billing === "weekly" ? weeklyPackage : annualPackage;
 
-  const monthlyPrice = monthlyPackage?.product.priceString ?? "…";
+  const weeklyPrice = weeklyPackage?.product.priceString ?? "…";
   const annualPrice = annualPackage?.product.priceString ?? "…";
+  // Only promise a trial when the store actually offers one on the weekly plan
+  const showTrial = billing === "weekly" && trialDays != null && trialDays > 0;
 
   const handleCtaPress = () => {
     btnScale.value = withSequence(withSpring(0.96), withSpring(1));
@@ -388,25 +395,25 @@ function PaywallSlide({
         ) : (
           <>
             <View style={paywall.billingToggle}>
-              {(["monthly", "annual"] as const).map((b) => (
+              {(["weekly", "annual"] as const).map((b) => (
                 <Pressable
                   key={b}
                   onPress={() => setBilling(b)}
                   style={[paywall.billingChip, billing === b && paywall.billingChipActive]}
                   accessibilityRole="radio"
                   accessibilityLabel={
-                    b === "monthly"
-                      ? `Monthly plan, ${monthlyPrice} per month`
-                      : `Annual plan, ${annualPrice} per year, save 50 percent`
+                    b === "weekly"
+                      ? `Weekly plan, ${weeklyPrice} per week${trialDays ? `, ${trialDays} days free first` : ""}`
+                      : `Annual plan, ${annualPrice} per year, best value`
                   }
                   accessibilityState={{ selected: billing === b }}
                 >
                   <Text style={[paywall.billingChipText, billing === b && paywall.billingChipTextActive]}>
-                    {b === "monthly" ? `${monthlyPrice} / mo` : `${annualPrice} / yr`}
+                    {b === "weekly" ? `${weeklyPrice} / week` : `${annualPrice} / year`}
                   </Text>
                   {b === "annual" && (
                     <View style={paywall.saveBadge}>
-                      <Text style={paywall.saveBadgeText}>SAVE 50%</Text>
+                      <Text style={paywall.saveBadgeText}>BEST VALUE</Text>
                     </View>
                   )}
                 </Pressable>
@@ -422,7 +429,9 @@ function PaywallSlide({
                 accessibilityLabel={
                   isPurchasing
                     ? "Processing purchase"
-                    : `Subscribe for ${billing === "monthly" ? monthlyPrice + " per month" : annualPrice + " per year"}`
+                    : showTrial
+                      ? `Start ${trialDays} days free, then ${weeklyPrice} per week`
+                      : `Subscribe for ${billing === "weekly" ? weeklyPrice + " per week" : annualPrice + " per year"}`
                 }
                 accessibilityState={{
                   disabled: isPurchasing || !selectedPackage,
@@ -439,7 +448,9 @@ function PaywallSlide({
                     <ActivityIndicator size="small" color="#0A0E17" />
                   ) : (
                     <Text style={paywall.ctaText}>
-                      Subscribe — {billing === "monthly" ? monthlyPrice + "/mo" : annualPrice + "/yr"}
+                      {showTrial
+                        ? `Start ${trialDays} days free`
+                        : `Subscribe — ${billing === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"}`}
                     </Text>
                   )}
                 </LinearGradient>
@@ -447,15 +458,6 @@ function PaywallSlide({
             </Animated.View>
           </>
         )}
-
-        <Pressable
-          onPress={onContinueFree}
-          style={paywall.skip}
-          accessibilityRole="button"
-          accessibilityLabel="Continue with limited access"
-        >
-          <Text style={paywall.skipText}>Continue with limited access</Text>
-        </Pressable>
 
         <Pressable
           onPress={onRestore}
@@ -473,8 +475,30 @@ function PaywallSlide({
         </Pressable>
 
         <Text style={paywall.legal}>
-          Subscription auto-renews. Cancel anytime in Settings.
+          {showTrial
+            ? `${trialDays} days free, then ${weeklyPrice} per week. Auto-renews until cancelled; cancel anytime in Settings at least 24 hours before renewal.`
+            : billing === "weekly"
+              ? `${weeklyPrice} per week. Auto-renews until cancelled; cancel anytime in Settings.`
+              : `${annualPrice} per year. Auto-renews until cancelled; cancel anytime in Settings.`}
         </Text>
+
+        <View style={paywall.legalLinks}>
+          <Pressable
+            onPress={() => Linking.openURL(TERMS_URL)}
+            accessibilityRole="link"
+            accessibilityLabel="Terms of Use"
+          >
+            <Text style={paywall.legalLink}>Terms of Use</Text>
+          </Pressable>
+          <Text style={paywall.legalDot}>·</Text>
+          <Pressable
+            onPress={() => Linking.openURL(new URL("/privacy", getApiUrl()).toString())}
+            accessibilityRole="link"
+            accessibilityLabel="Privacy Policy"
+          >
+            <Text style={paywall.legalLink}>Privacy Policy</Text>
+          </Pressable>
+        </View>
       </Animated.View>
 
       {/* Custom confirmation modal for dev/test mode */}
@@ -488,7 +512,7 @@ function PaywallSlide({
           <View style={paywall.modalCard}>
             <Text style={paywall.modalTitle}>Confirm Purchase</Text>
             <Text style={paywall.modalBody}>
-              {`You are in test mode. Confirm purchase of the ${billing} plan (${billing === "monthly" ? monthlyPrice + "/mo" : annualPrice + "/yr"})?`}
+              {`You are in test mode. Confirm purchase of the ${billing} plan (${billing === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"})?`}
             </Text>
             <View style={paywall.modalActions}>
               <Pressable
@@ -542,7 +566,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { directPaywall } = useLocalSearchParams<{ directPaywall?: string }>();
   const { markOnboardingComplete } = useAppContext();
-  const { monthlyPackage, annualPackage, purchase, restore, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings } = useSubscription();
+  const { weeklyPackage, annualPackage, trialDays, purchase, restore, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings } = useSubscription();
   const listRef = useRef<FlatList>(null);
   const initialIndex = directPaywall === "1" ? SLIDES.length : 0;
   const [activeIndex, setActiveIndex] = useState(initialIndex);
@@ -598,9 +622,11 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleContinueFree = async () => {
-    await markOnboardingComplete();
-    router.replace("/");
+  // The paywall is hard, so skipping the intro means going straight to the
+  // plans rather than into the app.
+  const handleSkipToPlans = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    listRef.current?.scrollToIndex({ index: SLIDES.length, animated: true });
   };
 
   const renderItem = useCallback(
@@ -608,9 +634,9 @@ export default function OnboardingScreen() {
       if (item === "paywall") {
         return (
           <PaywallSlide
-            onContinueFree={handleContinueFree}
-            monthlyPackage={monthlyPackage}
+            weeklyPackage={weeklyPackage}
             annualPackage={annualPackage}
+            trialDays={trialDays}
             onPurchase={handlePurchase}
             onRestore={handleRestore}
             isPurchasing={isPurchasing}
@@ -623,7 +649,8 @@ export default function OnboardingScreen() {
       }
       return <OnboardingSlide item={item} index={index} />;
     },
-    [monthlyPackage, annualPackage, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [weeklyPackage, annualPackage, trialDays, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings]
   );
 
   const data: ((typeof SLIDES)[number] | "paywall")[] = [...SLIDES, "paywall"];
@@ -642,10 +669,10 @@ export default function OnboardingScreen() {
 
       {!isPaywall && (
         <Pressable
-          onPress={handleContinueFree}
+          onPress={handleSkipToPlans}
           style={[container.skip, { top: insets.top + webTopInset + 10 }]}
           accessibilityRole="button"
-          accessibilityLabel="Skip introduction"
+          accessibilityLabel="Skip to plans"
         >
           <Text style={container.skipText}>Skip</Text>
         </Pressable>
@@ -1046,6 +1073,25 @@ const paywall = StyleSheet.create({
     textAlign: "center",
     lineHeight: 14,
     marginTop: 4,
+    paddingHorizontal: 8,
+  },
+  legalLinks: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 8,
+  },
+  legalLink: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    color: C.textSecondary,
+    textDecorationLine: "underline",
+    paddingVertical: 4,
+  },
+  legalDot: {
+    fontSize: 11,
+    color: C.textTertiary,
   },
   skeletonWrap: {
     gap: 10,

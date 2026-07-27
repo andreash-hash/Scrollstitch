@@ -89,24 +89,39 @@ function useSubscriptionContext() {
     onSuccess: () => customerInfoQuery.refetch(),
   });
 
-  const isSubscribed =
-    customerInfoQuery.data?.entitlements.active?.[REVENUECAT_ENTITLEMENT_IDENTIFIER] !== undefined;
+  const activeEntitlement =
+    customerInfoQuery.data?.entitlements.active?.[REVENUECAT_ENTITLEMENT_IDENTIFIER];
+  const isSubscribed = activeEntitlement !== undefined;
+  // Which plan they are actually on — the win-back offer only makes sense for
+  // someone paying weekly.
+  const activeProductId = activeEntitlement?.productIdentifier ?? null;
+  const isAnnualSubscriber = activeProductId?.includes("annual") ?? false;
 
-  // Extract monthly and annual packages from current offering
+  // Weekly is the plan the trial funnels into; annual is the win-back offer.
   const currentOffering = offeringsQuery.data?.current;
-  const monthlyPackage = currentOffering?.availablePackages.find(
-    (pkg) => pkg.packageType === "MONTHLY" || pkg.identifier === "$rc_monthly"
+  const weeklyPackage = currentOffering?.availablePackages.find(
+    (pkg) => pkg.packageType === "WEEKLY" || pkg.identifier === "$rc_weekly"
   ) ?? null;
   const annualPackage = currentOffering?.availablePackages.find(
     (pkg) => pkg.packageType === "ANNUAL" || pkg.identifier === "$rc_annual"
   ) ?? null;
 
+  // Introductory offer on the weekly product, when the store reports one and
+  // this user is still eligible for it. Drives the "3 days free" copy — never
+  // promise a trial the store will not actually grant.
+  const weeklyIntro = weeklyPackage?.product.introPrice ?? null;
+  const trialDays = weeklyIntro?.periodUnit === "DAY" ? weeklyIntro.periodNumberOfUnits : null;
+
   return {
     customerInfo: customerInfoQuery.data,
     offerings: offeringsQuery.data,
     currentOffering,
-    monthlyPackage,
+    weeklyPackage,
     annualPackage,
+    weeklyIntro,
+    trialDays,
+    activeProductId,
+    isAnnualSubscriber,
     isSubscribed,
     isLoading: customerInfoQuery.isLoading || offeringsQuery.isLoading,
     offeringsIsLoading: offeringsQuery.isLoading,

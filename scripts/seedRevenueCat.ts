@@ -29,11 +29,11 @@ import {
 
 const PROJECT_NAME = "ScrollSnap";
 
-// Monthly product
-const MONTHLY_IDENTIFIER = "scrollsnap_pro_monthly";
-const MONTHLY_PLAY_STORE_IDENTIFIER = "scrollsnap_pro_monthly:monthly";
-const MONTHLY_DISPLAY_NAME = "ScrollSnap Pro Monthly";
-const MONTHLY_DURATION = "P1M" as const;
+// Weekly product — the primary plan the trial funnels into
+const WEEKLY_IDENTIFIER = "scrollsnap_pro_weekly";
+const WEEKLY_PLAY_STORE_IDENTIFIER = "scrollsnap_pro_weekly:weekly";
+const WEEKLY_DISPLAY_NAME = "ScrollSnap Pro Weekly";
+const WEEKLY_DURATION = "P1W" as const;
 
 // Annual product
 const ANNUAL_IDENTIFIER = "scrollsnap_pro_annual";
@@ -52,8 +52,8 @@ const ENTITLEMENT_DISPLAY_NAME = "Pro Access";
 const OFFERING_IDENTIFIER = "default";
 const OFFERING_DISPLAY_NAME = "Default Offering";
 
-// Monthly: $4.99 | Annual: $29.99
-const MONTHLY_PRICES = [{ amount_micros: 4990000, currency: "USD" }];
+// Weekly: $4.99 | Annual: $29.99
+const WEEKLY_PRICES = [{ amount_micros: 4990000, currency: "USD" }];
 const ANNUAL_PRICES = [{ amount_micros: 29990000, currency: "USD" }];
 
 type TestStorePricesResponse = {
@@ -185,10 +185,10 @@ async function seedRevenueCat() {
     return createdProduct;
   };
 
-  // Monthly products
-  const testMonthly = await ensureProductForApp(testStoreApp, "Test/Monthly", MONTHLY_IDENTIFIER, MONTHLY_DISPLAY_NAME, MONTHLY_DURATION, true);
-  const appMonthly = await ensureProductForApp(appStoreApp, "AppStore/Monthly", MONTHLY_IDENTIFIER, MONTHLY_DISPLAY_NAME, MONTHLY_DURATION, false);
-  const playMonthly = await ensureProductForApp(playStoreApp, "PlayStore/Monthly", MONTHLY_PLAY_STORE_IDENTIFIER, MONTHLY_DISPLAY_NAME, MONTHLY_DURATION, false);
+  // Weekly products
+  const testWeekly = await ensureProductForApp(testStoreApp, "Test/Weekly", WEEKLY_IDENTIFIER, WEEKLY_DISPLAY_NAME, WEEKLY_DURATION, true);
+  const appWeekly = await ensureProductForApp(appStoreApp, "AppStore/Weekly", WEEKLY_IDENTIFIER, WEEKLY_DISPLAY_NAME, WEEKLY_DURATION, false);
+  const playWeekly = await ensureProductForApp(playStoreApp, "PlayStore/Weekly", WEEKLY_PLAY_STORE_IDENTIFIER, WEEKLY_DISPLAY_NAME, WEEKLY_DURATION, false);
 
   // Annual products
   const testAnnual = await ensureProductForApp(testStoreApp, "Test/Annual", ANNUAL_IDENTIFIER, ANNUAL_DISPLAY_NAME, ANNUAL_DURATION, true);
@@ -213,7 +213,7 @@ async function seedRevenueCat() {
     }
   };
 
-  await addPrices(testMonthly.id, MONTHLY_PRICES, "Monthly");
+  await addPrices(testWeekly.id, WEEKLY_PRICES, "Weekly");
   await addPrices(testAnnual.id, ANNUAL_PRICES, "Annual");
 
   // ── Entitlement ───────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ async function seedRevenueCat() {
     client,
     path: { project_id: project.id, entitlement_id: entitlement.id },
     body: {
-      product_ids: [testMonthly.id, appMonthly.id, playMonthly.id, testAnnual.id, appAnnual.id, playAnnual.id],
+      product_ids: [testWeekly.id, appWeekly.id, playWeekly.id, testAnnual.id, appAnnual.id, playAnnual.id],
     },
   });
   if (attachEntitlementError) {
@@ -319,7 +319,7 @@ async function seedRevenueCat() {
     return newPkg;
   };
 
-  const monthlyPkg = await ensurePackage("$rc_monthly", "Monthly Subscription");
+  const weeklyPkg = await ensurePackage("$rc_weekly", "Weekly Subscription");
   const annualPkg = await ensurePackage("$rc_annual", "Annual Subscription");
 
   const attachPackage = async (pkg: Package, products: { id: string }[], label: string) => {
@@ -341,7 +341,7 @@ async function seedRevenueCat() {
     }
   };
 
-  await attachPackage(monthlyPkg, [testMonthly, appMonthly, playMonthly], "monthly");
+  await attachPackage(weeklyPkg, [testWeekly, appWeekly, playWeekly], "weekly");
   await attachPackage(annualPkg, [testAnnual, appAnnual, playAnnual], "annual");
 
   // ── API Keys ──────────────────────────────────────────────────────────────
