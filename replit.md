@@ -1,4 +1,4 @@
-# ScrollSnap
+# ScrollStitch
 
 A mobile app that converts screen recordings into a single long stitched image or PDF.
 

@@ -20,7 +20,7 @@ const privacyPolicyHtml = fs.readFileSync(
   "utf-8"
 );
 
-const uploadDir = path.join(os.tmpdir(), "scrollsnap-uploads");
+const uploadDir = path.join(os.tmpdir(), "scrollstitch-uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 
 const upload = multer({
@@ -61,7 +61,7 @@ function firstString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-const outputDir = path.join(os.tmpdir(), "scrollsnap-output");
+const outputDir = path.join(os.tmpdir(), "scrollstitch-output");
 
 // Progress budget per pipeline stage: [start, end] within 0..1.
 const STAGE_SPANS = {

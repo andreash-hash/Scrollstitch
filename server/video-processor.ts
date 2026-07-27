@@ -285,7 +285,7 @@ export async function detectAndRemoveStickyHeaders(
     return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
   }
 
-  const outputDir = path.join(os.tmpdir(), "scrollsnap-cropped");
+  const outputDir = path.join(os.tmpdir(), "scrollstitch-cropped");
   fs.mkdirSync(outputDir, { recursive: true });
 
   const croppedPaths: string[] = [];

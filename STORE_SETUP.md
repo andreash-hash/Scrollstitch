@@ -1,6 +1,6 @@
 # Store Setup Checklist
 
-This document covers every manual step needed to take ScrollSnap from the current
+This document covers every manual step needed to take ScrollStitch from the current
 RevenueCat Test Store to live purchases on the App Store and Google Play.
 
 The RevenueCat project, iOS app, and Android app are already created programmatically
@@ -13,9 +13,9 @@ The RevenueCat project, iOS app, and Android app are already created programmati
 ### 1a. Create the app
 1. Go to [App Store Connect → My Apps](https://appstoreconnect.apple.com/apps) and click **+** → **New App**.
 2. Select **iOS**, enter:
-   - **Name**: ScrollSnap
+   - **Name**: ScrollStitch
    - **Bundle ID**: `com.myapp` *(update `app.json` → `ios.bundleIdentifier` to your real unique ID first)*
-   - **SKU**: anything unique, e.g. `scrollsnap-001`
+   - **SKU**: anything unique, e.g. `scrollstitch-001`
 3. Save.
 
 ### 1b. Create in-app purchase products
@@ -23,11 +23,11 @@ Inside your new app → **In-App Purchases** → **+**:
 
 | Product ID | Type | Price |
 |---|---|---|
-| `scrollsnap_pro_weekly` | Auto-Renewable Subscription | $4.99 / week — **add a 3-day free trial as an Introductory Offer** |
-| `scrollsnap_pro_annual` | Auto-Renewable Subscription | $29.99 / year |
+| `scrollstitch_pro_weekly` | Auto-Renewable Subscription | $4.99 / week — **add a 3-day free trial as an Introductory Offer** |
+| `scrollstitch_pro_annual` | Auto-Renewable Subscription | $29.99 / year |
 
 For each product:
-- Set a **Subscription Group** (e.g. "ScrollSnap Pro").
+- Set a **Subscription Group** (e.g. "ScrollStitch Pro").
 - Add **Localizations** (Display Name + Description) in at least English.
 - Set **Review Screenshot** (required before approval).
 - Submit for review (products are reviewed alongside the app).
@@ -37,7 +37,7 @@ RevenueCat needs an **App Store Connect API key** to validate receipts server-si
 
 1. In App Store Connect → **Users and Access** → **Integrations** → **App Store Connect API**.
 2. Create a key with **App Manager** role and download the `.p8` file.
-3. In the RevenueCat dashboard → **Project Settings** → **Apps** → **ScrollSnap iOS** → **App Store Connect API Key**, paste the Issuer ID, Key ID, and upload the `.p8` file.
+3. In the RevenueCat dashboard → **Project Settings** → **Apps** → **ScrollStitch iOS** → **App Store Connect API Key**, paste the Issuer ID, Key ID, and upload the `.p8` file.
 
 ### 1d. Add the Privacy Policy URL
 The hosted privacy policy is served at:
@@ -74,12 +74,12 @@ Reduces Apple's commission from 30 % to 15 % for developers earning under $1 M/y
 
 | Product ID | Base plan ID | Price |
 |---|---|---|
-| `scrollsnap_pro_weekly` | `weekly` | $4.99 / week — add a 3-day free trial |
-| `scrollsnap_pro_annual` | `annual` | $29.99 / year |
+| `scrollstitch_pro_weekly` | `weekly` | $4.99 / week — add a 3-day free trial |
+| `scrollstitch_pro_annual` | `annual` | $29.99 / year |
 
 The full Play Store identifiers used by RevenueCat are:
-- `scrollsnap_pro_weekly:weekly`
-- `scrollsnap_pro_annual:annual`
+- `scrollstitch_pro_weekly:weekly`
+- `scrollstitch_pro_annual:annual`
 
 These already match the identifiers in `scripts/seedRevenueCat.ts`.
 
@@ -91,7 +91,7 @@ RevenueCat needs a **Google Play service account** to validate purchases:
    - Role: **Pub/Sub Admin** (Google Play requires this for real-time notifications).
 3. Download the **JSON key**.
 4. In Google Play Console → **Setup** → **API access**, link the service account and grant it **Financial data, orders, and cancellation survey responses** permissions.
-5. In the RevenueCat dashboard → **Project Settings** → **Apps** → **ScrollSnap Android** → **Service Account**, upload the JSON key.
+5. In the RevenueCat dashboard → **Project Settings** → **Apps** → **ScrollStitch Android** → **Service Account**, upload the JSON key.
 
 ---
 
@@ -103,10 +103,10 @@ Replace the placeholder bundle identifiers with your real ones:
 {
   "expo": {
     "ios": {
-      "bundleIdentifier": "com.yourcompany.scrollsnap"
+      "bundleIdentifier": "com.yourcompany.scrollstitch"
     },
     "android": {
-      "package": "com.yourcompany.scrollsnap"
+      "package": "com.yourcompany.scrollstitch"
     }
   }
 }
@@ -138,8 +138,8 @@ Before going live:
 | Android App ID | env: `REVENUECAT_GOOGLE_PLAY_STORE_APP_ID` |
 | Entitlement | `pro` |
 | Offerings | `default` (current) |
-| Weekly package | `$rc_weekly` → `scrollsnap_pro_weekly` |
-| Annual package | `$rc_annual` → `scrollsnap_pro_annual` |
+| Weekly package | `$rc_weekly` → `scrollstitch_pro_weekly` |
+| Annual package | `$rc_annual` → `scrollstitch_pro_annual` |
 | Privacy Policy URL | `https://<production-domain>/privacy` |
 
 

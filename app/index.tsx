@@ -494,7 +494,7 @@ function openManageSubscriptions() {
   }
 }
 
-export default function ScrollSnapScreen() {
+export default function ScrollStitchScreen() {
   const insets = useSafeAreaInsets();
   const {
     isPro,
@@ -931,7 +931,7 @@ export default function ScrollSnapScreen() {
     try {
       if (Platform.OS === "web") {
         const ext = result.imageUrl.endsWith(".jpg") ? "jpg" : "png";
-        await webDownloadOutput(result.imageUrl, `scrollsnap_${Date.now()}.${ext}`);
+        await webDownloadOutput(result.imageUrl, `scrollstitch_${Date.now()}.${ext}`);
         return;
       }
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -942,7 +942,7 @@ export default function ScrollSnapScreen() {
       // Match the real format — a JPEG saved as .png confuses Photos and any
       // app the user later opens it in.
       const ext = result.imageUrl.endsWith(".jpg") ? "jpg" : "png";
-      const localUri = await fetchAndSaveFile(result.imageUrl, `scrollsnap_${Date.now()}.${ext}`);
+      const localUri = await fetchAndSaveFile(result.imageUrl, `scrollstitch_${Date.now()}.${ext}`);
       await MediaLibrary.saveToLibraryAsync(localUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", "Image saved to your photo library.");
@@ -960,14 +960,14 @@ export default function ScrollSnapScreen() {
     setIsSharing(true);
     try {
       if (Platform.OS === "web") {
-        await webDownloadOutput(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
+        await webDownloadOutput(result.pdfUrl, `scrollstitch_${Date.now()}.pdf`);
         return;
       }
-      const localUri = await fetchAndSaveFile(result.pdfUrl, `scrollsnap_${Date.now()}.pdf`);
+      const localUri = await fetchAndSaveFile(result.pdfUrl, `scrollstitch_${Date.now()}.pdf`);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {
           mimeType: "application/pdf",
-          dialogTitle: "Share ScrollSnap PDF",
+          dialogTitle: "Share ScrollStitch PDF",
         });
       } else {
         Alert.alert("Sharing not available on this device");
@@ -1045,7 +1045,7 @@ export default function ScrollSnapScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Ionicons name="scan-outline" size={22} color={C.accent} />
-          <Text style={styles.headerTitle}>ScrollSnap</Text>
+          <Text style={styles.headerTitle}>ScrollStitch</Text>
           {isPro && (
             <View style={styles.proBadge}>
               <Text style={styles.proBadgeText}>PRO</Text>
@@ -1082,7 +1082,7 @@ export default function ScrollSnapScreen() {
             </LinearGradient>
             <Text style={styles.upgradeTitle}>Pro Feature</Text>
             <Text style={styles.upgradeBody}>
-              Crop controls, sensitivity settings, and output quality are available in ScrollSnap Pro.
+              Crop controls, sensitivity settings, and output quality are available in ScrollStitch Pro.
             </Text>
             <Pressable
               onPress={() => {

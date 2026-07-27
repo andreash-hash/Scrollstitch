@@ -27,23 +27,23 @@ import {
   type Duration,
 } from "@replit/revenuecat-sdk";
 
-const PROJECT_NAME = "ScrollSnap";
+const PROJECT_NAME = "ScrollStitch";
 
 // Weekly product — the primary plan the trial funnels into
-const WEEKLY_IDENTIFIER = "scrollsnap_pro_weekly";
-const WEEKLY_PLAY_STORE_IDENTIFIER = "scrollsnap_pro_weekly:weekly";
-const WEEKLY_DISPLAY_NAME = "ScrollSnap Pro Weekly";
+const WEEKLY_IDENTIFIER = "scrollstitch_pro_weekly";
+const WEEKLY_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_weekly:weekly";
+const WEEKLY_DISPLAY_NAME = "ScrollStitch Pro Weekly";
 const WEEKLY_DURATION = "P1W" as const;
 
 // Annual product
-const ANNUAL_IDENTIFIER = "scrollsnap_pro_annual";
-const ANNUAL_PLAY_STORE_IDENTIFIER = "scrollsnap_pro_annual:annual";
-const ANNUAL_DISPLAY_NAME = "ScrollSnap Pro Annual";
+const ANNUAL_IDENTIFIER = "scrollstitch_pro_annual";
+const ANNUAL_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_annual:annual";
+const ANNUAL_DISPLAY_NAME = "ScrollStitch Pro Annual";
 const ANNUAL_DURATION = "P1Y" as const;
 
-const APP_STORE_APP_NAME = "ScrollSnap iOS";
+const APP_STORE_APP_NAME = "ScrollStitch iOS";
 const APP_STORE_BUNDLE_ID = "com.myapp";
-const PLAY_STORE_APP_NAME = "ScrollSnap Android";
+const PLAY_STORE_APP_NAME = "ScrollStitch Android";
 const PLAY_STORE_PACKAGE_NAME = "com.myapp";
 
 const ENTITLEMENT_IDENTIFIER = "pro";
@@ -65,6 +65,10 @@ async function seedRevenueCat() {
   const client = await getUncachableRevenueCatClient();
 
   // ── Project ──────────────────────────────────────────────────────────────
+  // Match on REVENUECAT_PROJECT_ID first and only fall back to the name. The
+  // name is cosmetic and can be changed in the dashboard; matching on it alone
+  // means a rename here silently creates a SECOND project, orphaning the apps
+  // and API keys the app is already shipping with.
   let project: Project;
   const { data: existingProjects, error: listProjectsError } = await listProjects({
     client,
@@ -72,7 +76,19 @@ async function seedRevenueCat() {
   });
   if (listProjectsError) throw new Error("Failed to list projects");
 
-  const existingProject = existingProjects.items?.find((p) => p.name === PROJECT_NAME);
+  const configuredProjectId = process.env.REVENUECAT_PROJECT_ID;
+  const existingProject =
+    (configuredProjectId
+      ? existingProjects.items?.find((p) => p.id === configuredProjectId)
+      : undefined) ?? existingProjects.items?.find((p) => p.name === PROJECT_NAME);
+
+  if (configuredProjectId && !existingProject) {
+    throw new Error(
+      `REVENUECAT_PROJECT_ID is set to ${configuredProjectId} but no such project was found. ` +
+        `Clear the variable to create a new project, or fix the ID.`
+    );
+  }
+
   if (existingProject) {
     console.log("Project already exists:", existingProject.id);
     project = existingProject;

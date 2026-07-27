@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const ONBOARDING_KEY = "@scrollsnap/onboarding_complete";
-const FIRST_LAUNCH_KEY = "@scrollsnap/first_launch_at";
-const WINBACK_KEY = "@scrollsnap/winback_shown";
-const STITCH_COUNT_KEY = "@scrollsnap/stitch_count";
-const REVIEW_KEY = "@scrollsnap/review_prompted";
+const ONBOARDING_KEY = "@scrollstitch/onboarding_complete";
+const FIRST_LAUNCH_KEY = "@scrollstitch/first_launch_at";
+const WINBACK_KEY = "@scrollstitch/winback_shown";
+const STITCH_COUNT_KEY = "@scrollstitch/stitch_count";
+const REVIEW_KEY = "@scrollstitch/review_prompted";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

@@ -1,4 +1,4 @@
-# ScrollSnap
+# ScrollStitch
 
 Turn a scrolling screen recording into one long, seamless screenshot (PNG/JPEG + PDF).
 
@@ -29,6 +29,27 @@ selection** → stitch → PDF. Progress (stage, percent, frame counter) is poll
 which the client surfaces in the UI.
 
 ## CHANGELOG
+
+### 2026-07 — Renamed ScrollSnap → ScrollStitch
+
+Renamed before anything was created in the stores, because **product
+identifiers can never be changed once they exist in App Store Connect**.
+
+Motivation: Snap Inc. holds a registered `SNAP` trademark covering software for
+collecting, editing, storing and sharing data, and actively opposes marks in
+this space — including `SNAP-N-STOR`, which was photo software for phones. The
+association also bought nothing: nobody looking for this app searches "snap",
+whereas "stitch" is a term the category actually uses.
+
+Renamed everywhere: app name and slug, in-app title, AsyncStorage keys, saved
+filenames, server temp directories, subscription product identifiers
+(`scrollstitch_pro_weekly` / `_annual`), RevenueCat project and app names,
+privacy policy and docs.
+
+Also hardened the seed script: it now matches the RevenueCat project by
+`REVENUECAT_PROJECT_ID` before falling back to the project name. Matching on
+the name alone meant this rename would have silently created a *second*
+project, orphaning the apps and API keys the client already ships with.
 
 ### 2026-07 — Hard paywall, weekly plan, day-3 win-back, review prompt
 

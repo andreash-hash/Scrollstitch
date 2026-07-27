@@ -353,7 +353,7 @@ export function locateStrip(
 const tempDirs: string[] = [];
 
 export function makeTempDir(label: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `scrollsnap-test-${label}-`));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `scrollstitch-test-${label}-`));
   tempDirs.push(dir);
   return dir;
 }

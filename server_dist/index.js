@@ -176,7 +176,7 @@ async function detectAndRemoveStickyHeaders(framePaths) {
   if (headerHeight === 0 && footerHeight === 0) {
     return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
   }
-  const outputDir2 = path.join(os.tmpdir(), "scrollsnap-cropped");
+  const outputDir2 = path.join(os.tmpdir(), "scrollstitch-cropped");
   fs.mkdirSync(outputDir2, { recursive: true });
   const croppedPaths = [];
   for (let i = 0; i < framePaths.length; i++) {
@@ -625,7 +625,7 @@ var privacyPolicyHtml = fs2.readFileSync(
   path2.resolve(process.cwd(), "server", "templates", "privacy-policy.html"),
   "utf-8"
 );
-var uploadDir = path2.join(os2.tmpdir(), "scrollsnap-uploads");
+var uploadDir = path2.join(os2.tmpdir(), "scrollstitch-uploads");
 fs2.mkdirSync(uploadDir, { recursive: true });
 var upload = multer({
   dest: uploadDir,
@@ -650,7 +650,7 @@ function firstString(value) {
   if (Array.isArray(value)) value = value[0];
   return typeof value === "string" ? value : "";
 }
-var outputDir = path2.join(os2.tmpdir(), "scrollsnap-output");
+var outputDir = path2.join(os2.tmpdir(), "scrollstitch-output");
 var STAGE_SPANS = {
   validate: [0, 0.05],
   dedup: [0.05, 0.2],
