@@ -42,9 +42,9 @@ const ANNUAL_DISPLAY_NAME = "ScrollStitch Pro Annual";
 const ANNUAL_DURATION = "P1Y" as const;
 
 const APP_STORE_APP_NAME = "ScrollStitch iOS";
-const APP_STORE_BUNDLE_ID = "com.myapp";
+const APP_STORE_BUNDLE_ID = "app.scrollstitch";
 const PLAY_STORE_APP_NAME = "ScrollStitch Android";
-const PLAY_STORE_PACKAGE_NAME = "com.myapp";
+const PLAY_STORE_PACKAGE_NAME = "app.scrollstitch";
 
 const ENTITLEMENT_IDENTIFIER = "pro";
 const ENTITLEMENT_DISPLAY_NAME = "Pro Access";

@@ -30,6 +30,27 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-07 — Release configuration
+
+- **Bundle identifier** `app.scrollstitch` (iOS and Android), replacing the
+  `com.myapp` placeholder, and the URL scheme is now `scrollstitch`. Both are
+  permanent once registered, so they had to be settled before anything reached
+  App Store Connect.
+- **Photo-library purpose strings** in `app.json`. Without them iOS *crashes*
+  the moment a permission is requested, and the package defaults ("Allow
+  ScrollStitch to access your photos") are the vague kind App Review has been
+  rejecting. They now say what the app does with the recording.
+- **`ITSAppUsesNonExemptEncryption: false`** declared in the manifest — the app
+  only talks HTTPS, and declaring it here removes the export-compliance prompt
+  from every build upload.
+- **`eas.json`** added with development/preview/production profiles. The
+  RevenueCat public keys (designed to ship inside the binary) are filled in;
+  `EXPO_PUBLIC_DOMAIN` is a deliberate placeholder, because the client throws
+  at startup without it and every stitch runs on that server.
+- STORE_SETUP gained an ordered first-build checklist, including the App Store
+  Connect In-App Purchase Key that RevenueCat needs before entitlements are
+  granted in production.
+
 ### 2026-07 — Renamed ScrollSnap → ScrollStitch
 
 Renamed before anything was created in the stores, because **product
