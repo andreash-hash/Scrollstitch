@@ -37,7 +37,6 @@ import Animated, { Easing,
   FadeIn,
   FadeInDown,
 } from "react-native-reanimated";
-import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
@@ -124,14 +123,7 @@ function ProgressBar({ progress }: { progress: number }) {
       accessibilityRole="progressbar"
       accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }}
     >
-      <Animated.View style={[styles.progressBarFill, barStyle]}>
-        <LinearGradient
-          colors={[C.accent, "#00E5B8"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
+      <Animated.View style={[styles.progressBarFill, barStyle]} />
     </View>
   );
 }
@@ -1040,7 +1032,7 @@ export default function ScrollStitchScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -1074,12 +1066,11 @@ export default function ScrollStitchScreen() {
       >
         <View style={styles.upgradeOverlay}>
           <View style={styles.upgradeCard}>
-            <LinearGradient
-              colors={["rgba(0,212,170,0.2)", "rgba(0,212,170,0.04)"]}
+            <View
               style={styles.upgradeIconBg}
             >
               <Feather name="lock" size={24} color={C.accent} />
-            </LinearGradient>
+            </View>
             <Text style={styles.upgradeTitle}>Pro Feature</Text>
             <Text style={styles.upgradeBody}>
               Crop controls, sensitivity settings, and output quality are available in ScrollStitch Pro.
@@ -1095,14 +1086,11 @@ export default function ScrollStitchScreen() {
               accessibilityRole="button"
               accessibilityLabel="View plans"
             >
-              <LinearGradient
-                colors={[C.accent, "#00E5B8"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+              <View
                 style={styles.upgradeBtnGrad}
               >
                 <Text style={styles.upgradeBtnText}>View Plans</Text>
-              </LinearGradient>
+              </View>
             </Pressable>
             <Pressable
               onPress={() => setShowUpgradeModal(false)}
@@ -1125,12 +1113,11 @@ export default function ScrollStitchScreen() {
       >
         <View style={styles.upgradeOverlay}>
           <View style={styles.upgradeCard}>
-            <LinearGradient
-              colors={["rgba(0,212,170,0.2)", "rgba(0,212,170,0.04)"]}
+            <View
               style={styles.upgradeIconBg}
             >
               <Feather name="trending-down" size={24} color={C.accent} />
-            </LinearGradient>
+            </View>
             <Text style={styles.upgradeTitle}>Pay less for the same thing</Text>
             <Text style={styles.upgradeBody}>
               You&apos;ve been stitching for a few days now. Switch to yearly for{" "}
@@ -1144,18 +1131,15 @@ export default function ScrollStitchScreen() {
               accessibilityLabel={`Switch to yearly for ${annualPackage?.product.priceString ?? ""}`}
               accessibilityState={{ disabled: isPurchasing, busy: isPurchasing }}
             >
-              <LinearGradient
-                colors={[C.accent, "#00E5B8"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+              <View
                 style={styles.upgradeBtnGrad}
               >
                 {isPurchasing ? (
-                  <ActivityIndicator size="small" color="#0A0E17" />
+                  <ActivityIndicator size="small" color="#f3f2f2" />
                 ) : (
                   <Text style={styles.upgradeBtnText}>Switch to yearly</Text>
                 )}
-              </LinearGradient>
+              </View>
             </Pressable>
             <Pressable
               onPress={dismissWinBack}
@@ -1181,12 +1165,9 @@ export default function ScrollStitchScreen() {
           <Animated.View entering={FadeIn.duration(400)} style={styles.idleContainer}>
             <View style={styles.heroSection}>
               <View style={styles.iconContainer}>
-                <LinearGradient
-                  colors={["rgba(0, 212, 170, 0.2)", "rgba(0, 212, 170, 0.05)"]}
-                  style={styles.iconGradient}
-                >
+                <View style={styles.iconGradient}>
                   <Ionicons name="film-outline" size={48} color={C.accent} />
-                </LinearGradient>
+                </View>
               </View>
               <Text style={styles.heroTitle}>Convert Screen Recordings</Text>
               <Text style={styles.heroSubtitle}>
@@ -1207,17 +1188,14 @@ export default function ScrollStitchScreen() {
                 }
                 accessibilityHint="Extracts frames and stitches them into one long screenshot"
               >
-                <LinearGradient
-                  colors={[C.accent, "#00E5B8"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                <View
                   style={styles.pickButtonGradient}
                 >
-                  <Feather name={Platform.OS === "web" ? "upload" : "zap"} size={22} color="#0A0E17" />
+                  <Feather name={Platform.OS === "web" ? "upload" : "zap"} size={22} color="#f3f2f2" />
                   <Text style={styles.pickButtonText}>
                     {Platform.OS === "web" ? "Pick a Screen Recording" : "Use Latest Recording"}
                   </Text>
-                </LinearGradient>
+                </View>
               </Pressable>
             </Animated.View>
 
@@ -1328,15 +1306,12 @@ export default function ScrollStitchScreen() {
                       accessibilityLabel="Upgrade to Pro"
                       accessibilityHint="Shows the available subscription plans"
                     >
-                      <LinearGradient
-                        colors={[C.accent, "#00E5B8"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
+                      <View
                         style={styles.upgradeInlineBtnGrad}
                       >
-                        <Feather name="zap" size={14} color="#0A0E17" />
+                        <Feather name="zap" size={14} color="#f3f2f2" />
                         <Text style={styles.upgradeInlineBtnText}>Upgrade to Pro</Text>
-                      </LinearGradient>
+                      </View>
                     </Pressable>
                   </View>
                 )}
@@ -1689,9 +1664,9 @@ export default function ScrollStitchScreen() {
                     accessibilityState={{ disabled: isCropping, busy: isCropping }}
                   >
                     {isCropping ? (
-                      <ActivityIndicator size="small" color="#0A0E17" />
+                      <ActivityIndicator size="small" color="#f3f2f2" />
                     ) : (
-                      <Feather name="check" size={16} color="#0A0E17" />
+                      <Feather name="check" size={16} color="#f3f2f2" />
                     )}
                     <Text style={styles.cropApplyText}>
                       {isCropping ? "Cropping..." : "Apply Crop"}
@@ -1737,9 +1712,9 @@ export default function ScrollStitchScreen() {
                 }}
               >
                 {isSaving ? (
-                  <ActivityIndicator size="small" color="#0A0E17" />
+                  <ActivityIndicator size="small" color="#f3f2f2" />
                 ) : (
-                  <Feather name="download" size={20} color="#0A0E17" />
+                  <Feather name="download" size={20} color="#f3f2f2" />
                 )}
                 <Text style={styles.saveButtonText}>
                   {isSaving ? "Saving..." : "Save to Photos"}
@@ -1798,9 +1773,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
     borderBottomColor: C.border,
   },
   headerLeft: {
@@ -1809,16 +1784,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   headerTitle: {
-    fontSize: 20,
-    fontFamily: "Inter_700Bold",
+    fontSize: 18,
+    fontFamily: "Archivo_800ExtraBold",
     color: C.text,
+    letterSpacing: -0.01,
+    textTransform: "uppercase",
   },
   headerButton: {
     width: 40,
     height: 40,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 20,
+    borderRadius: 0,
   },
   replayIntroBtn: {
     flexDirection: "row",
@@ -1831,19 +1808,19 @@ const styles = StyleSheet.create({
   },
   replayIntroText: {
     fontSize: 13,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textTertiary,
   },
   proBadge: {
     backgroundColor: C.accent,
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: 0,
   },
   proBadgeText: {
     fontSize: 9,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
     letterSpacing: 1,
   },
   scrollView: {
@@ -1865,33 +1842,35 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   iconGradient: {
+    backgroundColor: C.accentMuted,
     width: 96,
     height: 96,
-    borderRadius: 32,
+    borderRadius: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   heroTitle: {
     fontSize: 26,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.text,
     textAlign: "center",
     marginBottom: 12,
   },
   heroSubtitle: {
     fontSize: 15,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     textAlign: "center",
     lineHeight: 22,
     paddingHorizontal: 10,
   },
   pickButton: {
-    borderRadius: 16,
+    borderRadius: 0,
     overflow: "hidden",
     marginBottom: 12,
   },
   pickButtonGradient: {
+    backgroundColor: C.accent,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1899,13 +1878,15 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   pickButtonText: {
-    fontSize: 17,
-    fontFamily: "Inter_600SemiBold",
-    color: "#0A0E17",
+    fontSize: 15,
+    fontFamily: "Archivo_800ExtraBold",
+    color: C.onAccent,
+    letterSpacing: 0.02,
+    textTransform: "uppercase",
   },
   stepsContainer: {
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: 0,
     padding: 20,
     gap: 16,
   },
@@ -1917,14 +1898,14 @@ const styles = StyleSheet.create({
   stepIcon: {
     width: 36,
     height: 36,
-    borderRadius: 12,
+    borderRadius: 0,
     backgroundColor: C.accentMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   stepLabel: {
     fontSize: 15,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   processingContainer: {
@@ -1932,7 +1913,7 @@ const styles = StyleSheet.create({
   },
   processingCard: {
     backgroundColor: C.surface,
-    borderRadius: 20,
+    borderRadius: 0,
     padding: 28,
     alignItems: "center",
   },
@@ -1945,38 +1926,42 @@ const styles = StyleSheet.create({
   pulsingDot: {
     width: 10,
     height: 10,
-    borderRadius: 5,
+    borderRadius: 0,
     backgroundColor: C.accent,
   },
   processingTitle: {
     fontSize: 18,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.text,
   },
   progressBarContainer: {
     width: "100%",
-    height: 6,
-    backgroundColor: C.surfaceElevated,
-    borderRadius: 3,
+    height: 8,
+    backgroundColor: C.neutral200,
+    borderRadius: 0,
     overflow: "hidden",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   progressBarFill: {
+    backgroundColor: C.accent,
     height: "100%",
-    borderRadius: 3,
+    borderRadius: 0,
     overflow: "hidden",
   },
   progressPercent: {
-    fontSize: 36,
-    fontFamily: "Inter_700Bold",
+    fontSize: 56,
+    fontFamily: "Archivo_800ExtraBold",
     color: C.accent,
-    marginBottom: 8,
+    lineHeight: 58,
+    marginBottom: 20,
   },
   statusText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: C.textSecondary,
-    marginBottom: 24,
+    fontSize: 11,
+    fontFamily: "Archivo_800ExtraBold",
+    color: C.neutral700,
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+    marginBottom: 20,
     textAlign: "center",
   },
   stageIndicators: {
@@ -1991,7 +1976,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 0,
     backgroundColor: C.surfaceElevated,
   },
   stageChipActive: {
@@ -2000,11 +1985,11 @@ const styles = StyleSheet.create({
     borderColor: C.accentDim,
   },
   stageChipDone: {
-    backgroundColor: "rgba(0, 212, 170, 0.08)",
+    backgroundColor: "rgba(236,48,19,0.08)",
   },
   stageChipText: {
     fontSize: 12,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textTertiary,
   },
   stageChipTextActive: {
@@ -2015,7 +2000,7 @@ const styles = StyleSheet.create({
   },
   frameCountText: {
     fontSize: 13,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.accentDim,
     marginTop: 16,
   },
@@ -2024,19 +2009,19 @@ const styles = StyleSheet.create({
   },
   errorCard: {
     backgroundColor: C.surface,
-    borderRadius: 20,
+    borderRadius: 0,
     padding: 32,
     alignItems: "center",
     gap: 12,
   },
   errorTitle: {
     fontSize: 20,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.text,
   },
   errorMessage: {
     fontSize: 14,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     textAlign: "center",
     lineHeight: 20,
@@ -2047,13 +2032,13 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 0,
     backgroundColor: C.accentMuted,
     marginTop: 8,
   },
   retryText: {
     fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.accent,
   },
   resultContainer: {
@@ -2061,34 +2046,37 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: "row",
-    gap: 10,
     marginBottom: 20,
+    borderTopWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: C.border,
   },
   statCard: {
     flex: 1,
-    backgroundColor: C.surface,
-    borderRadius: 14,
-    padding: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     alignItems: "center",
+    borderRightWidth: 1,
+    borderRightColor: C.border,
   },
   statValue: {
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-    color: C.accent,
-    marginBottom: 4,
+    fontSize: 20,
+    fontFamily: "Archivo_800ExtraBold",
+    color: C.text,
+    marginBottom: 2,
   },
   statLabel: {
-    fontSize: 11,
-    fontFamily: "Inter_500Medium",
-    color: C.textTertiary,
+    fontSize: 10,
+    fontFamily: "Archivo_400Regular",
+    color: C.neutral600,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   warningCard: {
-    backgroundColor: "rgba(255, 183, 77, 0.08)",
+    backgroundColor: "rgba(201,75,57,0.08)",
     borderWidth: 1,
-    borderColor: "rgba(255, 183, 77, 0.35)",
-    borderRadius: 14,
+    borderColor: "rgba(201,75,57,0.40)",
+    borderRadius: 0,
     padding: 14,
     marginBottom: 20,
     gap: 8,
@@ -2100,18 +2088,18 @@ const styles = StyleSheet.create({
   },
   warningTitle: {
     fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.warning,
   },
   warningText: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     lineHeight: 17,
   },
   previewContainer: {
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: 0,
     overflow: "hidden",
     marginBottom: 20,
   },
@@ -2125,14 +2113,14 @@ const styles = StyleSheet.create({
   },
   previewLabel: {
     fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   previewHint: {
     fontSize: 11,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textTertiary,
   },
   previewScroll: {
@@ -2154,7 +2142,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: 0,
   },
   actionButtonPressed: {
     opacity: 0.8,
@@ -2170,12 +2158,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: C.surface,
-    borderRadius: 12,
+    borderRadius: 0,
     marginBottom: 12,
   },
   activityText: {
     fontSize: 14,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   saveButton: {
@@ -2183,17 +2171,17 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_600SemiBold",
+    color: "#f3f2f2",
   },
   shareButton: {
     backgroundColor: C.accentMuted,
     borderWidth: 1,
-    borderColor: "rgba(0, 212, 170, 0.3)",
+    borderColor: "rgba(236,48,19,0.3)",
   },
   shareButtonText: {
     fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.accent,
   },
   newVideoButton: {
@@ -2202,31 +2190,33 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 0,
     backgroundColor: C.surface,
     marginBottom: 20,
   },
   newVideoText: {
     fontSize: 14,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   secondaryButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: C.surface,
+    gap: 10,
+    paddingVertical: 13,
+    borderRadius: 0,
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(0, 212, 170, 0.25)",
+    borderColor: C.border,
     marginBottom: 12,
   },
   secondaryButtonText: {
-    fontSize: 15,
-    fontFamily: "Inter_500Medium",
-    color: C.accent,
+    fontSize: 14,
+    fontFamily: "Archivo_800ExtraBold",
+    color: C.text,
+    letterSpacing: 0.02,
+    textTransform: "uppercase",
   },
   settingsToggle: {
     flexDirection: "row",
@@ -2238,19 +2228,19 @@ const styles = StyleSheet.create({
   },
   settingsToggleText: {
     fontSize: 13,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   settingsPanel: {
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: 0,
     padding: 16,
     marginBottom: 20,
     gap: 8,
   },
   settingLabel: {
     fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -2262,7 +2252,7 @@ const styles = StyleSheet.create({
   },
   settingHint: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     opacity: 0.7,
     marginTop: 2,
@@ -2270,19 +2260,19 @@ const styles = StyleSheet.create({
   chipButton: {
     flex: 1,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 0,
     backgroundColor: C.background,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(32,30,29,0.08)",
     alignItems: "center",
   },
   chipButtonActive: {
-    backgroundColor: "rgba(0, 212, 170, 0.15)",
+    backgroundColor: "rgba(236,48,19,0.15)",
     borderColor: C.accent,
   },
   chipText: {
     fontSize: 13,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   chipTextActive: {
@@ -2290,7 +2280,7 @@ const styles = StyleSheet.create({
   },
   etaText: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     textAlign: "center",
     marginTop: 2,
@@ -2298,7 +2288,7 @@ const styles = StyleSheet.create({
   },
   cropPanel: {
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: 0,
     padding: 16,
     marginBottom: 16,
     gap: 12,
@@ -2310,7 +2300,7 @@ const styles = StyleSheet.create({
   },
   cropTitle: {
     fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -2325,14 +2315,14 @@ const styles = StyleSheet.create({
   },
   cropControlLabel: {
     fontSize: 12,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   cropStepper: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: C.background,
-    borderRadius: 10,
+    borderRadius: 0,
     overflow: "hidden",
   },
   stepperBtn: {
@@ -2344,7 +2334,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
     fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.text,
   },
   cropApplyBtn: {
@@ -2353,41 +2343,41 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 0,
     backgroundColor: C.accent,
   },
   cropApplyText: {
     fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_600SemiBold",
+    color: "#f3f2f2",
   },
   cropPanelLocked: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: 0,
     padding: 16,
     marginBottom: 16,
   },
   cropPanelLockedText: {
     flex: 1,
     fontSize: 13,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   proLockBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "rgba(0,212,170,0.12)",
+    backgroundColor: "rgba(236,48,19,0.12)",
     paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 0,
   },
   proLockText: {
     fontSize: 9,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.accent,
     letterSpacing: 0.5,
   },
@@ -2399,31 +2389,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   upgradeCard: {
-    backgroundColor: "#1A1F2E",
-    borderRadius: 24,
+    backgroundColor: "#eae9e9",
+    borderRadius: 0,
     padding: 28,
     width: "100%",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(32,30,29,0.08)",
   },
   upgradeIconBg: {
+    backgroundColor: C.accentMuted,
     width: 64,
     height: 64,
-    borderRadius: 20,
+    borderRadius: 0,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
   upgradeTitle: {
     fontSize: 22,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.text,
     marginBottom: 10,
   },
   upgradeBody: {
     fontSize: 14,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     textAlign: "center",
     lineHeight: 20,
@@ -2431,25 +2422,26 @@ const styles = StyleSheet.create({
   },
   upgradeBtn: {
     width: "100%",
-    borderRadius: 14,
+    borderRadius: 0,
     overflow: "hidden",
     marginBottom: 12,
   },
   upgradeBtnGrad: {
+    backgroundColor: C.accent,
     paddingVertical: 16,
     alignItems: "center",
   },
   upgradeBtnText: {
     fontSize: 16,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
   },
   upgradeDismiss: {
     paddingVertical: 8,
   },
   upgradeDismissText: {
     fontSize: 13,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textTertiary,
   },
   // Subscription section
@@ -2466,24 +2458,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(0,212,170,0.12)",
+    backgroundColor: "rgba(236,48,19,0.12)",
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 0,
   },
   subscriptionBadgeText: {
     fontSize: 12,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.accent,
   },
   subscriptionPlanLabel: {
     fontSize: 14,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.text,
   },
   subscriptionRenewal: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   manageSubBtn: {
@@ -2493,21 +2485,22 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "rgba(0,212,170,0.1)",
+    borderRadius: 0,
+    backgroundColor: "rgba(236,48,19,0.1)",
     borderWidth: 1,
-    borderColor: "rgba(0,212,170,0.25)",
+    borderColor: "rgba(236,48,19,0.25)",
   },
   manageSubBtnText: {
     fontSize: 13,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.accent,
   },
   upgradeInlineBtn: {
-    borderRadius: 12,
+    borderRadius: 0,
     overflow: "hidden",
   },
   upgradeInlineBtnGrad: {
+    backgroundColor: C.accent,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2516,8 +2509,8 @@ const styles = StyleSheet.create({
   },
   upgradeInlineBtnText: {
     fontSize: 14,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
   },
   restoreBtn: {
     flexDirection: "row",
@@ -2528,40 +2521,40 @@ const styles = StyleSheet.create({
   },
   restoreBtnText: {
     fontSize: 12,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textTertiary,
   },
   settingsDivider: {
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(32,30,29,0.06)",
     marginVertical: 4,
   },
   subErrorRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(255,71,87,0.1)",
+    backgroundColor: "rgba(174,24,0,0.10)",
     borderWidth: 1,
-    borderColor: "rgba(255,71,87,0.25)",
-    borderRadius: 10,
+    borderColor: "rgba(174,24,0,0.25)",
+    borderRadius: 0,
     paddingVertical: 8,
     paddingHorizontal: 10,
   },
   subErrorText: {
     flex: 1,
     fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: "rgba(255,255,255,0.75)",
+    fontFamily: "Archivo_400Regular",
+    color: "rgba(32,30,29,0.75)",
   },
   subErrorRetryBtn: {
-    backgroundColor: "rgba(0,212,170,0.15)",
-    borderRadius: 8,
+    backgroundColor: "rgba(236,48,19,0.15)",
+    borderRadius: 0,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   subErrorRetryText: {
     color: C.accent,
     fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
   },
 });

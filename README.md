@@ -30,6 +30,38 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Modernist re-skin
+
+Ported the "Modernist" design system from the Claude Design bundle (kept in
+`design/` for reference). The app's look is now the inverse of what it was:
+
+| | Before | Now |
+| --- | --- | --- |
+| Ground | dark `#0A0E17` | light `#f3f2f2` |
+| Accent | teal `#00D4AA` | red-orange `#ec3013` |
+| Type | Inter | Archivo (headings at 800) |
+| Corners | 10–20 px | 0 — every radius token is 0 |
+
+- `constants/colors.ts` is now the token source: the Modernist palette plus the
+  neutral ramp, with `Type` and `Space` scales exported alongside. The `dark`
+  key is kept so existing `Colors.dark` imports keep working.
+- **Every gradient is gone.** The system is flat, so each `LinearGradient` became
+  a plain `View` with a solid accent fill — including the buttons, hero badge
+  and progress bar.
+- Structural retune where a colour swap was not enough: 2 px rules under the
+  header, the stats band ruled top and bottom with 1 px vertical dividers
+  instead of three floating cards, an oversized accent percentage over a flat
+  track, and uppercase letter-spaced labels on buttons and status text.
+- Light chrome throughout: `dark-content` status bar, `userInterfaceStyle:
+  "light"`, and light splash/adaptive-icon backgrounds.
+
+**Not yet applied from the design**, and deliberately so: the three-tab bar and
+Library tab need result persistence that does not exist (the server deletes its
+output), and the export dialog, toast and cancel-during-processing change
+behaviour rather than appearance. "Trim edges" is kept although the design omits
+it, and "Replay intro" stays removed regardless — the hard paywall bounces a
+subscriber straight back out of the intro.
+
 ### 2026-07 — Release configuration
 
 - **Bundle identifier** `app.scrollstitch` (iOS and Android), replacing the

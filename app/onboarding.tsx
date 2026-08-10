@@ -27,7 +27,6 @@ import Animated, {
   useAnimatedScrollHandler,
   runOnJS,
 } from "react-native-reanimated";
-import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -75,14 +74,9 @@ function HeroIllustration() {
     <View style={illu.heroWrap}>
       <Animated.View style={[illu.heroGlowOuter, glowStyle]} />
       <Animated.View style={iconStyle}>
-        <LinearGradient
-          colors={[C.accent, "#00E5B8"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={illu.heroIcon}
-        >
-          <Ionicons name="scan-outline" size={52} color="#0A0E17" />
-        </LinearGradient>
+        <View style={illu.heroIcon}>
+          <Ionicons name="scan-outline" size={52} color="#f3f2f2" />
+        </View>
       </Animated.View>
     </View>
   );
@@ -113,7 +107,7 @@ function PickIllustration() {
       <Animated.View style={[illu.phone, floatStyle]}>
         <View style={illu.phoneSpeaker} />
         <View style={illu.phoneScreen}>
-          {[["#1a2744", "#243456"], ["#1a2744", "#1a2744"], ["#243456", "#1a2744"], ["#1a2744", "#243456"]].map(([a, b], i) => (
+          {[["#d7d3d3", "#bab6b6"], ["#d7d3d3", "#d7d3d3"], ["#bab6b6", "#d7d3d3"], ["#d7d3d3", "#bab6b6"]].map(([a, b], i) => (
             <View key={i} style={illu.phoneRow}>
               <View style={[illu.phoneBar, { backgroundColor: a, flex: 1.3 }]} />
               <View style={[illu.phoneBar, { backgroundColor: b, flex: 0.7 }]} />
@@ -194,16 +188,16 @@ function ExportIllustration() {
     <View style={illu.exportWrap}>
       <View style={illu.exportDoc}>
         <Animated.View style={[illu.exportStrip, stripStyle]}>
-          {[C.surface, "#1C2333", C.surface, "#1C2333", C.surface, "#1C2333", C.surface].map((bg, i) => (
+          {[C.surface, "#eae9e9", C.surface, "#eae9e9", C.surface, "#eae9e9", C.surface].map((bg, i) => (
             <View key={i} style={[illu.exportRow, { backgroundColor: bg }]} />
           ))}
         </Animated.View>
       </View>
       <Animated.View style={[illu.exportBadge, badgeStyle]}>
-        <LinearGradient colors={[C.accent, "#00E5B8"]} style={illu.exportBadgeGrad}>
-          <Feather name="file-text" size={14} color="#0A0E17" />
+        <View style={illu.exportBadgeGrad}>
+          <Feather name="file-text" size={14} color="#f3f2f2" />
           <Text style={illu.exportBadgeText}>PDF</Text>
-        </LinearGradient>
+        </View>
       </Animated.View>
     </View>
   );
@@ -345,12 +339,9 @@ function PaywallSlide({
     <View style={[paywall.container, { width: SCREEN_WIDTH }]}>
       <Animated.View entering={FadeInDown.duration(400)}>
         <View style={paywall.header}>
-          <LinearGradient
-            colors={["rgba(0,212,170,0.2)", "rgba(0,212,170,0.04)"]}
-            style={paywall.iconBg}
-          >
+          <View style={paywall.iconBg}>
             <Ionicons name="star" size={26} color={C.accent} />
-          </LinearGradient>
+          </View>
           <Text style={paywall.title}>Go Pro</Text>
           <Text style={paywall.sub}>Capture anything. Share everywhere.</Text>
         </View>
@@ -438,14 +429,9 @@ function PaywallSlide({
                   busy: isPurchasing,
                 }}
               >
-                <LinearGradient
-                  colors={[C.accent, "#00E5B8"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={paywall.cta}
-                >
+                <View style={paywall.cta}>
                   {isPurchasing ? (
-                    <ActivityIndicator size="small" color="#0A0E17" />
+                    <ActivityIndicator size="small" color="#f3f2f2" />
                   ) : (
                     <Text style={paywall.ctaText}>
                       {showTrial
@@ -453,7 +439,7 @@ function PaywallSlide({
                         : `Subscribe — ${billing === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"}`}
                     </Text>
                   )}
-                </LinearGradient>
+                </View>
               </Pressable>
             </Animated.View>
           </>
@@ -665,7 +651,7 @@ export default function OnboardingScreen() {
         },
       ]}
     >
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       {!isPaywall && (
         <Pressable
@@ -708,18 +694,13 @@ export default function OnboardingScreen() {
               activeIndex < SLIDES.length - 1 ? "Next slide" : "Continue to plans"
             }
           >
-            <LinearGradient
-              colors={[C.accent, "#00E5B8"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={container.nextGrad}
-            >
+            <View style={container.nextGrad}>
               {activeIndex < SLIDES.length - 1 ? (
-                <Feather name="arrow-right" size={22} color="#0A0E17" />
+                <Feather name="arrow-right" size={22} color="#f3f2f2" />
               ) : (
                 <Text style={container.getStarted}>Get Started</Text>
               )}
-            </LinearGradient>
+            </View>
           </Pressable>
         </View>
       )}
@@ -739,13 +720,14 @@ const illu = StyleSheet.create({
     position: "absolute",
     width: 180,
     height: 180,
-    borderRadius: 90,
+    borderRadius: 0,
     backgroundColor: C.accent,
   },
   heroIcon: {
+    backgroundColor: C.accent,
     width: 110,
     height: 110,
-    borderRadius: 36,
+    borderRadius: 0,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -757,9 +739,9 @@ const illu = StyleSheet.create({
   phone: {
     width: 100,
     height: 170,
-    borderRadius: 18,
+    borderRadius: 0,
     borderWidth: 2.5,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(32,30,29,0.15)",
     backgroundColor: C.background,
     overflow: "hidden",
     alignItems: "center",
@@ -767,8 +749,8 @@ const illu = StyleSheet.create({
   phoneSpeaker: {
     width: 30,
     height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 0,
+    backgroundColor: "rgba(32,30,29,0.15)",
     marginTop: 10,
     marginBottom: 6,
   },
@@ -784,14 +766,14 @@ const illu = StyleSheet.create({
     height: 18,
   },
   phoneBar: {
-    borderRadius: 3,
+    borderRadius: 0,
     height: 18,
   },
   phoneHome: {
     width: 28,
     height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 0,
+    backgroundColor: "rgba(32,30,29,0.15)",
     marginBottom: 8,
   },
   recDot: {
@@ -800,24 +782,24 @@ const illu = StyleSheet.create({
     right: 10,
     width: 10,
     height: 10,
-    borderRadius: 5,
-    backgroundColor: "#FF4757",
+    borderRadius: 0,
+    backgroundColor: "#ae1800",
     alignItems: "center",
     justifyContent: "center",
   },
   recDotInner: {
     width: 6,
     height: 6,
-    borderRadius: 3,
-    backgroundColor: "#FF6B78",
+    borderRadius: 0,
+    backgroundColor: "#c94b39",
   },
   recLabel: {
     position: "absolute",
     top: 17,
     right: 22,
     fontSize: 7,
-    fontFamily: "Inter_700Bold",
-    color: "#FF4757",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#ae1800",
     letterSpacing: 0.5,
   },
   extractWrap: {
@@ -836,13 +818,13 @@ const illu = StyleSheet.create({
   frame: {
     width: 54,
     height: 72,
-    borderRadius: 8,
+    borderRadius: 0,
     overflow: "hidden",
     borderWidth: 1.5,
-    borderColor: "rgba(0,212,170,0.4)",
+    borderColor: "rgba(236,48,19,0.4)",
   },
   frameDup: {
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(32,30,29,0.12)",
   },
   frameUniq: {
     width: 54,
@@ -869,10 +851,10 @@ const illu = StyleSheet.create({
   },
   exportDoc: {
     width: 90,
-    borderRadius: 12,
+    borderRadius: 0,
     overflow: "hidden",
     borderWidth: 1.5,
-    borderColor: "rgba(0,212,170,0.3)",
+    borderColor: "rgba(236,48,19,0.3)",
     backgroundColor: C.surface,
   },
   exportStrip: {
@@ -881,7 +863,7 @@ const illu = StyleSheet.create({
   exportRow: {
     height: 28,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,212,170,0.08)",
+    borderBottomColor: "rgba(236,48,19,0.08)",
   },
   exportBadge: {
     position: "absolute",
@@ -889,17 +871,18 @@ const illu = StyleSheet.create({
     right: -10,
   },
   exportBadgeGrad: {
+    backgroundColor: C.accent,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: 0,
   },
   exportBadgeText: {
     fontSize: 11,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
     letterSpacing: 0.5,
   },
 });
@@ -920,21 +903,21 @@ const slide = StyleSheet.create({
   },
   tag: {
     fontSize: 11,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.accent,
     letterSpacing: 1.5,
     textTransform: "uppercase",
   },
   title: {
     fontSize: 30,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.text,
     lineHeight: 36,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 15,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     lineHeight: 22,
   },
@@ -954,20 +937,20 @@ const paywall = StyleSheet.create({
   iconBg: {
     width: 56,
     height: 56,
-    borderRadius: 18,
+    borderRadius: 0,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
   },
   title: {
     fontSize: 28,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.text,
     letterSpacing: -0.5,
   },
   sub: {
     fontSize: 14,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   features: {
@@ -982,14 +965,14 @@ const paywall = StyleSheet.create({
   featureIcon: {
     width: 30,
     height: 30,
-    borderRadius: 9,
-    backgroundColor: "rgba(0,212,170,0.12)",
+    borderRadius: 0,
+    backgroundColor: "rgba(236,48,19,0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
   featureText: {
     fontSize: 14,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.text,
     flex: 1,
   },
@@ -1001,20 +984,20 @@ const paywall = StyleSheet.create({
   billingChip: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 14,
+    borderRadius: 0,
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(32,30,29,0.1)",
     alignItems: "center",
     backgroundColor: C.surface,
     gap: 4,
   },
   billingChipActive: {
     borderColor: C.accent,
-    backgroundColor: "rgba(0,212,170,0.1)",
+    backgroundColor: "rgba(236,48,19,0.1)",
   },
   billingChipText: {
     fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.textSecondary,
   },
   billingChipTextActive: {
@@ -1024,16 +1007,17 @@ const paywall = StyleSheet.create({
     backgroundColor: C.accent,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 0,
   },
   saveBadgeText: {
     fontSize: 9,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
     letterSpacing: 0.5,
   },
   ctaWrap: {
-    borderRadius: 16,
+    backgroundColor: C.accent,
+    borderRadius: 0,
     overflow: "hidden",
     marginBottom: 12,
   },
@@ -1043,8 +1027,8 @@ const paywall = StyleSheet.create({
   },
   ctaText: {
     fontSize: 16,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
     letterSpacing: 0.2,
   },
   skip: {
@@ -1053,7 +1037,7 @@ const paywall = StyleSheet.create({
   },
   skipText: {
     fontSize: 13,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   restoreWrap: {
@@ -1062,13 +1046,13 @@ const paywall = StyleSheet.create({
   },
   restoreText: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textTertiary,
     textDecorationLine: "underline",
   },
   legal: {
     fontSize: 10,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textTertiary,
     textAlign: "center",
     lineHeight: 14,
@@ -1084,7 +1068,7 @@ const paywall = StyleSheet.create({
   },
   legalLink: {
     fontSize: 11,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     textDecorationLine: "underline",
     paddingVertical: 4,
@@ -1099,8 +1083,8 @@ const paywall = StyleSheet.create({
   },
   skeletonRow: {
     height: 52,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    borderRadius: 0,
+    backgroundColor: "rgba(32,30,29,0.07)",
   },
   errorWrap: {
     alignItems: "center",
@@ -1110,7 +1094,7 @@ const paywall = StyleSheet.create({
   },
   errorText: {
     fontSize: 13,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     textAlign: "center",
     lineHeight: 19,
@@ -1118,13 +1102,13 @@ const paywall = StyleSheet.create({
   retryBtn: {
     paddingHorizontal: 24,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 0,
     borderWidth: 1.5,
     borderColor: C.accent,
   },
   retryBtnText: {
     fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.accent,
   },
   modalOverlay: {
@@ -1135,23 +1119,23 @@ const paywall = StyleSheet.create({
     paddingHorizontal: 32,
   },
   modalCard: {
-    backgroundColor: "#1A1F2E",
-    borderRadius: 20,
+    backgroundColor: "#eae9e9",
+    borderRadius: 0,
     padding: 24,
     width: "100%",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(32,30,29,0.08)",
   },
   modalTitle: {
     fontSize: 18,
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Archivo_800ExtraBold",
     color: C.text,
     marginBottom: 10,
     textAlign: "center",
   },
   modalBody: {
     fontSize: 14,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
     lineHeight: 20,
     textAlign: "center",
@@ -1164,24 +1148,24 @@ const paywall = StyleSheet.create({
   modalBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 0,
     alignItems: "center",
   },
   modalBtnCancel: {
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(32,30,29,0.08)",
   },
   modalBtnConfirm: {
     backgroundColor: C.accent,
   },
   modalBtnCancelText: {
     fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Archivo_600SemiBold",
     color: C.textSecondary,
   },
   modalBtnConfirmText: {
     fontSize: 14,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
   },
 });
 
@@ -1194,12 +1178,12 @@ const dots = StyleSheet.create({
   dot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 0,
+    backgroundColor: "rgba(32,30,29,0.2)",
   },
   dotActive: {
     width: 22,
-    borderRadius: 3,
+    borderRadius: 0,
     backgroundColor: C.accent,
   },
 });
@@ -1221,7 +1205,7 @@ const container = StyleSheet.create({
   },
   skipText: {
     fontSize: 14,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
   },
   footer: {
@@ -1232,21 +1216,22 @@ const container = StyleSheet.create({
     paddingVertical: 20,
   },
   nextBtn: {
-    borderRadius: 50,
+    borderRadius: 0,
     overflow: "hidden",
   },
   nextGrad: {
+    backgroundColor: C.accent,
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 0,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   getStarted: {
     fontSize: 14,
-    fontFamily: "Inter_700Bold",
-    color: "#0A0E17",
+    fontFamily: "Archivo_800ExtraBold",
+    color: "#f3f2f2",
     letterSpacing: 0.2,
   },
 });

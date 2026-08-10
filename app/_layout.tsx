@@ -1,10 +1,9 @@
 import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+  Archivo_400Regular,
+  Archivo_600SemiBold,
+  Archivo_800ExtraBold,
   useFonts,
-} from "@expo-google-fonts/inter";
+} from "@expo-google-fonts/archivo";
 import { Feather } from "@expo/vector-icons";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -118,10 +117,10 @@ const syncStyles = StyleSheet.create({
   inner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1C2333",
+    backgroundColor: "#eae9e9",
     borderWidth: 1,
-    borderColor: "rgba(255,71,87,0.35)",
-    borderRadius: 12,
+    borderColor: "rgba(174,24,0,0.35)",
+    borderRadius: 0,
     paddingVertical: 10,
     paddingHorizontal: 12,
     gap: 8,
@@ -136,14 +135,14 @@ const syncStyles = StyleSheet.create({
   },
   message: {
     flex: 1,
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(32,30,29,0.85)",
     fontSize: 13,
     lineHeight: 18,
   },
   retryBtn: {
     flexShrink: 0,
-    backgroundColor: "rgba(0,212,170,0.15)",
-    borderRadius: 8,
+    backgroundColor: "rgba(236,48,19,0.15)",
+    borderRadius: 0,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
@@ -197,10 +196,9 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    Archivo_400Regular,
+    Archivo_600SemiBold,
+    Archivo_800ExtraBold,
   });
 
   useEffect(() => {

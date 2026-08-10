@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="#f3f2f2"/><rect x="60" y="60" width="80" height="80" fill="none" stroke="#ec3013" stroke-width="6"/><text x="100" y="106" font-family="Arial" font-size="28" font-weight="800" fill="#ec3013" text-anchor="middle">SS</text></svg>
+</template>
+<x-dc>
+
+<helmet>
+  <link rel="stylesheet" href="_ds/modernist-dfb05770-6c74-45c4-996d-57443bedeb47/styles.css">
+  <script src="_ds/modernist-dfb05770-6c74-45c4-996d-57443bedeb47/_ds_bundle.js"></script>
+  <script src="./image-slot.js"></script>
+  <style>
+    body{margin:0;background:var(--color-neutral-300);}
+    .ss-scroll::-webkit-scrollbar{display:none}
+  </style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 24px;background:var(--color-neutral-300);">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+
+  <div style="height:100%;display:flex;flex-direction:column;overflow:hidden;background:var(--color-bg);font-family:var(--font-body);color:var(--color-text);">
+
+    <!-- ═══════════════ ONBOARDING ═══════════════ -->
+    <sc-if value="{{ isOnboarding }}" hint-placeholder-val="{{ true }}">
+      <div style="height:100%;display:flex;flex-direction:column;overflow:hidden;padding-top:58px;">
+
+        <div style="display:flex;justify-content:flex-end;align-items:center;padding:0 20px;min-height:28px;">
+          <sc-if value="{{ showSlideChrome }}" hint-placeholder-val="{{ true }}">
+            <button class="btn btn-ghost" onClick="{{ skipToPaywall }}" style="font-size:12px;padding:6px 4px;">SKIP</button>
+          </sc-if>
+        </div>
+
+        <div class="ss-scroll" style="flex:1;overflow-y:auto;padding:8px 28px 0;display:flex;flex-direction:column;">
+
+          <!-- Slide 0 -->
+          <sc-if value="{{ isSlide0 }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:32px;">
+              <div style="display:flex;align-items:center;justify-content:center;height:150px;">
+                <div style="width:110px;height:110px;border:2px solid var(--color-text);display:flex;align-items:center;justify-content:center;position:relative;">
+                  <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                  <div style="position:absolute;top:-2px;right:-2px;width:14px;height:14px;background:var(--color-accent);"></div>
+                </div>
+              </div>
+              <div>
+                <div class="tag tag-outline" style="margin-bottom:14px;">WELCOME</div>
+                <h1 style="font-size:34px;line-height:1.05;margin:0 0 14px;">Stop taking&nbsp;12 screenshots</h1>
+                <p style="font-size:15px;line-height:1.5;color:color-mix(in srgb, var(--color-text) 65%, transparent);margin:0;">Scroll once, record it — get one long image or PDF you can hand to Claude, ChatGPT, or anyone else.</p>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Slide 1 -->
+          <sc-if value="{{ isSlide1 }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:32px;">
+              <div style="display:flex;align-items:center;justify-content:center;height:150px;">
+                <div style="width:76px;height:130px;border:2px solid var(--color-text);position:relative;padding:8px 6px;display:flex;flex-direction:column;gap:5px;">
+                  <div style="height:12px;background:var(--color-neutral-300);width:70%;"></div>
+                  <div style="height:12px;background:var(--color-neutral-300);width:100%;"></div>
+                  <div style="height:12px;background:var(--color-neutral-300);width:55%;"></div>
+                  <div style="height:12px;background:var(--color-neutral-300);width:85%;"></div>
+                  <div style="position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--color-accent);"></div>
+                </div>
+              </div>
+              <div>
+                <div class="tag tag-outline" style="margin-bottom:14px;">STEP 1</div>
+                <h1 style="font-size:34px;line-height:1.05;margin:0 0 14px;">Record the thread</h1>
+                <p style="font-size:15px;line-height:1.5;color:color-mix(in srgb, var(--color-text) 65%, transparent);margin:0;">A Reddit debate, a long DM, a page worth keeping. Just scroll through it while your screen records.</p>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Slide 2 -->
+          <sc-if value="{{ isSlide2 }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:32px;">
+              <div style="display:flex;align-items:center;justify-content:center;gap:16px;height:150px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100px;">
+                  <div style="width:46px;height:60px;border:2px solid var(--color-accent);"></div>
+                  <div style="width:46px;height:60px;border:2px solid var(--color-accent);"></div>
+                  <div style="width:46px;height:60px;border:2px solid var(--color-neutral-400);opacity:0.4;"></div>
+                  <div style="width:46px;height:60px;border:2px solid var(--color-neutral-400);opacity:0.4;"></div>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <div style="width:46px;height:60px;border:2px solid var(--color-text);"></div>
+                  <div style="width:46px;height:60px;border:2px solid var(--color-text);"></div>
+                </div>
+              </div>
+              <div>
+                <div class="tag tag-outline" style="margin-bottom:14px;">STEP 2</div>
+                <h1 style="font-size:34px;line-height:1.05;margin:0 0 14px;">We cut the repeats</h1>
+                <p style="font-size:15px;line-height:1.5;color:color-mix(in srgb, var(--color-text) 65%, transparent);margin:0;">Every paused or duplicate frame is detected and removed. Only new content makes it through.</p>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Slide 3 -->
+          <sc-if value="{{ isSlide3 }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:32px;">
+              <div style="display:flex;align-items:center;justify-content:center;height:150px;">
+                <div style="width:84px;border:2px solid var(--color-text);position:relative;padding:10px;display:flex;flex-direction:column;gap:6px;">
+                  <div style="height:8px;background:var(--color-neutral-300);"></div>
+                  <div style="height:8px;background:var(--color-neutral-300);"></div>
+                  <div style="height:8px;background:var(--color-neutral-300);"></div>
+                  <div style="height:8px;background:var(--color-neutral-300);"></div>
+                  <div style="height:8px;background:var(--color-neutral-300);"></div>
+                  <div style="position:absolute;bottom:-10px;right:-14px;background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:10px;letter-spacing:0.05em;padding:4px 8px;">PDF</div>
+                </div>
+              </div>
+              <div>
+                <div class="tag tag-outline" style="margin-bottom:14px;">STEP 3</div>
+                <h1 style="font-size:34px;line-height:1.05;margin:0 0 14px;">One file, anywhere</h1>
+                <p style="font-size:15px;line-height:1.5;color:color-mix(in srgb, var(--color-text) 65%, transparent);margin:0;">Drop the whole conversation into an AI chat in a single upload. Or send the PDF to a friend.</p>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Paywall -->
+          <sc-if value="{{ isPaywall }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-bottom:24px;">
+              <button class="btn btn-ghost" onClick="{{ goPrevSlide }}" style="padding:4px 0;margin-bottom:8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                BACK
+              </button>
+              <h1 style="font-size:30px;margin:8px 0 4px;">Go Pro</h1>
+              <p style="font-size:14px;color:color-mix(in srgb, var(--color-text) 65%, transparent);margin:0 0 22px;">Capture anything. Share everywhere.</p>
+
+              <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px;">
+                <div style="display:flex;align-items:center;gap:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span style="font-size:14px;">One image instead of a dozen screenshots</span></div>
+                <div style="display:flex;align-items:center;gap:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span style="font-size:14px;">Full chats sent without cropping</span></div>
+                <div style="display:flex;align-items:center;gap:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span style="font-size:14px;">Threads and receipts saved as PDF</span></div>
+                <div style="display:flex;align-items:center;gap:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span style="font-size:14px;">No repeated headers, no duplicates</span></div>
+                <div style="display:flex;align-items:center;gap:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span style="font-size:14px;">Any length, no limits</span></div>
+              </div>
+
+              <div class="seg" style="width:100%;margin-bottom:18px;">
+                <label class="seg-opt" style="flex:1;justify-content:center;">
+                  <input type="radio" name="billing" checked="{{ billingWeeklyChecked }}" onChange="{{ selectWeekly }}"></input>
+                  <span>$4.99 / week</span>
+                </label>
+                <label class="seg-opt" style="flex:1;justify-content:center;gap:8px;">
+                  <input type="radio" name="billing" checked="{{ billingAnnualChecked }}" onChange="{{ selectAnnual }}"></input>
+                  <span>$29.99 / year</span>
+                  <span class="tag tag-accent" style="font-size:9px;padding:2px 6px;">BEST VALUE</span>
+                </label>
+              </div>
+
+              <button class="btn btn-primary btn-block" onClick="{{ completeOnboarding }}" style="justify-content:center;font-size:15px;padding:14px;">{{ paywallCtaLabel }}</button>
+              <button class="btn btn-ghost" onClick="{{ completeOnboarding }}" style="width:100%;justify-content:center;margin-top:10px;font-size:12px;">RESTORE PURCHASES</button>
+
+              <p style="font-size:10px;color:color-mix(in srgb, var(--color-text) 50%, transparent);text-align:center;line-height:1.5;margin:14px 0 0;">{{ paywallLegalText }}</p>
+              <div style="display:flex;justify-content:center;gap:10px;margin-top:8px;">
+                <a href="#" style="font-size:10px;">Terms of Use</a>
+                <span style="font-size:10px;color:var(--color-neutral-500);">·</span>
+                <a href="#" style="font-size:10px;">Privacy Policy</a>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+
+        <sc-if value="{{ showSlideChrome }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:16px 28px 30px;display:flex;flex-direction:column;gap:18px;">
+            <div style="display:flex;justify-content:center;gap:6px;">
+              <sc-for list="{{ dots }}" as="dot" hint-placeholder-count="4">
+                <div style="width:{{ dot.width }}px;height:6px;background:{{ dot.bg }};"></div>
+              </sc-for>
+            </div>
+            <button class="btn btn-primary btn-block" onClick="{{ nextSlide }}" style="justify-content:center;font-size:15px;padding:14px;margin-top:0;">{{ nextLabel }}</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- ═══════════════ MAIN APP ═══════════════ -->
+    <sc-if value="{{ isMain }}" hint-placeholder-val="{{ false }}">
+      <div style="height:100%;display:flex;flex-direction:column;overflow:hidden;">
+
+        <div class="ss-scroll" style="flex:1;overflow-y:auto;padding-top:56px;">
+
+          <!-- STITCH TAB -->
+          <sc-if value="{{ tabIsStitch }}" hint-placeholder-val="{{ true }}">
+            <div class="nav" style="border-bottom:2px solid var(--color-divider);">
+              <div class="nav-brand" style="letter-spacing:-0.01em;">SCROLLSTITCH</div>
+              <sc-if value="{{ isPro }}" hint-placeholder-val="{{ false }}">
+                <span class="tag tag-accent">PRO</span>
+              </sc-if>
+              <sc-if value="{{ stitchNotIdle }}" hint-placeholder-val="{{ false }}">
+                <button class="btn btn-icon" onClick="{{ resetStitch }}" aria-label="Start over">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              </sc-if>
+            </div>
+
+            <!-- IDLE -->
+            <sc-if value="{{ stitchIsIdle }}" hint-placeholder-val="{{ true }}">
+              <div style="padding:24px 20px 32px;display:flex;flex-direction:column;gap:20px;">
+                <div style="border:2px solid var(--color-divider);aspect-ratio:4/5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="1"></rect><path d="M16 10l6-3v10l-6-3"></path></svg>
+                  <div style="text-align:center;">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:12px;letter-spacing:0.08em;color:var(--color-neutral-600);">NO RECORDING SELECTED</div>
+                    <div style="font-size:12px;color:var(--color-neutral-500);margin-top:4px;">MP4 or MOV, up to 5 minutes</div>
+                  </div>
+                </div>
+
+                <button class="btn btn-primary btn-block" onClick="{{ startProcessing }}" style="justify-content:center;font-size:15px;padding:14px;margin-top:0;gap:10px;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+                  USE LATEST RECORDING
+                </button>
+                <button class="btn btn-secondary btn-block" onClick="{{ startProcessing }}" style="justify-content:center;font-size:14px;padding:13px;margin-top:0;gap:10px;">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                  PICK FROM LIBRARY
+                </button>
+
+                <button onClick="{{ goToSettings }}" style="background:none;border:none;padding:0;display:flex;gap:8px;justify-content:center;cursor:pointer;">
+                  <span class="tag tag-neutral">{{ sensitivityLabel }}</span>
+                  <span class="tag tag-neutral">{{ outputQualityLabel }}</span>
+                </button>
+              </div>
+            </sc-if>
+
+            <!-- PROCESSING -->
+            <sc-if value="{{ stitchIsProcessing }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:60px 32px;display:flex;flex-direction:column;align-items:center;gap:28px;">
+                <div style="font-family:var(--font-heading);font-weight:800;font-size:56px;color:var(--color-accent);line-height:1;">{{ progressPercentLabel }}</div>
+                <div style="font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700);text-align:center;">{{ statusText }}</div>
+                <div style="width:100%;height:8px;background:var(--color-neutral-200);position:relative;">
+                  <div style="position:absolute;left:0;top:0;bottom:0;background:var(--color-accent);width:{{ progressPercentLabel }};"></div>
+                </div>
+                <span class="tag tag-neutral">{{ frameCounterLabel }}</span>
+                <button class="btn btn-ghost" onClick="{{ resetStitch }}" style="margin-top:8px;">CANCEL</button>
+              </div>
+            </sc-if>
+
+            <!-- RESULT -->
+            <sc-if value="{{ stitchIsResult }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:20px 20px 32px;display:flex;flex-direction:column;gap:18px;">
+                <image-slot id="ss-result-preview" shape="rect" style="width:100%;aspect-ratio:4/5;border:2px solid var(--color-text);" placeholder="Drop the stitched image"></image-slot>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:2px solid var(--color-divider);border-bottom:2px solid var(--color-divider);">
+                  <div style="padding:12px 8px;text-align:center;border-right:1px solid var(--color-divider);">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:20px;">{{ activeResult.uniqueFrames }}</div>
+                    <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:2px;">Unique</div>
+                  </div>
+                  <div style="padding:12px 8px;text-align:center;border-right:1px solid var(--color-divider);">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:20px;">{{ activeResult.frameCount }}</div>
+                    <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:2px;">Extracted</div>
+                  </div>
+                  <div style="padding:12px 8px;text-align:center;">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:20px;">{{ activeResult.width }}×{{ activeResult.heightK }}</div>
+                    <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:2px;">Pixels</div>
+                  </div>
+                </div>
+
+                <sc-if value="{{ hasGap }}" hint-placeholder-val="{{ false }}">
+                  <div class="tag tag-outline" style="align-self:flex-start;">SCROLL GAP DETECTED — RE-RECORD SLOWER</div>
+                </sc-if>
+                <sc-if value="{{ noGap }}" hint-placeholder-val="{{ true }}">
+                  <div class="tag tag-accent" style="align-self:flex-start;">CLEAN STITCH — NO GAPS</div>
+                </sc-if>
+
+                <button class="btn btn-primary btn-block" onClick="{{ openExport }}" style="justify-content:center;font-size:15px;padding:14px;margin-top:0;gap:10px;">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                  EXPORT
+                </button>
+                <button class="btn btn-ghost" onClick="{{ resetStitch }}" style="justify-content:center;">START A NEW STITCH</button>
+              </div>
+            </sc-if>
+          </sc-if>
+
+          <!-- LIBRARY TAB -->
+          <sc-if value="{{ tabIsLibrary }}" hint-placeholder-val="{{ false }}">
+            <div class="nav" style="border-bottom:2px solid var(--color-divider);">
+              <div class="nav-brand">LIBRARY</div>
+            </div>
+            <div>
+              <sc-for list="{{ libraryItems }}" as="item" hint-placeholder-count="4">
+                <button onClick="{{ item.onSelect }}" style="width:100%;background:none;border:none;border-bottom:1px solid var(--color-divider);padding:14px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;">
+                  <div style="width:44px;height:56px;border:1.5px solid var(--color-divider);flex:none;background:var(--color-neutral-200);"></div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ item.title }}</div>
+                    <div style="font-size:11px;color:var(--color-neutral-600);margin-top:3px;">{{ item.meta }}</div>
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- SETTINGS TAB -->
+          <sc-if value="{{ tabIsSettings }}" hint-placeholder-val="{{ false }}">
+            <div class="nav" style="border-bottom:2px solid var(--color-divider);">
+              <div class="nav-brand">SETTINGS</div>
+            </div>
+            <div style="padding:22px 20px 32px;display:flex;flex-direction:column;gap:28px;">
+
+              <div>
+                <h6 style="margin-bottom:12px;">PROCESSING SENSITIVITY</h6>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                  <label class="radio">
+                    <input type="radio" name="sens" checked="{{ sensFineChecked }}" onChange="{{ selectSensFine }}"></input>
+                    <span class="dot"></span>
+                    <span>Fine — captures more frames</span>
+                  </label>
+                  <label class="radio">
+                    <input type="radio" name="sens" checked="{{ sensBalancedChecked }}" onChange="{{ selectSensBalanced }}"></input>
+                    <span class="dot"></span>
+                    <span>Balanced — default</span>
+                  </label>
+                  <label class="radio">
+                    <input type="radio" name="sens" checked="{{ sensFastChecked }}" onChange="{{ selectSensFast }}"></input>
+                    <span class="dot"></span>
+                    <span>Fast — fewer frames, quicker</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <h6 style="margin-bottom:12px;">OUTPUT QUALITY</h6>
+                <div class="seg" style="width:100%;">
+                  <label class="seg-opt" style="flex:1;justify-content:center;">
+                    <input type="radio" name="quality" checked="{{ qualityPngChecked }}" onChange="{{ selectQualityPng }}"></input>
+                    <span>PNG</span>
+                  </label>
+                  <label class="seg-opt" style="flex:1;justify-content:center;">
+                    <input type="radio" name="quality" checked="{{ qualityJpegChecked }}" onChange="{{ selectQualityJpeg }}"></input>
+                    <span>JPEG</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <h6 style="margin-bottom:12px;">SUBSCRIPTION</h6>
+                <sc-if value="{{ isPro }}" hint-placeholder-val="{{ false }}">
+                  <div class="card elev-sm">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <span class="tag tag-accent">PRO</span>
+                      <span style="font-size:13px;">Weekly plan</span>
+                    </div>
+                    <div class="card-meta">Renews Aug 17, 2026</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ isNotPro }}" hint-placeholder-val="{{ true }}">
+                  <button class="btn btn-primary btn-block" onClick="{{ openPaywall }}" style="justify-content:center;margin-top:0;">UPGRADE TO PRO</button>
+                </sc-if>
+              </div>
+
+              <div>
+                <h6 style="margin-bottom:12px;">ABOUT</h6>
+                <button class="btn btn-secondary btn-block" onClick="{{ replayIntro }}" style="margin-top:0;">REPLAY INTRO</button>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <!-- TAB BAR -->
+        <div style="display:flex;border-top:2px solid var(--color-divider);padding-bottom:26px;">
+          <button onClick="{{ setTabStitch }}" style="flex:1;background:none;border:none;border-right:1px solid var(--color-divider);padding:10px 0 4px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:{{ tabStitchColor }};">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            <span style="font-size:10px;font-family:var(--font-heading);font-weight:800;letter-spacing:0.04em;">STITCH</span>
+          </button>
+          <button onClick="{{ setTabLibrary }}" style="flex:1;background:none;border:none;border-right:1px solid var(--color-divider);padding:10px 0 4px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:{{ tabLibraryColor }};">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+            <span style="font-size:10px;font-family:var(--font-heading);font-weight:800;letter-spacing:0.04em;">LIBRARY</span>
+          </button>
+          <button onClick="{{ setTabSettings }}" style="flex:1;background:none;border:none;padding:10px 0 4px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;color:{{ tabSettingsColor }};">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+            <span style="font-size:10px;font-family:var(--font-heading);font-weight:800;letter-spacing:0.04em;">SETTINGS</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- EXPORT DIALOG -->
+      <sc-if value="{{ showExportDialog }}" hint-placeholder-val="{{ false }}">
+        <div class="dialog-backdrop" style="position:absolute;">
+          <div class="dialog">
+            <div class="dialog-title">Export your stitch</div>
+            <div class="dialog-body">A JPEG and a PDF were both generated. Pick what to keep or send.</div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--color-divider);">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg>
+                <span style="font-size:14px;">Image (JPEG)</span>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-secondary" onClick="{{ saveImage }}">SAVE</button>
+                <button class="btn btn-secondary" onClick="{{ shareImage }}">SHARE</button>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--color-divider);">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+                <span style="font-size:14px;">Document (PDF)</span>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-secondary" onClick="{{ savePdf }}">SAVE</button>
+                <button class="btn btn-secondary" onClick="{{ sharePdf }}">SHARE</button>
+              </div>
+            </div>
+
+            <div class="dialog-actions">
+              <button class="btn btn-secondary" onClick="{{ closeExport }}">CLOSE</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- TOAST -->
+      <sc-if value="{{ toastVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:16px;right:16px;bottom:96px;background:var(--color-text);color:var(--color-bg);padding:12px 16px;font-size:13px;font-family:var(--font-heading);font-weight:600;text-align:center;">{{ toastText }}</div>
+      </sc-if>
+    </sc-if>
+
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 500, &quot;height&quot;: 960},
+  &quot;startScreen&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;onboarding&quot;, &quot;options&quot;: [&quot;onboarding&quot;, &quot;main&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Preview&quot;},
+  &quot;isPro&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Preview&quot;},
+  &quot;billingDefault&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;weekly&quot;, &quot;options&quot;: [&quot;weekly&quot;, &quot;annual&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Preview&quot;}
+}">
+
+const SENS = {
+  fine: "Fine",
+  balanced: "Balanced",
+  fast: "Fast",
+};
+
+const DEFAULT_RESULT = {
+  title: "New stitch", date: "Today",
+  frameCount: 52, uniqueFrames: 24, gapCount: 0,
+  width: 1080, heightK: "14.8k",
+};
+
+const LIBRARY_DATA = [
+  { id: 1, title: "r/AskReddit — best heist stories", meta: "64 frames · Aug 8", frameCount: 64, uniqueFrames: 29, gapCount: 0, width: 1080, heightK: "18.2k" },
+  { id: 2, title: "Claude — trip planning thread", meta: "38 frames · Aug 6", frameCount: 38, uniqueFrames: 19, gapCount: 0, width: 1080, heightK: "9.8k" },
+  { id: 3, title: "Email thread — Q3 budget", meta: "21 frames · Aug 3", frameCount: 21, uniqueFrames: 12, gapCount: 1, width: 1080, heightK: "5.2k" },
+  { id: 4, title: "Group chat — apartment hunt", meta: "45 frames · Jul 29", frameCount: 45, uniqueFrames: 22, gapCount: 0, width: 1080, heightK: "11.5k" },
+];
+
+class Component extends DCLogic {
+  state = {
+    screen: this.props.startScreen === "main" ? "main" : "onboarding",
+    onbIndex: 0,
+    billing: this.props.billingDefault === "annual" ? "annual" : "weekly",
+    tab: "stitch",
+    stitchStage: "idle",
+    progress: 0,
+    statusText: "Extracting frames...",
+    isPro: !!this.props.isPro,
+    sensitivity: "balanced",
+    outputQuality: "png",
+    activeResult: DEFAULT_RESULT,
+    showExportDialog: false,
+    toast: null,
+  };
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    clearTimeout(this.toastTimer);
+  }
+
+  showToast = (text) => {
+    clearTimeout(this.toastTimer);
+    this.setState({ toast: text });
+    this.toastTimer = setTimeout(() => this.setState({ toast: null }), 1800);
+  };
+
+  nextSlide = () => {
+    this.setState((s) => ({ onbIndex: Math.min(4, s.onbIndex + 1) }));
+  };
+  goPrevSlide = () => this.setState({ onbIndex: 3 });
+  skipToPaywall = () => this.setState({ onbIndex: 4 });
+  selectWeekly = () => this.setState({ billing: "weekly" });
+  selectAnnual = () => this.setState({ billing: "annual" });
+  completeOnboarding = () => this.setState({ screen: "main" });
+
+  setTabStitch = () => this.setState({ tab: "stitch" });
+  setTabLibrary = () => this.setState({ tab: "library" });
+  setTabSettings = () => this.setState({ tab: "settings" });
+  goToSettings = () => this.setState({ tab: "settings" });
+  openPaywall = () => this.setState({ screen: "onboarding", onbIndex: 4 });
+  replayIntro = () => this.setState({ screen: "onboarding", onbIndex: 0 });
+
+  startProcessing = () => {
+    clearInterval(this.timer);
+    this.setState({ stitchStage: "processing", progress: 0, statusText: "Extracting frames..." });
+    const stages = [
+      [0.18, "Extracting frames..."],
+      [0.34, "Filtering duplicates..."],
+      [0.5, "Uploading frames..."],
+      [0.72, "Removing sticky headers..."],
+      [0.92, "Stitching frames together..."],
+      [1, "Done"],
+    ];
+    this.timer = setInterval(() => {
+      this.setState((s) => {
+        const next = Math.min(1, s.progress + 0.025);
+        const stage = stages.find((st) => next <= st[0]) || stages[stages.length - 1];
+        if (next >= 1) {
+          clearInterval(this.timer);
+          setTimeout(() => this.setState({ stitchStage: "result", activeResult: DEFAULT_RESULT }), 350);
+        }
+        return { progress: next, statusText: stage[1] };
+      });
+    }, 90);
+  };
+
+  resetStitch = () => {
+    clearInterval(this.timer);
+    this.setState({ stitchStage: "idle", progress: 0 });
+  };
+
+  openExport = () => this.setState({ showExportDialog: true });
+  closeExport = () => this.setState({ showExportDialog: false });
+  saveImage = () => { this.showToast("Saved JPEG to Photos"); };
+  shareImage = () => { this.showToast("Opening share sheet — JPEG"); };
+  savePdf = () => { this.showToast("Saved PDF to Files"); };
+  sharePdf = () => { this.showToast("Opening share sheet — PDF"); };
+
+  selectSensFine = () => this.setState({ sensitivity: "fine" });
+  selectSensBalanced = () => this.setState({ sensitivity: "balanced" });
+  selectSensFast = () => this.setState({ sensitivity: "fast" });
+  selectQualityPng = () => this.setState({ outputQuality: "png" });
+  selectQualityJpeg = () => this.setState({ outputQuality: "jpeg" });
+
+  selectLibraryItem = (item) => {
+    this.setState({
+      activeResult: { title: item.title, date: "", frameCount: item.frameCount, uniqueFrames: item.uniqueFrames, gapCount: item.gapCount, width: item.width, heightK: item.heightK },
+      stitchStage: "result",
+      tab: "stitch",
+    });
+  };
+
+  renderVals() {
+    const s = this.state;
+    const accent = "var(--color-accent)";
+    const muted = "var(--color-neutral-600)";
+
+    const progressPct = Math.round(s.progress * 100);
+    const frameEstimate = Math.round(20 + s.progress * 60);
+
+    return {
+      isOnboarding: s.screen === "onboarding",
+      isMain: s.screen === "main",
+
+      isSlide0: s.onbIndex === 0,
+      isSlide1: s.onbIndex === 1,
+      isSlide2: s.onbIndex === 2,
+      isSlide3: s.onbIndex === 3,
+      isPaywall: s.onbIndex === 4,
+      showSlideChrome: s.onbIndex < 4,
+      dots: [0, 1, 2, 3].map((i) => ({
+        width: i === s.onbIndex ? 22 : 6,
+        bg: i === s.onbIndex ? accent : "var(--color-neutral-300)",
+      })),
+      nextLabel: s.onbIndex === 3 ? "GET STARTED" : "NEXT",
+      goPrevSlide: this.goPrevSlide,
+      skipToPaywall: this.skipToPaywall,
+      nextSlide: this.nextSlide,
+      completeOnboarding: this.completeOnboarding,
+
+      billingWeeklyChecked: s.billing === "weekly",
+      billingAnnualChecked: s.billing === "annual",
+      selectWeekly: this.selectWeekly,
+      selectAnnual: this.selectAnnual,
+      paywallCtaLabel: s.billing === "weekly" ? "START 3 DAYS FREE" : "SUBSCRIBE — $29.99/YEAR",
+      paywallLegalText:
+        s.billing === "weekly"
+          ? "3 days free, then $4.99 per week. Auto-renews until cancelled; cancel anytime in Settings."
+          : "$29.99 per year. Auto-renews until cancelled; cancel anytime in Settings.",
+
+      tabIsStitch: s.tab === "stitch",
+      tabIsLibrary: s.tab === "library",
+      tabIsSettings: s.tab === "settings",
+      tabStitchColor: s.tab === "stitch" ? accent : muted,
+      tabLibraryColor: s.tab === "library" ? accent : muted,
+      tabSettingsColor: s.tab === "settings" ? accent : muted,
+      setTabStitch: this.setTabStitch,
+      setTabLibrary: this.setTabLibrary,
+      setTabSettings: this.setTabSettings,
+      goToSettings: this.goToSettings,
+      openPaywall: this.openPaywall,
+      replayIntro: this.replayIntro,
+
+      isPro: s.isPro,
+      isNotPro: !s.isPro,
+
+      stitchIsIdle: s.stitchStage === "idle",
+      stitchIsProcessing: s.stitchStage === "processing",
+      stitchIsResult: s.stitchStage === "result",
+      stitchNotIdle: s.stitchStage !== "idle",
+      startProcessing: this.startProcessing,
+      resetStitch: this.resetStitch,
+
+      progressPercentLabel: progressPct + "%",
+      statusText: s.statusText,
+      frameCounterLabel: frameEstimate + " frames sampled",
+
+      activeResult: s.activeResult,
+      hasGap: (s.activeResult.gapCount || 0) > 0,
+      noGap: (s.activeResult.gapCount || 0) === 0,
+      openExport: this.openExport,
+
+      sensitivityLabel: SENS[s.sensitivity],
+      outputQualityLabel: s.outputQuality.toUpperCase(),
+      sensFineChecked: s.sensitivity === "fine",
+      sensBalancedChecked: s.sensitivity === "balanced",
+      sensFastChecked: s.sensitivity === "fast",
+      selectSensFine: this.selectSensFine,
+      selectSensBalanced: this.selectSensBalanced,
+      selectSensFast: this.selectSensFast,
+      qualityPngChecked: s.outputQuality === "png",
+      qualityJpegChecked: s.outputQuality === "jpeg",
+      selectQualityPng: this.selectQualityPng,
+      selectQualityJpeg: this.selectQualityJpeg,
+
+      libraryItems: LIBRARY_DATA.map((item) => ({
+        ...item,
+        onSelect: () => this.selectLibraryItem(item),
+      })),
+
+      showExportDialog: s.showExportDialog,
+      closeExport: this.closeExport,
+      saveImage: this.saveImage,
+      shareImage: this.shareImage,
+      savePdf: this.savePdf,
+      sharePdf: this.sharePdf,
+
+      toastVisible: !!s.toast,
+      toastText: s.toast || "",
+    };
+  }
+}
+
+</script>
+</body>
+</html>
