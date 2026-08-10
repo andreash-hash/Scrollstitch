@@ -505,6 +505,7 @@ export default function ScrollStitchScreen() {
     restore,
     isRestoring,
     customerInfoIsError,
+    customerInfoIsLoading,
     refetchCustomerInfo,
     annualPackage,
     isAnnualSubscriber,
@@ -1243,7 +1244,15 @@ export default function ScrollStitchScreen() {
             {showSettings && (
               <View style={styles.settingsPanel}>
                 {/* ── Subscription section ── */}
-                {customerInfoIsError ? (
+                {customerInfoIsLoading ? (
+                  <View style={styles.subscriptionSection}>
+                    <Text style={styles.settingLabel}>Subscription</Text>
+                    <View style={styles.subErrorRow}>
+                      <ActivityIndicator size="small" color={C.textTertiary} />
+                      <Text style={styles.subErrorText}>Loading…</Text>
+                    </View>
+                  </View>
+                ) : customerInfoIsError ? (
                   <View style={styles.subscriptionSection}>
                     <Text style={styles.settingLabel}>Subscription</Text>
                     <View style={styles.subErrorRow}>
