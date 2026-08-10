@@ -625,6 +625,43 @@ var privacyPolicyHtml = fs2.readFileSync(
   path2.resolve(process.cwd(), "server", "templates", "privacy-policy.html"),
   "utf-8"
 );
+var BUILD_INFO = (() => {
+  let name = "unknown";
+  let version = "unknown";
+  try {
+    const appJson = JSON.parse(
+      fs2.readFileSync(path2.resolve(process.cwd(), "app.json"), "utf-8")
+    );
+    name = appJson.expo?.name ?? "unknown";
+    version = appJson.expo?.version ?? "unknown";
+  } catch {
+  }
+  let commit = "unknown";
+  try {
+    const gitDir = path2.resolve(process.cwd(), ".git");
+    const head = fs2.readFileSync(path2.join(gitDir, "HEAD"), "utf-8").trim();
+    if (head.startsWith("ref: ")) {
+      const ref = head.slice(5).trim();
+      try {
+        commit = fs2.readFileSync(path2.join(gitDir, ref), "utf-8").trim();
+      } catch {
+        const packed = fs2.readFileSync(path2.join(gitDir, "packed-refs"), "utf-8");
+        const line = packed.split("\n").find((l) => l.endsWith(` ${ref}`));
+        if (line) commit = line.split(" ")[0];
+      }
+    } else {
+      commit = head;
+    }
+  } catch {
+  }
+  return {
+    name,
+    version,
+    commit: commit === "unknown" ? commit : commit.slice(0, 7),
+    startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    privacyPolicyMentions: /ScrollSnap/i.test(privacyPolicyHtml) ? "ScrollSnap" : "current"
+  };
+})();
 var uploadDir = path2.join(os2.tmpdir(), "scrollstitch-uploads");
 fs2.mkdirSync(uploadDir, { recursive: true });
 var upload = multer({
@@ -660,6 +697,9 @@ var STAGE_SPANS = {
   pdf: [0.85, 0.98]
 };
 async function registerRoutes(app2) {
+  app2.get("/api/health", (_req, res) => {
+    res.json({ ok: true, uptimeSeconds: Math.round(process.uptime()), ...BUILD_INFO });
+  });
   app2.get("/privacy", (_req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(200).send(privacyPolicyHtml);

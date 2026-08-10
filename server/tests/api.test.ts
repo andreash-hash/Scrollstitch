@@ -155,6 +155,25 @@ describe("/api/process-frames end to end", () => {
     assert.match(done.error ?? "", /could(?: not)? be read as images/);
   });
 
+  test("reports build identity so a stale deployment is visible", async () => {
+    const res = await fetch(`${baseUrl}/api/health`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      name: string;
+      version: string;
+      commit: string;
+      privacyPolicyMentions: string;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.name, "ScrollStitch");
+    assert.match(body.version, /^\d+\.\d+\.\d+$/);
+    assert.ok(body.commit.length > 0);
+    // The stale deployment was caught by a privacy policy naming the old app;
+    // this makes that check part of the endpoint rather than a lucky glance.
+    assert.equal(body.privacyPolicyMentions, "current");
+  });
+
   test("returns 404 for unknown jobs", async () => {
     const res = await fetch(`${baseUrl}/api/progress/nope`);
     assert.equal(res.status, 404);

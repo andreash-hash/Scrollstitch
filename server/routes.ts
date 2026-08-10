@@ -20,6 +20,60 @@ const privacyPolicyHtml = fs.readFileSync(
   "utf-8"
 );
 
+/**
+ * Build identity, resolved once at startup.
+ *
+ * A deployment silently serving old code is invisible until something looks
+ * wrong in an unrelated place — a stale privacy policy naming the previous app
+ * is how this was actually caught. One endpoint makes it a five-second check.
+ */
+const BUILD_INFO = (() => {
+  let name = "unknown";
+  let version = "unknown";
+  try {
+    const appJson = JSON.parse(
+      fs.readFileSync(path.resolve(process.cwd(), "app.json"), "utf-8")
+    );
+    name = appJson.expo?.name ?? "unknown";
+    version = appJson.expo?.version ?? "unknown";
+  } catch {
+    // Deployment bundles may omit app.json — the other fields still identify it.
+  }
+
+  // Read the SHA straight from .git rather than shelling out; deployments that
+  // strip .git simply report "unknown" instead of failing to boot.
+  let commit = "unknown";
+  try {
+    const gitDir = path.resolve(process.cwd(), ".git");
+    const head = fs.readFileSync(path.join(gitDir, "HEAD"), "utf-8").trim();
+    if (head.startsWith("ref: ")) {
+      const ref = head.slice(5).trim();
+      try {
+        commit = fs.readFileSync(path.join(gitDir, ref), "utf-8").trim();
+      } catch {
+        // Ref is packed rather than loose
+        const packed = fs.readFileSync(path.join(gitDir, "packed-refs"), "utf-8");
+        const line = packed.split("\n").find((l) => l.endsWith(` ${ref}`));
+        if (line) commit = line.split(" ")[0];
+      }
+    } else {
+      commit = head;
+    }
+  } catch {
+    // No git metadata available
+  }
+
+  return {
+    name,
+    version,
+    commit: commit === "unknown" ? commit : commit.slice(0, 7),
+    startedAt: new Date().toISOString(),
+    privacyPolicyMentions: /ScrollSnap/i.test(privacyPolicyHtml)
+      ? "ScrollSnap"
+      : "current",
+  };
+})();
+
 const uploadDir = path.join(os.tmpdir(), "scrollstitch-uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -74,6 +128,10 @@ const STAGE_SPANS = {
 } as const;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.get("/api/health", (_req: Request, res: Response) => {
+    res.json({ ok: true, uptimeSeconds: Math.round(process.uptime()), ...BUILD_INFO });
+  });
+
   app.get("/privacy", (_req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(200).send(privacyPolicyHtml);
