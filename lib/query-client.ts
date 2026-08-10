@@ -1,20 +1,37 @@
 import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+/** Placeholder shipped in eas.json so an unconfigured build fails loudly. */
+const DOMAIN_PLACEHOLDER = "SET_ME_TO_YOUR_SERVER_DOMAIN";
+
 /**
- * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
- * @returns {string} The API base URL
+ * Base URL of the Express API server — where every stitch actually happens.
+ *
+ * The value comes from EXPO_PUBLIC_DOMAIN, which Expo inlines at BUILD time,
+ * so a wrong value cannot be corrected without a rebuild. It must be a bare
+ * host ("api.scrollstitch.com"), not a URL: the scheme is added here, and
+ * "https://host" would otherwise produce "https://https://host".
  */
 export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
+  const raw = process.env.EXPO_PUBLIC_DOMAIN?.trim();
 
-  if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+  if (!raw || raw === DOMAIN_PLACEHOLDER) {
+    throw new Error(
+      "This build has no server configured. Set EXPO_PUBLIC_DOMAIN to your " +
+        "server's hostname in eas.json and rebuild."
+    );
   }
 
-  let url = new URL(`https://${host}`);
+  // Tolerate a pasted URL rather than producing a nonsense address from it.
+  const host = raw.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  if (!host || host.includes("/") || host.includes(" ")) {
+    throw new Error(
+      `EXPO_PUBLIC_DOMAIN must be a bare hostname such as "api.scrollstitch.com" ` +
+        `— got "${raw}".`
+    );
+  }
 
-  return url.href;
+  return new URL(`https://${host}`).href;
 }
 
 async function throwIfResNotOk(res: Response) {
