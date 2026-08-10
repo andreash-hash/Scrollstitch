@@ -1,5 +1,22 @@
 # ScrollStitch
 
+> **Source of truth: `origin/main` on GitHub.**
+>
+> This workspace is a *deployment target and test bench*, not a place where
+> code is authored. Twice already, work committed here never reached GitHub
+> while GitHub moved ahead — leaving two divergent histories that had to be
+> reconciled by hand, and a published deployment quietly serving months-old
+> code.
+>
+> **Therefore, in this workspace:**
+> - Do **not** create commits. If a fix is needed, say what is wrong and let it
+>   be made upstream.
+> - To update: `git fetch origin && git reset --hard origin/main`, then
+>   `npm install`. Never merge or rebase local work on top.
+> - After deploying, check `/api/health` — it reports the app name, version and
+>   git SHA the server is actually running.
+
+
 A mobile app that converts screen recordings into a single long stitched image or PDF.
 
 ## Architecture
@@ -11,11 +28,13 @@ A mobile app that converts screen recordings into a single long stitched image o
 ## Core Flow
 
 1. User picks a video via "Use Latest Recording" or "Pick from Library"
-2. Frames extracted on-device every 300ms using expo-video-thumbnails
-3. Client-side deduplication via 16x16 pixel hash comparison (expo-image-manipulator), configurable sensitivity
-4. Filtered frames uploaded to server via expo/fetch + expo-file-system File class
-5. Server deduplicates frames (perceptual comparison, sharp), removes sticky headers/footers
-6. Server stitches unique frames vertically with overlap matching (sharp), PNG or JPEG output
+2. Frames extracted on-device every 100ms (adaptive, capped at 300 frames)
+3. Client-side deduplication via pixel-hash comparison, configurable sensitivity
+4. Frames uploaded in batches of 25 under a session id (`/api/upload-chunk`), then
+   processing is triggered with an empty `/api/process-frames?sessionId=` request
+5. Server validates frames, deduplicates them, removes sticky headers/footers
+6. Server greedily selects frames by NCC overlap (band-median scored, adaptive
+   confidence) and stitches them, PNG or JPEG output
 7. Server generates a PDF from the stitched image (pdfkit)
 8. Client can save to Photos or share as PDF; crop trimming available via /api/crop endpoint
 
@@ -24,7 +43,7 @@ A mobile app that converts screen recordings into a single long stitched image o
 - `app/index.tsx` — Main single-screen UI with all processing logic, settings, zoom, crop
 - `server/video-processor.ts` — Frame deduplication, stitching (PNG/JPEG), and PDF generation
 - `server/routes.ts` — API endpoints for frame upload, progress polling, output, crop
-- `constants/colors.ts` — Dark theme color palette
+- `constants/colors.ts` — Modernist design tokens (light ground, red accent, square corners)
 
 ## API Endpoints
 
