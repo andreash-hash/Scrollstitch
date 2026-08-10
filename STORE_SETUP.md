@@ -204,3 +204,13 @@ Checklist for a first production build:
 Bundle ID, package name, photo-library purpose strings and the export
 compliance flag (`ITSAppUsesNonExemptEncryption: false`) are already set in
 `app.json`.
+
+
+## After every deploy
+
+Check `https://<domain>/api/health`. It returns the app name and version, the
+git SHA the server was built from, and `privacyPolicyMentions` — which reads
+`"current"` on a good build and `"ScrollSnap"` if the deployment is still
+serving pre-rename code. App Review follows the privacy link from the paywall,
+so a stale policy naming a different app is a rejection risk, not a cosmetic
+one.

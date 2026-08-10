@@ -20,6 +20,13 @@ Turn a scrolling screen recording into one long, seamless screenshot (PNG/JPEG +
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint (expo config) |
 
+## Health check
+
+`GET /api/health` reports what the running server actually is — app name and
+version, git SHA, uptime, and whether the privacy policy still names the old
+app. Use it after every deploy: a deployment quietly serving an old build is
+otherwise invisible until something unrelated looks wrong.
+
 ## Pipeline
 
 `POST /api/process-frames` → validate → dedup → sticky removal → **greedy frame
@@ -29,6 +36,14 @@ selection** → stitch → PDF. Progress (stage, percent, frame counter) is poll
 which the client surfaces in the UI.
 
 ## CHANGELOG
+
+### 2026-08 — Deploy visibility
+
+The published deployment was found serving code from before the ScrollSnap →
+ScrollStitch rename — caught only because its privacy policy still named the
+old app. `GET /api/health` now reports the build's identity (name, version,
+git SHA, uptime) plus a check on that exact symptom, so the next drift takes
+five seconds to spot instead of a lucky glance.
 
 ### 2026-08 — Modernist re-skin
 
