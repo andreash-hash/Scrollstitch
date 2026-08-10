@@ -37,6 +37,26 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Chunked upload
+
+Recovered from work that lived only in the Replit workspace and reimplemented
+on this history, with tests.
+
+At 100 ms sampling a recording yields hundreds of frames, and posting them in
+one multipart body is tens of megabytes in a single request — one dropped
+connection loses the whole recording with nothing to resume from.
+
+- `POST /api/upload-chunk?sessionId=…&chunkIndex=…` stages a batch under a
+  session directory; `POST /api/process-frames?sessionId=…` then runs the job
+  against the staged frames with no body at all. The single-shot path is
+  untouched, so an older client keeps working.
+- Staged names are zero-padded by batch and sequence, because `readdir` gives
+  lexical order and the frames must stitch in capture order.
+- Session ids are sanitised before touching the filesystem; abandoned sessions
+  are swept hourly, and a finished job removes its own directory.
+- The client uploads in batches of 25 and reports real progress per batch
+  rather than a simulated tick.
+
 ### 2026-08 — Deploy visibility
 
 The published deployment was found serving code from before the ScrollSnap →

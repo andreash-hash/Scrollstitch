@@ -668,6 +668,46 @@ var upload = multer({
   dest: uploadDir,
   limits: { fileSize: 100 * 1024 * 1024 }
 });
+var sessionsDir = path2.join(os2.tmpdir(), "scrollstitch-sessions");
+fs2.mkdirSync(sessionsDir, { recursive: true });
+function sanitiseSessionId(raw) {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return String(value ?? "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+}
+var chunkStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const id = sanitiseSessionId(req.query.sessionId);
+    if (!id) return cb(new Error("Missing sessionId"), "");
+    const dir = path2.join(sessionsDir, id);
+    fs2.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, _file, cb) => {
+    const chunk = String(req.query.chunkIndex ?? "0").replace(/\D/g, "").padStart(5, "0");
+    const seq = String(chunkSeq++).padStart(5, "0");
+    cb(null, `${chunk}_${seq}`);
+  }
+});
+var chunkSeq = 0;
+var chunkUpload = multer({
+  storage: chunkStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }
+});
+setInterval(() => {
+  try {
+    for (const entry of fs2.readdirSync(sessionsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dir = path2.join(sessionsDir, entry.name);
+      try {
+        if (Date.now() - fs2.statSync(dir).mtimeMs > 60 * 60 * 1e3) {
+          fs2.rmSync(dir, { recursive: true, force: true });
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+}, 15 * 60 * 1e3).unref();
 var jobProgress = /* @__PURE__ */ new Map();
 function updateJob(id, update) {
   const existing = jobProgress.get(id);
@@ -705,23 +745,62 @@ async function registerRoutes(app2) {
     res.status(200).send(privacyPolicyHtml);
   });
   app2.post(
+    "/api/upload-chunk",
+    chunkUpload.array("frames", 500),
+    (req, res) => {
+      if (!sanitiseSessionId(req.query.sessionId)) {
+        return res.status(400).json({ error: "Missing or invalid sessionId" });
+      }
+      const files = req.files ?? [];
+      res.json({ received: files.length });
+    }
+  );
+  app2.post(
     "/api/process-frames",
-    upload.array("frames", 500),
+    // A session-based request carries no body: skip multer entirely so it does
+    // not reject the empty multipart payload.
+    (req, res, next) => {
+      if (firstString(req.query.sessionId)) {
+        req.files = [];
+        return next();
+      }
+      upload.array("frames", 500)(req, res, next);
+    },
     async (req, res) => {
       const jobId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
       try {
-        const files = req.files;
-        if (!files || files.length === 0) {
-          return res.status(400).json({
-            error: "No frames were received. Record a scrolling screen video and try again."
-          });
+        const sessionId = sanitiseSessionId(req.query.sessionId);
+        let framePaths;
+        let sessionDir = null;
+        if (sessionId) {
+          sessionDir = path2.join(sessionsDir, sessionId);
+          let staged = [];
+          try {
+            staged = fs2.readdirSync(sessionDir).sort();
+          } catch {
+          }
+          if (staged.length === 0) {
+            return res.status(400).json({
+              error: "The uploaded frames could not be found. They may have expired \u2014 please try again."
+            });
+          }
+          framePaths = staged.map((f) => path2.join(sessionDir, f));
+        } else {
+          const files = req.files ?? [];
+          if (files.length === 0) {
+            return res.status(400).json({
+              error: "No frames were received. Record a scrolling screen video and try again."
+            });
+          }
+          framePaths = files.map((f) => f.path);
         }
-        console.log(`Received ${files.length} frames for job ${jobId}`);
+        console.log(
+          `Received ${framePaths.length} frames for job ${jobId}` + (sessionId ? ` (session ${sessionId})` : "")
+        );
         const quality = firstString(req.query.quality) === "jpeg" ? "jpeg" : "png";
         jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
-        res.json({ jobId, frameCount: files.length });
+        res.json({ jobId, frameCount: framePaths.length });
         (async () => {
-          const framePaths = files.map((f) => f.path);
           const tempOutputs = [];
           try {
             const warnings = [];
@@ -834,6 +913,12 @@ async function registerRoutes(app2) {
             for (const f of [...framePaths, ...tempOutputs]) {
               try {
                 fs2.unlinkSync(f);
+              } catch {
+              }
+            }
+            if (sessionDir) {
+              try {
+                fs2.rmSync(sessionDir, { recursive: true, force: true });
               } catch {
               }
             }

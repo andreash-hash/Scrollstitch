@@ -82,6 +82,65 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 },
 });
 
+// ── Chunked upload ─────────────────────────────────────────────────────────
+// At 100ms sampling a recording can yield hundreds of frames, and posting them
+// in one multipart body is tens of megabytes in a single request — the kind
+// that dies on a flaky mobile connection with nothing to resume from. Clients
+// may instead stage frames in batches under a session id, then trigger
+// processing with an empty request. The single-shot path still works.
+const sessionsDir = path.join(os.tmpdir(), "scrollstitch-sessions");
+fs.mkdirSync(sessionsDir, { recursive: true });
+
+/** Session ids land in a filesystem path, so allow only safe characters. */
+function sanitiseSessionId(raw: unknown): string {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return String(value ?? "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+}
+
+const chunkStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const id = sanitiseSessionId((req as Request).query.sessionId);
+    if (!id) return cb(new Error("Missing sessionId"), "");
+    const dir = path.join(sessionsDir, id);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, _file, cb) => {
+    // Frames must stitch in capture order, and readdir gives us lexical order —
+    // so the batch index and position within it are both zero-padded.
+    const chunk = String((req as Request).query.chunkIndex ?? "0")
+      .replace(/\D/g, "")
+      .padStart(5, "0");
+    const seq = String(chunkSeq++).padStart(5, "0");
+    cb(null, `${chunk}_${seq}`);
+  },
+});
+let chunkSeq = 0;
+
+const chunkUpload = multer({
+  storage: chunkStorage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
+
+/** Abandoned sessions (app closed mid-upload) would otherwise fill the disk. */
+setInterval(() => {
+  try {
+    for (const entry of fs.readdirSync(sessionsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(sessionsDir, entry.name);
+      try {
+        if (Date.now() - fs.statSync(dir).mtimeMs > 60 * 60 * 1000) {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      } catch {
+        // Raced with another cleanup — nothing to do
+      }
+    }
+  } catch {
+    // Sessions dir vanished; it is recreated on the next upload
+  }
+}, 15 * 60 * 1000).unref();
+
 interface JobState {
   stage: string;
   progress: number;
@@ -137,31 +196,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(200).send(privacyPolicyHtml);
   });
 
+  // Stage one batch of frames under a session id. Called repeatedly before
+  // /api/process-frames is triggered with the same session.
+  app.post(
+    "/api/upload-chunk",
+    chunkUpload.array("frames", 500),
+    (req: Request, res: Response) => {
+      if (!sanitiseSessionId(req.query.sessionId)) {
+        return res.status(400).json({ error: "Missing or invalid sessionId" });
+      }
+      const files = (req.files as Express.Multer.File[]) ?? [];
+      res.json({ received: files.length });
+    }
+  );
+
   app.post(
     "/api/process-frames",
-    upload.array("frames", 500),
+    // A session-based request carries no body: skip multer entirely so it does
+    // not reject the empty multipart payload.
+    (req: Request, res: Response, next) => {
+      if (firstString(req.query.sessionId)) {
+        req.files = [];
+        return next();
+      }
+      upload.array("frames", 500)(req, res, next);
+    },
     async (req: Request, res: Response) => {
       const jobId =
         Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
       try {
-        const files = req.files as Express.Multer.File[];
-        if (!files || files.length === 0) {
-          return res.status(400).json({
-            error:
-              "No frames were received. Record a scrolling screen video and try again.",
-          });
+        const sessionId = sanitiseSessionId(req.query.sessionId);
+        let framePaths: string[];
+        let sessionDir: string | null = null;
+
+        if (sessionId) {
+          sessionDir = path.join(sessionsDir, sessionId);
+          let staged: string[] = [];
+          try {
+            staged = fs.readdirSync(sessionDir).sort();
+          } catch {
+            // Session never existed, or the cleanup sweep already removed it
+          }
+          if (staged.length === 0) {
+            return res.status(400).json({
+              error:
+                "The uploaded frames could not be found. They may have expired — please try again.",
+            });
+          }
+          framePaths = staged.map((f) => path.join(sessionDir!, f));
+        } else {
+          const files = (req.files as Express.Multer.File[]) ?? [];
+          if (files.length === 0) {
+            return res.status(400).json({
+              error:
+                "No frames were received. Record a scrolling screen video and try again.",
+            });
+          }
+          framePaths = files.map((f) => f.path);
         }
 
-        console.log(`Received ${files.length} frames for job ${jobId}`);
+        console.log(
+          `Received ${framePaths.length} frames for job ${jobId}` +
+            (sessionId ? ` (session ${sessionId})` : "")
+        );
 
         const quality = firstString(req.query.quality) === "jpeg" ? "jpeg" : "png";
 
         jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
-        res.json({ jobId, frameCount: files.length });
+        res.json({ jobId, frameCount: framePaths.length });
 
         (async () => {
-          const framePaths = files.map((f) => f.path);
           const tempOutputs: string[] = [];
           try {
             const warnings: string[] = [];
@@ -295,6 +400,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 fs.unlinkSync(f);
               } catch {
                 // already gone (e.g. tmp stitch file was renamed) — ignore
+              }
+            }
+            if (sessionDir) {
+              try {
+                fs.rmSync(sessionDir, { recursive: true, force: true });
+              } catch {
+                // The hourly sweep will collect it
               }
             }
           }

@@ -128,6 +128,71 @@ describe("/api/process-frames end to end", () => {
     assert.equal(pdfRes.headers.get("content-type"), "application/pdf");
   });
 
+  test("chunked upload stages frames and stitches them in order", async () => {
+    const pageH = 3840;
+    const page = generatePage(WIDTH, pageH, 5309);
+    const positions = [0, 576, 1152, 1728, 2304, 2880];
+    const frames = await renderFrames({
+      page,
+      outDir: makeTempDir("api-chunked"),
+      frameHeight: FRAME_H,
+      frames: positions.map((position) => ({ position })),
+      jpegQuality: 80,
+    });
+
+    // Upload in batches, the way the client does, then trigger with an
+    // empty request carrying only the session id.
+    const sessionId = `test${Date.now().toString(36)}`;
+    const batchSize = 2;
+    for (let b = 0; b * batchSize < frames.length; b++) {
+      const batch = frames.slice(b * batchSize, (b + 1) * batchSize);
+      const res = await fetch(
+        `${baseUrl}/api/upload-chunk?sessionId=${sessionId}&chunkIndex=${b}`,
+        { method: "POST", body: frameFormData(batch) }
+      );
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), { received: batch.length });
+    }
+
+    const startRes = await fetch(
+      `${baseUrl}/api/process-frames?quality=png&sessionId=${sessionId}`,
+      { method: "POST" }
+    );
+    assert.equal(startRes.status, 200);
+    const { jobId, frameCount } = (await startRes.json()) as {
+      jobId: string;
+      frameCount: number;
+    };
+    assert.equal(frameCount, frames.length, "all staged frames must be picked up");
+
+    const done = await pollUntilDone(jobId);
+    assert.equal(done.stage, "Complete", done.error ?? "");
+    const result = done.result!;
+    assert.equal(result.gapCount, 0, "batching must not disturb frame order");
+    assert.ok(
+      Math.abs(result.dimensions.height - pageH) <= 25,
+      `stitched height ${result.dimensions.height} should be ≈${pageH}`
+    );
+  });
+
+  test("rejects a session that staged nothing", async () => {
+    const res = await fetch(
+      `${baseUrl}/api/process-frames?sessionId=nothing-was-staged-here`,
+      { method: "POST" }
+    );
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: string };
+    assert.match(body.error, /could not be found|expired/i);
+  });
+
+  test("rejects a chunk without a session id", async () => {
+    const res = await fetch(`${baseUrl}/api/upload-chunk`, {
+      method: "POST",
+      body: new FormData(),
+    });
+    assert.equal(res.status, 400);
+  });
+
   test("rejects an upload without frames", async () => {
     const res = await fetch(`${baseUrl}/api/process-frames`, {
       method: "POST",

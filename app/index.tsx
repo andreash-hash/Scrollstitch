@@ -76,6 +76,9 @@ interface ProcessingResult {
 // Long videos widen the interval so the frame count stays bounded.
 const EXTRACT_INTERVAL_MS = 100;
 const MAX_EXTRACT_FRAMES = 300;
+/** Frames per upload request — small enough to retry cheaply, large enough
+ * that the per-request overhead stays negligible. */
+const UPLOAD_BATCH_SIZE = 25;
 
 function extractionIntervalMs(durationMs: number): number {
   return Math.max(EXTRACT_INTERVAL_MS, Math.ceil(durationMs / MAX_EXTRACT_FRAMES));
@@ -766,62 +769,72 @@ export default function ScrollStitchScreen() {
     return filteredUris;
   };
 
+  /**
+   * Upload in batches under one session id, then trigger processing with an
+   * empty request.
+   *
+   * A single multipart body holding every frame is tens of megabytes at 100ms
+   * sampling — one dropped connection and the whole recording is lost with
+   * nothing to resume from. Batching also gives real progress instead of a
+   * simulated tick, since each completed batch is a fact rather than a guess.
+   */
   const startUpload = async (filteredUris: string[]) => {
     try {
       setStage("uploading");
-      setStatusText(`Uploading ${filteredUris.length} frames...`);
       advanceProgress(0.26);
 
-      const estimatedUploadMs = Math.max(2000, filteredUris.length * 60);
-      startFakeTick(0.18, 0.32, estimatedUploadMs);
-
       const baseUrl = getApiUrl();
-      const uploadUrl = new URL("/api/process-frames", baseUrl);
-      uploadUrl.searchParams.set("quality", outputQuality);
-
-      if (Platform.OS === "web") {
-        const formData = new FormData();
-        for (let i = 0; i < filteredUris.length; i++) {
-          const response = await fetch(filteredUris[i]);
-          const blob = await response.blob();
-          formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
-        }
-        const uploadRes = await fetch(uploadUrl.toString(), {
-          method: "POST",
-          body: formData,
-        });
-        if (!uploadRes.ok) throw new Error(await uploadRes.text());
-        const data = await uploadRes.json();
-
-        stopFakeTick();
-        setStage("processing");
-        advanceProgress(0.33);
-        setStatusText("Processing frames on server...");
-        pollProgress(data.jobId);
-      } else {
-        const { fetch: expoFetch } = await import("expo/fetch");
-        const { File: ExpoFile } = await import("expo-file-system");
-        const formData = new FormData();
-
-        for (let i = 0; i < filteredUris.length; i++) {
-          const file = new ExpoFile(filteredUris[i]);
-          formData.append("frames", file as any);
-        }
-
-        const uploadRes = await expoFetch(uploadUrl.toString(), {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!uploadRes.ok) throw new Error(await uploadRes.text());
-        const data = await uploadRes.json();
-
-        stopFakeTick();
-        setStage("processing");
-        advanceProgress(0.33);
-        setStatusText("Processing frames on server...");
-        pollProgress(data.jobId);
+      const sessionId = `${Date.now().toString(36)}${Math.random()
+        .toString(36)
+        .slice(2, 10)}`;
+      const batches: string[][] = [];
+      for (let i = 0; i < filteredUris.length; i += UPLOAD_BATCH_SIZE) {
+        batches.push(filteredUris.slice(i, i + UPLOAD_BATCH_SIZE));
       }
+
+      const isWeb = Platform.OS === "web";
+      const expoFetch = isWeb ? null : (await import("expo/fetch")).fetch;
+      const ExpoFile = isWeb ? null : (await import("expo-file-system")).File;
+
+      for (let b = 0; b < batches.length; b++) {
+        setStatusText(`Uploading batch ${b + 1} of ${batches.length}...`);
+
+        const chunkUrl = new URL("/api/upload-chunk", baseUrl);
+        chunkUrl.searchParams.set("sessionId", sessionId);
+        chunkUrl.searchParams.set("chunkIndex", String(b));
+
+        const formData = new FormData();
+        for (let i = 0; i < batches[b].length; i++) {
+          if (isWeb) {
+            const blob = await (await fetch(batches[b][i])).blob();
+            formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
+          } else {
+            formData.append("frames", new ExpoFile!(batches[b][i]) as any);
+          }
+        }
+
+        const doFetch = isWeb ? fetch : expoFetch!;
+        const res = await doFetch(chunkUrl.toString(), { method: "POST", body: formData });
+        if (!res.ok) throw new Error(await res.text());
+
+        advanceProgress(0.26 + ((b + 1) / batches.length) * 0.07);
+      }
+
+      // Empty request: the server picks the staged frames up by session id.
+      const processUrl = new URL("/api/process-frames", baseUrl);
+      processUrl.searchParams.set("quality", outputQuality);
+      processUrl.searchParams.set("sessionId", sessionId);
+
+      const doFetch = isWeb ? fetch : expoFetch!;
+      const startRes = await doFetch(processUrl.toString(), { method: "POST" });
+      if (!startRes.ok) throw new Error(await startRes.text());
+      const data = await startRes.json();
+
+      stopFakeTick();
+      setStage("processing");
+      advanceProgress(0.34);
+      setStatusText("Processing frames on server...");
+      pollProgress(data.jobId);
     } catch (err: any) {
       setStage("error");
       setErrorMessage(err.message || "Failed to process video");
