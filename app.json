@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.scrollstitch",
+      "bundleIdentifier": "com.scrollstitch",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "ScrollStitch needs access to your screen recordings so it can extract the frames and stitch them into one long screenshot.",
         "NSPhotoLibraryAddUsageDescription": "ScrollStitch saves your finished long screenshot to your photo library.",
@@ -23,7 +23,7 @@
       }
     },
     "android": {
-      "package": "app.scrollstitch",
+      "package": "com.scrollstitch",
       "adaptiveIcon": {
         "backgroundColor": "#f3f2f2",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

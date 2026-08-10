@@ -14,7 +14,7 @@ The RevenueCat project, iOS app, and Android app are already created programmati
 1. Go to [App Store Connect → My Apps](https://appstoreconnect.apple.com/apps) and click **+** → **New App**.
 2. Select **iOS**, enter:
    - **Name**: ScrollStitch
-   - **Bundle ID**: `app.scrollstitch` *(already set in `app.json`; permanent once registered)*
+   - **Bundle ID**: `com.scrollstitch` *(already set in `app.json`; permanent once registered)*
    - **SKU**: anything unique, e.g. `scrollstitch-001`
 3. Save.
 
@@ -67,7 +67,7 @@ Reduces Apple's commission from 30 % to 15 % for developers earning under $1 M/y
 ### 3a. Create the app
 1. Go to [play.google.com/console](https://play.google.com/console) → **Create app**.
 2. Select **App**, **Free**, fill in the form.
-3. Package name is `app.scrollstitch`, already set in `app.json`.
+3. Package name is `com.scrollstitch`, already set in `app.json`.
 
 ### 3b. Create subscription products
 **Monetize** → **Products** → **Subscriptions** → **Create subscription**:
@@ -178,21 +178,23 @@ rejected as non-functional.
 
 ## Before the first build
 
-`eas.json` carries the environment for every build profile. The RevenueCat
-public keys are already filled in — they are meant to be embedded in the app
-binary — but **`EXPO_PUBLIC_DOMAIN` is a placeholder** (`SET_ME_TO_...`) in all
-three profiles. Replace it with the domain your Express server is deployed on,
-in the profile you are building. The client throws at startup without it, and
-every stitch happens on that server, so a build with the wrong domain is a
-non-functional app.
+`eas.json` carries the environment for every build profile. All three point at
+`scroll-stitcher.replit.app`, the current deployment.
+
+**Change `build.production.env.EXPO_PUBLIC_DOMAIN` before submitting to the
+App Store** if you have a custom domain by then. Expo inlines the value at
+build time, so it cannot be corrected without a new build *and* a new App
+Store release — a `.replit.app` address shipped to the store is one you are
+stuck with until the next update.
 
 Checklist for a first production build:
 
-1. Deploy the server; confirm `https://<domain>/privacy` loads in a browser —
-   the paywall links there and App Review will click it.
-2. Set `EXPO_PUBLIC_DOMAIN` in `eas.json` → `build.production.env`.
+1. Confirm `https://<domain>/privacy` loads in a browser — the paywall links
+   there and App Review will click it.
+2. Set `EXPO_PUBLIC_DOMAIN` in `eas.json` → `build.production.env` to the
+   domain you intend to keep.
 3. `npx tsx scripts/seedRevenueCat.ts` to create the weekly/annual products in
-   RevenueCat (bundle ID `app.scrollstitch`).
+   RevenueCat (bundle ID `com.scrollstitch`).
 4. Create the same two subscriptions in App Store Connect, plus the 3-day
    Introductory Offer on the weekly plan.
 5. In RevenueCat, add the App Store Connect **In-App Purchase Key** so receipts

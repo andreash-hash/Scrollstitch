@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "SET_ME_TO_YOUR_SERVER_DOMAIN",
+        "EXPO_PUBLIC_DOMAIN": "scroll-stitcher.replit.app",
         "EXPO_PUBLIC_REVENUECAT_TEST_API_KEY": "test_NUOBXBjyOqwOTUPvsTOMjAoEbYv",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_pQNutSFdNAByouOKmFkMAtxjXkQ",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF"
@@ -18,7 +18,7 @@
       "distribution": "internal",
       "ios": { "simulator": false },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "SET_ME_TO_YOUR_SERVER_DOMAIN",
+        "EXPO_PUBLIC_DOMAIN": "scroll-stitcher.replit.app",
         "EXPO_PUBLIC_REVENUECAT_TEST_API_KEY": "test_NUOBXBjyOqwOTUPvsTOMjAoEbYv",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_pQNutSFdNAByouOKmFkMAtxjXkQ",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF"
@@ -27,7 +27,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "SET_ME_TO_YOUR_SERVER_DOMAIN",
+        "EXPO_PUBLIC_DOMAIN": "scroll-stitcher.replit.app",
         "EXPO_PUBLIC_REVENUECAT_TEST_API_KEY": "test_NUOBXBjyOqwOTUPvsTOMjAoEbYv",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_pQNutSFdNAByouOKmFkMAtxjXkQ",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF"
