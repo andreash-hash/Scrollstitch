@@ -373,44 +373,79 @@ async function seedRevenueCat() {
   const weeklyPkg = await ensurePackage("$rc_weekly", "Weekly Subscription");
   const annualPkg = await ensurePackage("$rc_annual", "Annual Subscription");
 
-  const attachPackage = async (pkg: Package, products: { id: string }[], label: string) => {
-    const { error } = await attachProductsToPackage({
-      client,
-      path: { project_id: project.id, package_id: pkg.id },
-      body: {
-        products: products.map((p) => ({ product_id: p.id, eligibility_criteria: "all" })),
-      },
-    });
-    if (error) {
-      if (error.type === "unprocessable_entity_error") {
-        // "Already attached" and "incompatible" arrive as the same error, and
-        // treating both as success is how a package can end up in the offering
-        // with no products behind it. RevenueCat then omits it entirely and the
-        // paywall renders a plan with no price. Verify instead of assuming.
-        console.log(`Attach for ${label} returned unprocessable_entity — verifying`);
-      } else {
-        throw new Error("Failed to attach products to " + label + " package");
-      }
-    } else {
-      console.log("Attached products to " + label + " package");
-    }
-
-    const { data: check, error: checkError } = await listPackages({
+  /** The products currently attached to a package, as ids. */
+  const attachedProductIds = async (packageId: string): Promise<string[]> => {
+    const { data, error } = await listPackages({
       client,
       path: { project_id: project.id, offering_id: offering!.id },
-      query: { limit: 20, expand: ["items.product"] },
+      query: { limit: 50, expand: ["items.product"] },
     });
-    if (checkError) throw new Error(`Could not verify the ${label} package`);
-    const stored = check.items?.find((p) => p.id === pkg.id);
-    const attached = stored?.products?.items?.length ?? 0;
-    if (attached === 0) {
+    if (error) throw new Error("Could not read package attachments");
+    const stored = data.items?.find((p) => p.id === packageId);
+    return (stored?.products?.items ?? [])
+      .map((a) => (a as { product?: { id?: string } }).product?.id)
+      .filter((id): id is string => Boolean(id));
+  };
+
+  /**
+   * Make a package hold exactly the given products.
+   *
+   * RevenueCat allows one product per app in a package, so a leftover from the
+   * previous naming does not sit harmlessly beside the new one — it *blocks*
+   * it, and the attach comes back as unprocessable_entity. Clearing first is
+   * what makes this converge rather than depend on what was there before.
+   */
+  const attachPackage = async (pkg: Package, products: { id: string }[], label: string) => {
+    const desired = new Set(products.map((p) => p.id));
+
+    const existing = await attachedProductIds(pkg.id);
+    const conflicting = existing.filter((id) => !desired.has(id));
+    if (conflicting.length > 0) {
+      const { error } = await detachProductsFromPackage({
+        client,
+        path: { project_id: project.id, package_id: pkg.id },
+        body: { product_ids: conflicting },
+      });
+      if (error) {
+        throw new Error(
+          `Could not clear ${conflicting.length} superseded product(s) from the ` +
+            `${label} package: ${JSON.stringify(error)}`
+        );
+      }
+      console.log(`Cleared ${conflicting.length} superseded product(s) from ${label} package`);
+    }
+
+    const missing = products.filter((p) => !existing.includes(p.id));
+    if (missing.length > 0) {
+      const { error } = await attachProductsToPackage({
+        client,
+        path: { project_id: project.id, package_id: pkg.id },
+        body: {
+          products: missing.map((p) => ({ product_id: p.id, eligibility_criteria: "all" })),
+        },
+      });
+      if (error) {
+        throw new Error(
+          `Failed to attach products to the ${label} package: ${JSON.stringify(error)}`
+        );
+      }
+      console.log(`Attached ${missing.length} product(s) to ${label} package`);
+    }
+
+    // Verify the products that should be there actually are. Counting is not
+    // enough: the previous run counted three and passed, but they were the old
+    // products, which the cleanup then removed — leaving the package empty and
+    // the plan priceless in the app.
+    const finalIds = await attachedProductIds(pkg.id);
+    const absent = products.filter((p) => !finalIds.includes(p.id));
+    if (absent.length > 0) {
       throw new Error(
-        `The ${label} package has no products attached. RevenueCat will omit it ` +
-          `from the offering, so the app will show no price for that plan. ` +
-          `Check that the ${label} product identifiers exist in each store.`
+        `The ${label} package is missing ${absent.length} of its ${products.length} ` +
+          `products after attaching. RevenueCat omits a package it cannot resolve, ` +
+          `so the app would show no price for that plan.`
       );
     }
-    console.log(`Verified ${label} package: ${attached} product(s) attached`);
+    console.log(`Verified ${label} package: ${finalIds.length} product(s) attached`);
   };
 
   await attachPackage(weeklyPkg, [testWeekly, appWeekly, playWeekly], "weekly");
@@ -435,37 +470,21 @@ async function seedRevenueCat() {
   });
   if (allPackagesError) throw new Error("Failed to list packages for cleanup");
 
+  // Only whole packages are removed here. Detaching superseded products is
+  // attachPackage's job and has already happened — doing it again after the
+  // fact is what emptied $rc_annual on the previous run.
   for (const pkg of allPackages.items ?? []) {
-    if (!keepPackages.has(pkg.lookup_key)) {
-      // A package the app does not look for. Leaving it costs nothing at
-      // runtime but keeps a dead plan visible in the dashboard.
-      const { error } = await deletePackageFromOffering({
-        client,
-        path: { project_id: project.id, package_id: pkg.id },
-      });
-      if (error) {
-        console.warn(`Could not remove stale package ${pkg.lookup_key}:`, error);
-      } else {
-        console.log(`Removed stale package ${pkg.lookup_key}`);
-      }
-      continue;
-    }
-
-    const staleIds = (pkg.products?.items ?? [])
-      .map((a) => (a as { product?: { id?: string; store_identifier?: string } }).product)
-      .filter((p) => p?.id && LEGACY_IDENTIFIER.test(p.store_identifier ?? ""))
-      .map((p) => p!.id!);
-    if (staleIds.length > 0) {
-      const { error } = await detachProductsFromPackage({
-        client,
-        path: { project_id: project.id, package_id: pkg.id },
-        body: { product_ids: staleIds },
-      });
-      if (error) {
-        console.warn(`Could not detach old products from ${pkg.lookup_key}:`, error);
-      } else {
-        console.log(`Detached ${staleIds.length} old product(s) from ${pkg.lookup_key}`);
-      }
+    if (keepPackages.has(pkg.lookup_key)) continue;
+    // A package the app does not look for. Leaving it costs nothing at runtime
+    // but keeps a dead plan visible in the dashboard.
+    const { error } = await deletePackageFromOffering({
+      client,
+      path: { project_id: project.id, package_id: pkg.id },
+    });
+    if (error) {
+      console.warn(`Could not remove stale package ${pkg.lookup_key}:`, error);
+    } else {
+      console.log(`Removed stale package ${pkg.lookup_key}`);
     }
   }
 
@@ -497,7 +516,14 @@ async function seedRevenueCat() {
         path: { project_id: project.id, product_id: p.id },
       });
       if (error) {
-        console.warn(`Could not delete ${p.store_identifier}:`, error);
+        // A product with recorded transactions cannot be deleted — test
+        // purchases are enough to earn that. Harmless: it has already been
+        // detached from every package and from the entitlement, so it is
+        // invisible to the app and only lingers in the dashboard list.
+        console.warn(
+          `Kept ${p.store_identifier} (detached but not deletable): ` +
+            `${(error as { message?: string }).message ?? JSON.stringify(error)}`
+        );
       } else {
         console.log(`Deleted old product ${p.store_identifier}`);
       }
