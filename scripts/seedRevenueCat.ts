@@ -17,6 +17,11 @@ import {
   listPackages,
   createPackages,
   attachProductsToPackage,
+  updateApp,
+  detachProductsFromPackage,
+  detachProductsFromEntitlement,
+  deletePackageFromOffering,
+  deleteProduct,
   type App,
   type Product,
   type Project,
@@ -134,6 +139,21 @@ async function seedRevenueCat() {
     console.log("Created App Store app:", appStoreApp.id);
   } else {
     console.log("App Store app found:", appStoreApp.id);
+    // The app predates the rename, and its bundle id was still the scaffold's
+    // placeholder. A bundle id that disagrees with app.json means the store
+    // cannot resolve a single product, so this is not cosmetic.
+    const { error: updateError } = await updateApp({
+      client,
+      path: { project_id: project.id, app_id: appStoreApp.id },
+      body: { name: APP_STORE_APP_NAME, app_store: { bundle_id: APP_STORE_BUNDLE_ID } },
+    });
+    if (updateError) {
+      throw new Error(
+        `Failed to update the App Store app to ${APP_STORE_BUNDLE_ID}: ` +
+          JSON.stringify(updateError)
+      );
+    }
+    console.log(`Updated App Store app -> ${APP_STORE_APP_NAME} / ${APP_STORE_BUNDLE_ID}`);
   }
 
   if (!playStoreApp) {
@@ -151,6 +171,21 @@ async function seedRevenueCat() {
     console.log("Created Play Store app:", playStoreApp.id);
   } else {
     console.log("Play Store app found:", playStoreApp.id);
+    const { error: updateError } = await updateApp({
+      client,
+      path: { project_id: project.id, app_id: playStoreApp.id },
+      body: {
+        name: PLAY_STORE_APP_NAME,
+        play_store: { package_name: PLAY_STORE_PACKAGE_NAME },
+      },
+    });
+    if (updateError) {
+      throw new Error(
+        `Failed to update the Play Store app to ${PLAY_STORE_PACKAGE_NAME}: ` +
+          JSON.stringify(updateError)
+      );
+    }
+    console.log(`Updated Play Store app -> ${PLAY_STORE_APP_NAME} / ${PLAY_STORE_PACKAGE_NAME}`);
   }
 
   // ── Products ──────────────────────────────────────────────────────────────
@@ -380,6 +415,94 @@ async function seedRevenueCat() {
 
   await attachPackage(weeklyPkg, [testWeekly, appWeekly, playWeekly], "weekly");
   await attachPackage(annualPkg, [testAnnual, appAnnual, playAnnual], "annual");
+
+  // ── Retire the previous naming ────────────────────────────────────────────
+  // The project was set up before the rename and before the plan changed from
+  // monthly to weekly, so it still carries scrollsnap_* products and an
+  // $rc_monthly package the app never asks for. Store identifiers cannot be
+  // edited — RevenueCat only lets a product's display name change — so the old
+  // products have to be detached and removed rather than renamed.
+  //
+  // Deliberately narrow: only products whose identifier carries the old name
+  // are touched, and only after they have been detached from everything.
+  const LEGACY_IDENTIFIER = /scrollsnap/i;
+  const keepPackages = new Set(["$rc_weekly", "$rc_annual"]);
+
+  const { data: allPackages, error: allPackagesError } = await listPackages({
+    client,
+    path: { project_id: project.id, offering_id: offering.id },
+    query: { limit: 50, expand: ["items.product"] },
+  });
+  if (allPackagesError) throw new Error("Failed to list packages for cleanup");
+
+  for (const pkg of allPackages.items ?? []) {
+    if (!keepPackages.has(pkg.lookup_key)) {
+      // A package the app does not look for. Leaving it costs nothing at
+      // runtime but keeps a dead plan visible in the dashboard.
+      const { error } = await deletePackageFromOffering({
+        client,
+        path: { project_id: project.id, package_id: pkg.id },
+      });
+      if (error) {
+        console.warn(`Could not remove stale package ${pkg.lookup_key}:`, error);
+      } else {
+        console.log(`Removed stale package ${pkg.lookup_key}`);
+      }
+      continue;
+    }
+
+    const staleIds = (pkg.products?.items ?? [])
+      .map((a) => (a as { product?: { id?: string; store_identifier?: string } }).product)
+      .filter((p) => p?.id && LEGACY_IDENTIFIER.test(p.store_identifier ?? ""))
+      .map((p) => p!.id!);
+    if (staleIds.length > 0) {
+      const { error } = await detachProductsFromPackage({
+        client,
+        path: { project_id: project.id, package_id: pkg.id },
+        body: { product_ids: staleIds },
+      });
+      if (error) {
+        console.warn(`Could not detach old products from ${pkg.lookup_key}:`, error);
+      } else {
+        console.log(`Detached ${staleIds.length} old product(s) from ${pkg.lookup_key}`);
+      }
+    }
+  }
+
+  const { data: productsNow, error: productsNowError } = await listProducts({
+    client,
+    path: { project_id: project.id },
+    query: { limit: 100 },
+  });
+  if (productsNowError) throw new Error("Failed to list products for cleanup");
+
+  const legacyProducts = (productsNow.items ?? []).filter((p) =>
+    LEGACY_IDENTIFIER.test(p.store_identifier ?? "")
+  );
+
+  if (legacyProducts.length > 0) {
+    const legacyIds = legacyProducts.map((p) => p.id);
+    const { error: detachError } = await detachProductsFromEntitlement({
+      client,
+      path: { project_id: project.id, entitlement_id: entitlement.id },
+      body: { product_ids: legacyIds },
+    });
+    if (detachError) {
+      console.warn("Could not detach old products from the entitlement:", detachError);
+    }
+
+    for (const p of legacyProducts) {
+      const { error } = await deleteProduct({
+        client,
+        path: { project_id: project.id, product_id: p.id },
+      });
+      if (error) {
+        console.warn(`Could not delete ${p.store_identifier}:`, error);
+      } else {
+        console.log(`Deleted old product ${p.store_identifier}`);
+      }
+    }
+  }
 
   // ── API Keys ──────────────────────────────────────────────────────────────
   const { data: testKeys, error: testKeysError } = await listAppPublicApiKeys({
