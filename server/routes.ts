@@ -20,6 +20,13 @@ const privacyPolicyHtml = fs.readFileSync(
   "utf-8"
 );
 
+// App Review requires a working support URL, and it must not be the privacy
+// policy over again.
+const supportHtml = fs.readFileSync(
+  path.resolve(process.cwd(), "server", "templates", "support.html"),
+  "utf-8"
+);
+
 /**
  * Build identity, resolved once at startup.
  *
@@ -286,6 +293,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/privacy", (_req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(200).send(privacyPolicyHtml);
+  });
+
+  app.get("/support", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(supportHtml);
   });
 
   // Stage one batch of frames under a session id. Called repeatedly before

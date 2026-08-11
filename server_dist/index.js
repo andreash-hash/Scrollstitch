@@ -636,6 +636,10 @@ var privacyPolicyHtml = fs2.readFileSync(
   path2.resolve(process.cwd(), "server", "templates", "privacy-policy.html"),
   "utf-8"
 );
+var supportHtml = fs2.readFileSync(
+  path2.resolve(process.cwd(), "server", "templates", "support.html"),
+  "utf-8"
+);
 var BUILD_INFO = (() => {
   let name = "unknown";
   let version = "unknown";
@@ -799,6 +803,10 @@ async function registerRoutes(app2) {
   app2.get("/privacy", (_req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(200).send(privacyPolicyHtml);
+  });
+  app2.get("/support", (_req, res) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(supportHtml);
   });
   app2.post(
     "/api/upload-chunk",
