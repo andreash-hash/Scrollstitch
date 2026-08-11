@@ -37,6 +37,49 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — RevenueCat caught up with the app
+
+The plan with no price was not a client bug. Inspecting the live project
+showed it predated both the rename and the move from monthly to weekly:
+
+```
+project    ScrollSnap
+apps       ScrollSnap iOS / Android — bundle and package com.myapp
+products   scrollsnap_pro_monthly, scrollsnap_pro_annual
+packages   $rc_monthly, $rc_annual
+```
+
+The client asks for `$rc_weekly`. No such package existed, so the lookup
+returned nothing and the chip rendered with an empty price, while `$rc_annual`
+resolved and showed one. The bundle id mattered more: `com.myapp` against
+`com.scrollstitch` in `app.json` meant *no* product would have resolved on a
+real build, so both plans would have gone blank as soon as testing left the
+test store.
+
+Seeding now corrects existing apps rather than only creating missing ones —
+name, bundle id, package name — and retires the previous naming. Store
+identifiers cannot be edited (RevenueCat allows only a product's display name
+to change), so old products are detached and deleted rather than renamed. One
+survives deletion because it has recorded transactions, which a single test
+purchase earns; it is detached from every package and from the entitlement, so
+it is invisible to the app.
+
+Attaching products to a package clears conflicting ones first. RevenueCat
+permits one product per app per package, so leftovers from the old naming did
+not sit harmlessly beside the new products — they blocked them, and the attach
+failed. The first run then verified by *counting* attachments, passed on three
+stale products, and the cleanup detached them afterwards, leaving `$rc_annual`
+empty: the same symptom, moved to the other plan. Verification now checks the
+expected products are present by identity, and the cleanup no longer touches
+package attachments at all. Re-running repairs a broken state instead of
+requiring a pristine one.
+
+Nothing existed in App Store Connect yet, so no identifier was locked. After
+those subscriptions are created the ids are permanent.
+
+Still manual: the project's own name. The RevenueCat API exposes no operation
+to rename a project, so it has to be changed in the dashboard.
+
 ### 2026-08 — Tell me when it's done
 
 Jobs take long enough that people want to put the phone down. A *local*
