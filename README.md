@@ -37,6 +37,56 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Faster jobs, an honest countdown, and a paywall that only offers what exists
+
+From a real recording: the time estimate opened at 52s, climbed to 1m47s, then
+sat still before finishing abruptly; the run felt slower than the previous one;
+and the weekly plan showed no price.
+
+**Processing is ~40% faster with byte-identical output** (12.3s → 7.3s for 80
+frames on the bench), from two changes:
+
+- The banded NCC walked the pixels four times per candidate overlap — twice for
+  the global score and twice more across the bands. The bands tile the global
+  range exactly and pixels are integers, so accumulating raw co-moments once per
+  band and summing them yields the same global score for free. One pass instead
+  of four; `select` fell 30%. Checked against the old implementation over 2394
+  cases including near-flat and dark low-contrast windows, where the
+  computational formula is most at risk: worst deviation 1.2e-14, no threshold
+  decision changed.
+- The PDF is built on first request rather than during the job. It was a third
+  of the wait, spent on a file most runs never open. The URL is unchanged, so
+  the client did not have to change; concurrent requests share one render.
+
+**The time estimate now starts high and only counts down.** `elapsed / progress`
+assumes progress advances evenly in time; it does not, so the first figure was
+far too low and rose as reality asserted itself. Now: a deliberately pessimistic
+prior from the frame count, blended into the measured rate as evidence
+accumulates, and a displayed figure that never increases. While a slow stage
+reports nothing the countdown keeps moving, at a reduced rate so it does not
+spend the whole budget early. On the reported trace it opens at 2m10s against a
+1m47s job and falls monotonically, where the old model oscillated 50s → 1m20s →
+55s → 1m10s. The model is pure and unit-tested (`lib/eta.ts`), including a test
+asserting the naive version really does open under a minute on that trace.
+
+Stage weights in `STAGE_SPANS` are now shares of measured wall time rather than
+equal slices, which is what makes progress advance evenly enough to extrapolate
+from.
+
+**The paywall only offers plans the store returned.** RevenueCat omits a package
+whose product it cannot fetch, and the UI rendered it anyway — a plan priced "…"
+beside a button that could not be pressed. Missing plans are now dropped, and an
+offering with no usable plan shows the existing retry state. The seeding script
+no longer treats a failed product attach as success: it verifies afterwards and
+fails loudly, since that silent skip is the most likely way a package ends up in
+an offering with nothing behind it.
+
+**`npm run typecheck` was failing on any machine that had run Expo.** Expo writes
+an ambient `expo-env.d.ts` on first bundle which pulls in the DOM lib; Node's and
+the DOM's `setInterval` then merge as overloads, the DOM one wins, and
+`.unref()` stops type-checking. Earlier clean runs simply predated that file
+existing. Both timers now go through one helper that names the intent.
+
 ### 2026-08 — Pin out two critical advisories
 
 Installs began failing in the Replit workspace: its package firewall returned

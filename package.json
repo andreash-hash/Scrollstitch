@@ -15,7 +15,7 @@
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test server/tests/*.test.ts"
+    "test": "tsx --test server/tests/*.test.ts lib/__tests__/*.test.ts"
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",

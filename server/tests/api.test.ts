@@ -239,6 +239,49 @@ describe("/api/process-frames end to end", () => {
     assert.equal(body.privacyPolicyMentions, "current");
   });
 
+  test("builds the PDF on demand, once, without blocking the job", async () => {
+    const page = generatePage(WIDTH, 2880, 777);
+    const frames = await renderFrames({
+      page,
+      outDir: makeTempDir("api-lazy-pdf"),
+      frameHeight: FRAME_H,
+      frames: [0, 576, 1152, 1728].map((position) => ({ position })),
+      jpegQuality: 80,
+    });
+
+    const uploadRes = await fetch(`${baseUrl}/api/process-frames?quality=png`, {
+      method: "POST",
+      body: frameFormData(frames),
+    });
+    const { jobId } = (await uploadRes.json()) as { jobId: string };
+    const done = await pollUntilDone(jobId);
+    assert.equal(done.stage, "Complete", done.error ?? "");
+
+    // The job never rendered a PDF — asking for it is what creates it. Two
+    // callers arriving together must both get a real file, not a half-written
+    // one from a second concurrent render.
+    const [a, b] = await Promise.all([
+      fetch(`${baseUrl}${done.result!.pdfUrl}`),
+      fetch(`${baseUrl}${done.result!.pdfUrl}`),
+    ]);
+    for (const res of [a, b]) {
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("content-type"), "application/pdf");
+      const bytes = Buffer.from(await res.arrayBuffer());
+      assert.ok(bytes.length > 1000, "PDF should have real content");
+      assert.equal(bytes.subarray(0, 5).toString(), "%PDF-", "must be a real PDF");
+    }
+
+    // Served from disk on the next request rather than rebuilt.
+    const again = await fetch(`${baseUrl}${done.result!.pdfUrl}`);
+    assert.equal(again.status, 200);
+  });
+
+  test("404s for a PDF whose source image does not exist", async () => {
+    const res = await fetch(`${baseUrl}/api/output/no-such-job.pdf`);
+    assert.equal(res.status, 404);
+  });
+
   test("returns 404 for unknown jobs", async () => {
     const res = await fetch(`${baseUrl}/api/progress/nope`);
     assert.equal(res.status, 404);

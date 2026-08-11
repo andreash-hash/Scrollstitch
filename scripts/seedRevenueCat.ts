@@ -348,13 +348,34 @@ async function seedRevenueCat() {
     });
     if (error) {
       if (error.type === "unprocessable_entity_error") {
-        console.log("Skipping " + label + " attach: already attached or incompatible");
+        // "Already attached" and "incompatible" arrive as the same error, and
+        // treating both as success is how a package can end up in the offering
+        // with no products behind it. RevenueCat then omits it entirely and the
+        // paywall renders a plan with no price. Verify instead of assuming.
+        console.log(`Attach for ${label} returned unprocessable_entity — verifying`);
       } else {
         throw new Error("Failed to attach products to " + label + " package");
       }
     } else {
       console.log("Attached products to " + label + " package");
     }
+
+    const { data: check, error: checkError } = await listPackages({
+      client,
+      path: { project_id: project.id, offering_id: offering!.id },
+      query: { limit: 20, expand: ["items.product"] },
+    });
+    if (checkError) throw new Error(`Could not verify the ${label} package`);
+    const stored = check.items?.find((p) => p.id === pkg.id);
+    const attached = stored?.products?.items?.length ?? 0;
+    if (attached === 0) {
+      throw new Error(
+        `The ${label} package has no products attached. RevenueCat will omit it ` +
+          `from the offering, so the app will show no price for that plan. ` +
+          `Check that the ${label} product identifiers exist in each store.`
+      );
+    }
+    console.log(`Verified ${label} package: ${attached} product(s) attached`);
   };
 
   await attachPackage(weeklyPkg, [testWeekly, appWeekly, playWeekly], "weekly");

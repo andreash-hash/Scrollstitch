@@ -318,12 +318,24 @@ function PaywallSlide({
     transform: [{ scale: btnScale.value }],
   }));
 
-  const selectedPackage = billing === "weekly" ? weeklyPackage : annualPackage;
+  // RevenueCat drops a package from the offering when the store cannot return
+  // its product — an unapproved subscription in App Store Connect, or products
+  // that never got attached to the package. Rendering a chip for it anyway
+  // produced a plan priced "…" next to a button that could not be pressed. Only
+  // offer what the store actually returned.
+  const availablePlans = ([] as ("weekly" | "annual")[]).concat(
+    weeklyPackage ? ["weekly"] : [],
+    annualPackage ? ["annual"] : []
+  );
+  const noPlansAvailable = availablePlans.length === 0;
+  const effectiveBilling = availablePlans.includes(billing) ? billing : availablePlans[0];
 
-  const weeklyPrice = weeklyPackage?.product.priceString ?? "…";
-  const annualPrice = annualPackage?.product.priceString ?? "…";
+  const selectedPackage = effectiveBilling === "weekly" ? weeklyPackage : annualPackage;
+
+  const weeklyPrice = weeklyPackage?.product.priceString ?? "";
+  const annualPrice = annualPackage?.product.priceString ?? "";
   // Only promise a trial when the store actually offers one on the weekly plan
-  const showTrial = billing === "weekly" && trialDays != null && trialDays > 0;
+  const showTrial = effectiveBilling === "weekly" && trialDays != null && trialDays > 0;
 
   const handleCtaPress = () => {
     btnScale.value = withSequence(withSpring(0.96), withSpring(1));
@@ -368,7 +380,7 @@ function PaywallSlide({
             <PaywallSkeletonRow />
             <PaywallSkeletonRow />
           </View>
-        ) : offeringsIsError ? (
+        ) : offeringsIsError || noPlansAvailable ? (
           <View style={paywall.errorWrap}>
             <Feather name="wifi-off" size={22} color={C.textTertiary} />
             <Text style={paywall.errorText}>
@@ -386,23 +398,31 @@ function PaywallSlide({
         ) : (
           <>
             <View style={paywall.billingToggle}>
-              {(["weekly", "annual"] as const).map((b) => (
+              {availablePlans.map((b) => (
                 <Pressable
                   key={b}
                   onPress={() => setBilling(b)}
-                  style={[paywall.billingChip, billing === b && paywall.billingChipActive]}
+                  style={[
+                    paywall.billingChip,
+                    effectiveBilling === b && paywall.billingChipActive,
+                  ]}
                   accessibilityRole="radio"
                   accessibilityLabel={
                     b === "weekly"
                       ? `Weekly plan, ${weeklyPrice} per week${trialDays ? `, ${trialDays} days free first` : ""}`
                       : `Annual plan, ${annualPrice} per year, best value`
                   }
-                  accessibilityState={{ selected: billing === b }}
+                  accessibilityState={{ selected: effectiveBilling === b }}
                 >
-                  <Text style={[paywall.billingChipText, billing === b && paywall.billingChipTextActive]}>
+                  <Text
+                    style={[
+                      paywall.billingChipText,
+                      effectiveBilling === b && paywall.billingChipTextActive,
+                    ]}
+                  >
                     {b === "weekly" ? `${weeklyPrice} / week` : `${annualPrice} / year`}
                   </Text>
-                  {b === "annual" && (
+                  {b === "annual" && availablePlans.length > 1 && (
                     <View style={paywall.saveBadge}>
                       <Text style={paywall.saveBadgeText}>BEST VALUE</Text>
                     </View>
@@ -422,7 +442,7 @@ function PaywallSlide({
                     ? "Processing purchase"
                     : showTrial
                       ? `Start ${trialDays} days free, then ${weeklyPrice} per week`
-                      : `Subscribe for ${billing === "weekly" ? weeklyPrice + " per week" : annualPrice + " per year"}`
+                      : `Subscribe for ${effectiveBilling === "weekly" ? weeklyPrice + " per week" : annualPrice + " per year"}`
                 }
                 accessibilityState={{
                   disabled: isPurchasing || !selectedPackage,
@@ -436,7 +456,7 @@ function PaywallSlide({
                     <Text style={paywall.ctaText}>
                       {showTrial
                         ? `Start ${trialDays} days free`
-                        : `Subscribe — ${billing === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"}`}
+                        : `Subscribe — ${effectiveBilling === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"}`}
                     </Text>
                   )}
                 </View>
@@ -463,7 +483,7 @@ function PaywallSlide({
         <Text style={paywall.legal}>
           {showTrial
             ? `${trialDays} days free, then ${weeklyPrice} per week. Auto-renews until cancelled; cancel anytime in Settings at least 24 hours before renewal.`
-            : billing === "weekly"
+            : effectiveBilling === "weekly"
               ? `${weeklyPrice} per week. Auto-renews until cancelled; cancel anytime in Settings.`
               : `${annualPrice} per year. Auto-renews until cancelled; cancel anytime in Settings.`}
         </Text>
@@ -498,7 +518,7 @@ function PaywallSlide({
           <View style={paywall.modalCard}>
             <Text style={paywall.modalTitle}>Confirm Purchase</Text>
             <Text style={paywall.modalBody}>
-              {`You are in test mode. Confirm purchase of the ${billing} plan (${billing === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"})?`}
+              {`You are in test mode. Confirm purchase of the ${effectiveBilling} plan (${effectiveBilling === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"})?`}
             </Text>
             <View style={paywall.modalActions}>
               <Pressable

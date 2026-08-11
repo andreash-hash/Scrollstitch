@@ -38,6 +38,13 @@ import Animated, { Easing,
   FadeInDown,
 } from "react-native-reanimated";
 import { getApiUrl } from "@/lib/query-client";
+import {
+  initialTotalMs,
+  reviseTotalMs,
+  nextShownMs,
+  allowedDropMs,
+  formatEta,
+} from "@/lib/eta";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -467,13 +474,8 @@ async function clientDeduplicateFrames(
   return kept;
 }
 
-function formatEta(ms: number): string {
-  const sec = Math.ceil(ms / 1000);
-  if (sec < 60) return `~${sec}s remaining`;
-  const min = Math.floor(sec / 60);
-  const rem = sec % 60;
-  return `~${min}m ${rem}s remaining`;
-}
+/** How often the countdown is refreshed. */
+const ETA_TICK_MS = 500;
 
 function formatRenewalDate(dateString: string | null | undefined): string {
   if (!dateString) return "—";
@@ -535,6 +537,15 @@ export default function ScrollStitchScreen() {
   const progressRef = useRef(0);
   const statusTextRef = useRef("");
   const startTimeRef = useRef(0);
+  /** Up-front guess from the frame count, before anything has been measured. */
+  const etaPriorRef = useRef(0);
+  /** Current best estimate of the job's total duration. */
+  const etaTotalRef = useRef(0);
+  /** Last figure shown, so the countdown never jumps back up. */
+  const etaShownRef = useRef<number | null>(null);
+  /** Progress at the previous tick — a quiet stage drains the budget slower. */
+  const etaLastProgressRef = useRef(-1);
+  const etaTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const buttonScale = useSharedValue(1);
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
@@ -548,13 +559,61 @@ export default function ScrollStitchScreen() {
     const next = Math.max(progressRef.current, value);
     progressRef.current = next;
     setProgress(next);
-    if (next > 0.05 && next < 0.98 && startTimeRef.current > 0) {
-      const elapsed = Date.now() - startTimeRef.current;
-      const totalEst = elapsed / next;
-      const remaining = totalEst - elapsed;
-      if (remaining > 2000) setEta(formatEta(remaining));
-      else setEta(null);
+
+    // Only revise the estimate of the TOTAL here. What the user sees is driven
+    // by the ticker below, so the number keeps falling between progress
+    // updates instead of freezing whenever a slow stage goes quiet.
+    if (next > 0.02 && next < 0.99 && startTimeRef.current > 0) {
+      etaTotalRef.current = reviseTotalMs(
+        etaTotalRef.current,
+        Date.now() - startTimeRef.current,
+        next,
+        etaPriorRef.current
+      );
     }
+  }, []);
+
+  const stopEtaTick = useCallback(() => {
+    if (etaTickRef.current) {
+      clearInterval(etaTickRef.current);
+      etaTickRef.current = null;
+    }
+    etaShownRef.current = null;
+    setEta(null);
+  }, []);
+
+  /**
+   * Drive the visible countdown off the clock rather than off progress.
+   *
+   * Two rules make it feel honest: it never increases, and it keeps falling
+   * while a slow stage reports nothing. Between them the number behaves like a
+   * countdown instead of a guess being revised upward in public. When the
+   * estimate runs out before the job does, it says so plainly rather than
+   * sitting at "~0s".
+   */
+  const startEtaTick = useCallback(() => {
+    if (etaTickRef.current) return;
+    etaTickRef.current = setInterval(() => {
+      if (startTimeRef.current === 0) return;
+
+      if (progressRef.current >= 0.99) {
+        setEta(null);
+        return;
+      }
+
+      const advanced = progressRef.current > etaLastProgressRef.current;
+      etaLastProgressRef.current = progressRef.current;
+
+      const remaining = etaTotalRef.current - (Date.now() - startTimeRef.current);
+      const next = nextShownMs(
+        etaShownRef.current,
+        remaining,
+        allowedDropMs(ETA_TICK_MS, advanced)
+      );
+      etaShownRef.current = next;
+      // Out of budget but still working — say so rather than counting "~0s".
+      setEta(next < 1000 ? "Finishing up..." : formatEta(next));
+    }, ETA_TICK_MS);
   }, []);
 
   const stopFakeTick = useCallback(() => {
@@ -582,7 +641,8 @@ export default function ScrollStitchScreen() {
       pollRef.current = null;
     }
     stopFakeTick();
-  }, [stopFakeTick]);
+    stopEtaTick();
+  }, [stopFakeTick, stopEtaTick]);
 
   useEffect(() => {
     return cleanupPolling;
@@ -729,9 +789,17 @@ export default function ScrollStitchScreen() {
     progressRef.current = 0;
     startTimeRef.current = Date.now();
     setStage("extracting");
+    // Seed the estimate from the frame count so the first figure shown is a
+    // considered guess rather than an extrapolation from two seconds of the
+    // fastest stage.
+    etaPriorRef.current = initialTotalMs(estimatedFrames);
+    etaTotalRef.current = etaPriorRef.current;
+    etaShownRef.current = null;
+    etaLastProgressRef.current = -1;
     advanceProgress(0);
     setFrameCount(0);
     setEta(null);
+    startEtaTick();
     setCropTop(0);
     setCropBottom(0);
     setStatusText(`Extracting ~${estimatedFrames} frames...`);
@@ -837,6 +905,8 @@ export default function ScrollStitchScreen() {
       setStatusText("Processing frames on server...");
       pollProgress(data.jobId);
     } catch (err: any) {
+      stopFakeTick();
+      stopEtaTick();
       setStage("error");
       setErrorMessage(err.message || "Failed to process video");
     }

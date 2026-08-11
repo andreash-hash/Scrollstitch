@@ -217,36 +217,43 @@ async function deduplicateFrames(framePaths, onProgress) {
   }
   return unique;
 }
-function nccOverRows(topBuf, botBuf, rowOffset, lo, hi) {
+function nccStatsOverRows(topBuf, botBuf, rowOffset, lo, hi) {
   const W = NCC_SAMPLE_WIDTH;
-  const n = (hi - lo) * W;
-  if (n <= 0) return 0;
-  let sumA = 0;
-  let sumB = 0;
+  let sa = 0;
+  let sb = 0;
+  let sab = 0;
+  let saa = 0;
+  let sbb = 0;
   for (let r = lo; r < hi; r++) {
     const ti = (rowOffset + r) * W;
     const bi = r * W;
     for (let x = 0; x < W; x++) {
-      sumA += topBuf[ti + x];
-      sumB += botBuf[bi + x];
+      const a = topBuf[ti + x];
+      const b = botBuf[bi + x];
+      sa += a;
+      sb += b;
+      sab += a * b;
+      saa += a * a;
+      sbb += b * b;
     }
   }
-  const meanA = sumA / n;
-  const meanB = sumB / n;
-  let num = 0;
-  let denA = 0;
-  let denB = 0;
-  for (let r = lo; r < hi; r++) {
-    const ti = (rowOffset + r) * W;
-    const bi = r * W;
-    for (let x = 0; x < W; x++) {
-      const a = topBuf[ti + x] - meanA;
-      const b = botBuf[bi + x] - meanB;
-      num += a * b;
-      denA += a * a;
-      denB += b * b;
-    }
-  }
+  return { n: Math.max(0, (hi - lo) * W), sa, sb, sab, saa, sbb };
+}
+function addStats(a, b) {
+  return {
+    n: a.n + b.n,
+    sa: a.sa + b.sa,
+    sb: a.sb + b.sb,
+    sab: a.sab + b.sab,
+    saa: a.saa + b.saa,
+    sbb: a.sbb + b.sbb
+  };
+}
+function pearsonFromStats(s) {
+  if (s.n <= 0) return 0;
+  const num = s.n * s.sab - s.sa * s.sb;
+  const denA = s.n * s.saa - s.sa * s.sa;
+  const denB = s.n * s.sbb - s.sb * s.sb;
   const den = Math.sqrt(denA * denB);
   return den > 0 ? num / den : 0;
 }
@@ -261,16 +268,20 @@ function computeNCC(topBuf, botBuf, maxSearch, overlap, guard = 0) {
   const rows = hi - lo;
   if (rows <= 0) return 0;
   const rowOffset = maxSearch - overlap;
-  const global = nccOverRows(topBuf, botBuf, rowOffset, lo, hi);
   const bands = Math.min(NCC_MAX_BANDS, Math.floor(rows / NCC_MIN_BAND_ROWS));
-  if (bands < 3) return global;
+  if (bands < 3) {
+    return pearsonFromStats(nccStatsOverRows(topBuf, botBuf, rowOffset, lo, hi));
+  }
   const bandScores = [];
+  let total = null;
   for (let b = 0; b < bands; b++) {
     const bandLo = lo + Math.floor(rows * b / bands);
     const bandHi = lo + Math.floor(rows * (b + 1) / bands);
-    bandScores.push(nccOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi));
+    const stats = nccStatsOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi);
+    bandScores.push(pearsonFromStats(stats));
+    total = total ? addStats(total, stats) : stats;
   }
-  return Math.max(global, median(bandScores));
+  return Math.max(pearsonFromStats(total), median(bandScores));
 }
 function adaptiveNccThreshold(contrast) {
   if (contrast >= NCC_CONTRAST_HIGH) return NCC_CONFIDENCE_MAX;
@@ -705,7 +716,7 @@ var chunkUpload = multer({
   storage: chunkStorage,
   limits: { fileSize: 100 * 1024 * 1024 }
 });
-setInterval(() => {
+everyMs(() => {
   try {
     for (const entry of fs2.readdirSync(sessionsDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
@@ -719,7 +730,7 @@ setInterval(() => {
     }
   } catch {
   }
-}, 15 * 60 * 1e3).unref();
+}, 15 * 60 * 1e3);
 var jobProgress = /* @__PURE__ */ new Map();
 function updateJob(id, update) {
   const existing = jobProgress.get(id);
@@ -727,14 +738,18 @@ function updateJob(id, update) {
     Object.assign(existing, update);
   }
 }
-setInterval(() => {
+everyMs(() => {
   const now = Date.now();
   for (const [id, job] of jobProgress.entries()) {
     if (now - job.createdAt > 30 * 60 * 1e3) {
       jobProgress.delete(id);
     }
   }
-}, 5 * 60 * 1e3).unref();
+}, 5 * 60 * 1e3);
+function everyMs(fn, ms) {
+  const timer = setInterval(fn, ms);
+  timer.unref?.();
+}
 function firstString(value) {
   if (Array.isArray(value)) value = value[0];
   return typeof value === "string" ? value : "";
@@ -742,11 +757,11 @@ function firstString(value) {
 var outputDir = path2.join(os2.tmpdir(), "scrollstitch-output");
 var STAGE_SPANS = {
   validate: [0, 0.05],
-  dedup: [0.05, 0.2],
-  sticky: [0.2, 0.3],
-  select: [0.3, 0.55],
-  stitch: [0.55, 0.85],
-  pdf: [0.85, 0.98]
+  dedup: [0.05, 0.18],
+  sticky: [0.18, 0.2],
+  select: [0.2, 0.78],
+  stitch: [0.78, 0.94]
+  // 0.94 → 1.0 is the preview downscale, which reports no per-frame progress.
 };
 async function registerRoutes(app2) {
   app2.get("/api/health", (_req, res) => {
@@ -890,9 +905,6 @@ async function registerRoutes(app2) {
             if (preview.scaled) {
               previewUrl = `/api/output/${jobId}_preview.jpg`;
             }
-            const outputPdfPath = path2.join(outputDir, `${jobId}.pdf`);
-            updateJob(jobId, { stage: "Generating PDF", progress: STAGE_SPANS.pdf[0], detail: void 0 });
-            await generatePdf(outputImagePath, outputPdfPath);
             const seamSummary = selection.seams.map((s, i) => ({
               index: i,
               type: s.type,
@@ -949,10 +961,33 @@ async function registerRoutes(app2) {
     }
     res.json(job);
   });
-  app2.get("/api/output/:filename", (req, res) => {
+  const pdfsInFlight = /* @__PURE__ */ new Map();
+  async function ensurePdf(filePath) {
+    if (path2.extname(filePath).toLowerCase() !== ".pdf") return fs2.existsSync(filePath);
+    if (fs2.existsSync(filePath)) return true;
+    const inFlight = pdfsInFlight.get(filePath);
+    if (inFlight) return inFlight;
+    const base = filePath.slice(0, -4);
+    const source = [".png", ".jpg", ".jpeg"].map((e) => base + e).find((p) => fs2.existsSync(p));
+    if (!source) return false;
+    const job = (async () => {
+      try {
+        await generatePdf(source, filePath);
+        return true;
+      } catch (err) {
+        console.error(`Lazy PDF generation failed for ${filePath}:`, err);
+        return false;
+      } finally {
+        pdfsInFlight.delete(filePath);
+      }
+    })();
+    pdfsInFlight.set(filePath, job);
+    return job;
+  }
+  app2.get("/api/output/:filename", async (req, res) => {
     const filename = path2.basename(firstString(req.params.filename));
     const filePath = path2.join(outputDir, filename);
-    if (!fs2.existsSync(filePath)) {
+    if (!await ensurePdf(filePath)) {
       return res.status(404).json({ error: "File not found" });
     }
     const ext = path2.extname(filePath).toLowerCase();
@@ -964,10 +999,10 @@ async function registerRoutes(app2) {
     );
     fs2.createReadStream(filePath).pipe(res);
   });
-  app2.get("/api/output-base64/:filename", (req, res) => {
+  app2.get("/api/output-base64/:filename", async (req, res) => {
     const filename = path2.basename(firstString(req.params.filename));
     const filePath = path2.join(outputDir, filename);
-    if (!fs2.existsSync(filePath)) {
+    if (!await ensurePdf(filePath)) {
       return res.status(404).json({ error: "File not found" });
     }
     const data = fs2.readFileSync(filePath);
@@ -1008,8 +1043,6 @@ async function registerRoutes(app2) {
         previewUrl = `/api/output/${previewFilename}`;
       }
       const pdfFilename = `${baseName}_crop.pdf`;
-      const pdfPath = path2.join(outputDir, pdfFilename);
-      await generatePdf(croppedPath, pdfPath);
       res.json({
         imageUrl: `/api/output/${croppedFilename}`,
         previewUrl,

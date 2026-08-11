@@ -140,7 +140,7 @@ const chunkUpload = multer({
 });
 
 /** Abandoned sessions (app closed mid-upload) would otherwise fill the disk. */
-setInterval(() => {
+everyMs(() => {
   try {
     for (const entry of fs.readdirSync(sessionsDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
@@ -156,7 +156,7 @@ setInterval(() => {
   } catch {
     // Sessions dir vanished; it is recreated on the next upload
   }
-}, 15 * 60 * 1000).unref();
+}, 15 * 60 * 1000);
 
 interface JobState {
   stage: string;
@@ -176,14 +176,29 @@ function updateJob(id: string, update: Partial<JobState>) {
   }
 }
 
-setInterval(() => {
+everyMs(() => {
   const now = Date.now();
   for (const [id, job] of jobProgress.entries()) {
     if (now - job.createdAt > 30 * 60 * 1000) {
       jobProgress.delete(id);
     }
   }
-}, 5 * 60 * 1000).unref();
+}, 5 * 60 * 1000);
+
+/**
+ * Run background housekeeping on a timer that never holds the process open.
+ *
+ * Expo writes an ambient expo-env.d.ts the first time the app is bundled, and
+ * it pulls in the DOM lib. Node's and the DOM's global `setInterval` then merge
+ * as overloads and the DOM one — returning `number`, with no `unref` — wins, so
+ * a bare `setInterval(...).unref()` fails to type-check on every machine that
+ * has ever run Expo. Importing from "node:timers" does not help: that module
+ * re-exports the same global binding. Hence the cast, in one place.
+ */
+function everyMs(fn: () => void, ms: number): void {
+  const timer = setInterval(fn, ms) as unknown as NodeJS.Timeout;
+  timer.unref?.();
+}
 
 /** Express 5 types query/param values as string | string[] — take the first. */
 function firstString(value: unknown): string {
@@ -194,13 +209,25 @@ function firstString(value: unknown): string {
 const outputDir = path.join(os.tmpdir(), "scrollstitch-output");
 
 // Progress budget per pipeline stage: [start, end] within 0..1.
+/**
+ * How much of the progress bar each stage owns.
+ *
+ * These are shares of measured WALL TIME, not equal slices: at 80 frames the
+ * stages come in at roughly validate 4%, dedup 14%, sticky 2%, select 58%,
+ * stitch 16%, preview 6%. Giving every stage an equal slice is what made the
+ * bar sprint and then stall, and made any time estimate derived from it start
+ * far too low. Weighted this way, progress advances at a roughly constant rate,
+ * so elapsed/progress is a usable prediction of the total.
+ *
+ * Re-measure with the benchmark before changing these.
+ */
 const STAGE_SPANS = {
   validate: [0, 0.05],
-  dedup: [0.05, 0.2],
-  sticky: [0.2, 0.3],
-  select: [0.3, 0.55],
-  stitch: [0.55, 0.85],
-  pdf: [0.85, 0.98],
+  dedup: [0.05, 0.18],
+  sticky: [0.18, 0.2],
+  select: [0.2, 0.78],
+  stitch: [0.78, 0.94],
+  // 0.94 → 1.0 is the preview downscale, which reports no per-frame progress.
 } as const;
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -377,9 +404,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               previewUrl = `/api/output/${jobId}_preview.jpg`;
             }
 
-            const outputPdfPath = path.join(outputDir, `${jobId}.pdf`);
-            updateJob(jobId, { stage: "Generating PDF", progress: STAGE_SPANS.pdf[0], detail: undefined });
-            await generatePdf(outputImagePath, outputPdfPath);
+            // The PDF is NOT built here. It was a third of the job's wall time,
+            // spent on an artifact most runs never ask for — saving to Photos
+            // uses the image. /api/output builds it on first request instead,
+            // so the URL below still works and nobody waits for a file they
+            // are not going to open.
 
             const seamSummary = selection.seams.map((s: Seam, i: number) => ({
               index: i,
@@ -443,11 +472,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(job);
   });
 
-  app.get("/api/output/:filename", (req: Request, res: Response) => {
+  // ── Lazy PDF ───────────────────────────────────────────────────────────────
+  // Rendering the PDF eagerly cost a third of every job for something most
+  // runs never download. It is built on first request instead. Requests that
+  // arrive while one is already rendering wait on that same promise rather
+  // than starting a second render of the same file.
+  const pdfsInFlight = new Map<string, Promise<boolean>>();
+
+  async function ensurePdf(filePath: string): Promise<boolean> {
+    if (path.extname(filePath).toLowerCase() !== ".pdf") return fs.existsSync(filePath);
+    if (fs.existsSync(filePath)) return true;
+
+    const inFlight = pdfsInFlight.get(filePath);
+    if (inFlight) return inFlight;
+
+    const base = filePath.slice(0, -4);
+    const source = [".png", ".jpg", ".jpeg"]
+      .map((e) => base + e)
+      .find((p) => fs.existsSync(p));
+    if (!source) return false;
+
+    const job = (async () => {
+      try {
+        await generatePdf(source, filePath);
+        return true;
+      } catch (err) {
+        console.error(`Lazy PDF generation failed for ${filePath}:`, err);
+        return false;
+      } finally {
+        pdfsInFlight.delete(filePath);
+      }
+    })();
+    pdfsInFlight.set(filePath, job);
+    return job;
+  }
+
+  app.get("/api/output/:filename", async (req: Request, res: Response) => {
     const filename = path.basename(firstString(req.params.filename));
     const filePath = path.join(outputDir, filename);
 
-    if (!fs.existsSync(filePath)) {
+    if (!(await ensurePdf(filePath))) {
       return res.status(404).json({ error: "File not found" });
     }
 
@@ -465,11 +529,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.createReadStream(filePath).pipe(res);
   });
 
-  app.get("/api/output-base64/:filename", (req: Request, res: Response) => {
+  app.get("/api/output-base64/:filename", async (req: Request, res: Response) => {
     const filename = path.basename(firstString(req.params.filename));
     const filePath = path.join(outputDir, filename);
 
-    if (!fs.existsSync(filePath)) {
+    if (!(await ensurePdf(filePath))) {
       return res.status(404).json({ error: "File not found" });
     }
 
@@ -525,9 +589,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         previewUrl = `/api/output/${previewFilename}`;
       }
 
+      // Same as the main job: the PDF is built by /api/output on first request.
       const pdfFilename = `${baseName}_crop.pdf`;
-      const pdfPath = path.join(outputDir, pdfFilename);
-      await generatePdf(croppedPath, pdfPath);
 
       res.json({
         imageUrl: `/api/output/${croppedFilename}`,

@@ -364,48 +364,74 @@ export async function deduplicateFrames(
  *
  * Returns a value in [-1, 1]; 1.0 = perfect match.
  */
-/** NCC over rows [lo, hi) of the compared window; rowOffset shifts into topBuf. */
-function nccOverRows(
+/**
+ * Raw co-moments over rows [lo, hi) of the compared window; rowOffset shifts
+ * into topBuf.
+ *
+ * These are kept as sums rather than a finished correlation because they are
+ * ADDITIVE: the bands below partition the global range exactly, so the global
+ * score comes from adding the bands' stats instead of walking the pixels a
+ * second time. Scoring one candidate overlap costs one pass instead of four.
+ *
+ * Pixels are bytes and the counts are bounded by the search window, so every
+ * accumulator here stays an exact integer in a double (the largest, n·Σab, is
+ * ~2e14 against a 2^53 ceiling). Nothing is rounded until the division.
+ */
+interface NccStats {
+  n: number;
+  sa: number;
+  sb: number;
+  sab: number;
+  saa: number;
+  sbb: number;
+}
+
+function nccStatsOverRows(
   topBuf: Buffer,
   botBuf: Buffer,
   rowOffset: number,
   lo: number,
   hi: number
-): number {
+): NccStats {
   const W = NCC_SAMPLE_WIDTH;
-  const n = (hi - lo) * W;
-  if (n <= 0) return 0;
-
-  // Pass 1: compute means
-  let sumA = 0;
-  let sumB = 0;
+  let sa = 0;
+  let sb = 0;
+  let sab = 0;
+  let saa = 0;
+  let sbb = 0;
   for (let r = lo; r < hi; r++) {
     const ti = (rowOffset + r) * W;
     const bi = r * W;
     for (let x = 0; x < W; x++) {
-      sumA += topBuf[ti + x];
-      sumB += botBuf[bi + x];
+      const a = topBuf[ti + x];
+      const b = botBuf[bi + x];
+      sa += a;
+      sb += b;
+      sab += a * b;
+      saa += a * a;
+      sbb += b * b;
     }
   }
-  const meanA = sumA / n;
-  const meanB = sumB / n;
+  return { n: Math.max(0, (hi - lo) * W), sa, sb, sab, saa, sbb };
+}
 
-  // Pass 2: compute NCC numerator and denominators
-  let num = 0;
-  let denA = 0;
-  let denB = 0;
-  for (let r = lo; r < hi; r++) {
-    const ti = (rowOffset + r) * W;
-    const bi = r * W;
-    for (let x = 0; x < W; x++) {
-      const a = topBuf[ti + x] - meanA;
-      const b = botBuf[bi + x] - meanB;
-      num += a * b;
-      denA += a * a;
-      denB += b * b;
-    }
-  }
+function addStats(a: NccStats, b: NccStats): NccStats {
+  return {
+    n: a.n + b.n,
+    sa: a.sa + b.sa,
+    sb: a.sb + b.sb,
+    sab: a.sab + b.sab,
+    saa: a.saa + b.saa,
+    sbb: a.sbb + b.sbb,
+  };
+}
 
+/** Pearson correlation from raw co-moments. */
+function pearsonFromStats(s: NccStats): number {
+  if (s.n <= 0) return 0;
+  const num = s.n * s.sab - s.sa * s.sb;
+  const denA = s.n * s.saa - s.sa * s.sa;
+  const denB = s.n * s.sbb - s.sb * s.sb;
   const den = Math.sqrt(denA * denB);
   return den > 0 ? num / den : 0;
 }
@@ -447,19 +473,28 @@ function computeNCC(
   if (rows <= 0) return 0;
 
   const rowOffset = maxSearch - overlap;
-  const global = nccOverRows(topBuf, botBuf, rowOffset, lo, hi);
-
   const bands = Math.min(NCC_MAX_BANDS, Math.floor(rows / NCC_MIN_BAND_ROWS));
-  if (bands < 3) return global; // too few rows for a median to mean anything
 
+  if (bands < 3) {
+    // Too few rows for a median to mean anything — the global score is all
+    // there is, so walk the window once and be done.
+    return pearsonFromStats(nccStatsOverRows(topBuf, botBuf, rowOffset, lo, hi));
+  }
+
+  // The band edges below tile [lo, hi) exactly — b=0 starts at lo and the last
+  // band ends at hi — so summing their stats reconstructs the global window
+  // without touching a pixel twice.
   const bandScores: number[] = [];
+  let total: NccStats | null = null;
   for (let b = 0; b < bands; b++) {
     const bandLo = lo + Math.floor((rows * b) / bands);
     const bandHi = lo + Math.floor((rows * (b + 1)) / bands);
-    bandScores.push(nccOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi));
+    const stats = nccStatsOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi);
+    bandScores.push(pearsonFromStats(stats));
+    total = total ? addStats(total, stats) : stats;
   }
 
-  return Math.max(global, median(bandScores));
+  return Math.max(pearsonFromStats(total!), median(bandScores));
 }
 
 function adaptiveNccThreshold(contrast: number): number {
