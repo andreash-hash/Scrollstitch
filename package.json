@@ -43,7 +43,6 @@
     "expo-image-picker": "~17.0.9",
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.10",
-    "expo-location": "~19.0.8",
     "expo-media-library": "^55.0.9",
     "expo-notifications": "~0.32.16",
     "expo-router": "~6.0.17",

@@ -55,6 +55,14 @@
         {
           "color": "#ec3013"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ScrollStitch needs access to your photo library to open the screen recording you want to stitch.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {
