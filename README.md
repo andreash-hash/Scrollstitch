@@ -37,6 +37,24 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Pin out two critical advisories
+
+Installs began failing in the Replit workspace: its package firewall returned
+403 for `tar` and `shell-quote`, so `node_modules` came out incomplete and the
+dev bundler could not resolve `@expo-google-fonts/archivo`. The firewall was
+right — `npm audit` reports the same two advisories.
+
+- `tar@7.5.6` → `7.5.22` (GHSA-34x7-hfp2-rc4v, hardlink path traversal) and
+  `shell-quote@1.8.3` → `1.10.0` (GHSA-w7jw-789q-3m8p). Both arrive
+  transitively, via `@expo/cli` and `react-devtools-core`, so they are pinned
+  through `overrides` rather than a direct dependency.
+- Critical advisories go from 2 to 0. The remaining 51 are pre-existing and
+  untouched: `npm audit fix --force` would move Expo and React Native
+  themselves, which is not a change to make in passing.
+- Verified beyond the unit suite by running the Expo static export — the step
+  the deploy runs first, and where `tar` is actually used. It completes and
+  bundles the Archivo fonts.
+
 ### 2026-08 — Build identity survives deployment
 
 `GET /api/health` reported `commit: "unknown"` in production, because it reads
