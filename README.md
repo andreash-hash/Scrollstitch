@@ -37,6 +37,25 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Build identity survives deployment
+
+`GET /api/health` reported `commit: "unknown"` in production, because it reads
+the SHA from `.git` and deployment images strip it. The one field meant to
+reveal a stale deploy was blank exactly where staleness is invisible.
+
+- `npm run server:build` now writes `server_dist/build-info.json` recording the
+  commit the bundle came from; the endpoint falls back to it when `.git` is
+  absent. Verified by booting the production bundle in a directory with no git
+  metadata: `commit` reads the real SHA instead of `"unknown"`.
+- If a build runs somewhere without git metadata, it keeps any commit already
+  recorded rather than overwriting it with `"unknown"` — a wrong-but-confident
+  identity is worse than none.
+- `server_dist/index.js` is a build artifact that is committed and is what
+  `npm run server:prod` runs, so it can fall behind `server/` silently. A test
+  now asserts every route the source registers is present in the bundle.
+  Comparing bytes against a fresh build was rejected: esbuild is only present
+  transitively, so its version is not pinned.
+
 ### 2026-08 — Chunked upload
 
 Recovered from work that lived only in the Replit workspace and reimplemented

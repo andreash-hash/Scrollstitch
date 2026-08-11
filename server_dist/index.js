@@ -654,6 +654,18 @@ var BUILD_INFO = (() => {
     }
   } catch {
   }
+  if (commit === "unknown") {
+    try {
+      const info = JSON.parse(
+        fs2.readFileSync(
+          path2.resolve(process.cwd(), "server_dist", "build-info.json"),
+          "utf-8"
+        )
+      );
+      if (typeof info.commit === "string" && info.commit) commit = info.commit;
+    } catch {
+    }
+  }
   return {
     name,
     version,

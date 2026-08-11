@@ -244,3 +244,47 @@ describe("/api/process-frames end to end", () => {
     assert.equal(res.status, 404);
   });
 });
+
+describe("deployed bundle", () => {
+  // server_dist/index.js is a build artifact that is committed to the repo and
+  // is what `npm run server:prod` actually runs. It can therefore fall behind
+  // server/ without anything failing — which is how a deployment ended up
+  // serving a build with no /api/health at all. Comparing bytes against a
+  // fresh build would be at the mercy of whichever esbuild version happens to
+  // be hoisted, so assert the thing that matters instead: every route the
+  // source registers is present in the bundle.
+  const bundlePath = path.resolve(process.cwd(), "server_dist", "index.js");
+
+  test("exposes every route the source registers", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "server", "routes.ts"),
+      "utf-8"
+    );
+    const routes = [
+      ...source.matchAll(/app\.(?:get|post|put|delete)\(\s*"([^"]+)"/g),
+    ].map((m) => m[1]);
+
+    assert.ok(routes.length >= 8, `expected to find routes, got ${routes.length}`);
+
+    const bundle = fs.readFileSync(bundlePath, "utf-8");
+    const missing = routes.filter((r) => !bundle.includes(`"${r}"`));
+    assert.deepEqual(
+      missing,
+      [],
+      `server_dist/index.js is stale — run \`npm run server:build\` and commit it`
+    );
+  });
+
+  test("records the commit it was built from", () => {
+    const info = JSON.parse(
+      fs.readFileSync(
+        path.resolve(process.cwd(), "server_dist", "build-info.json"),
+        "utf-8"
+      )
+    ) as { commit: string; builtAt: string };
+    // Deployment images strip .git, so this file is the only thing that can
+    // tell a running server which commit it came from.
+    assert.match(info.commit, /^[0-9a-f]{40}$|^unknown$/);
+    assert.ok(!Number.isNaN(Date.parse(info.builtAt)));
+  });
+});

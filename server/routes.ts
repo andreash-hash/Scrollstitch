@@ -63,6 +63,23 @@ const BUILD_INFO = (() => {
     // No git metadata available
   }
 
+  if (commit === "unknown") {
+    // Deployment images strip .git, which is precisely where a stale build is
+    // hardest to spot. `npm run server:build` records the SHA next to the
+    // bundle so the deployed server can still name the code it is running.
+    try {
+      const info = JSON.parse(
+        fs.readFileSync(
+          path.resolve(process.cwd(), "server_dist", "build-info.json"),
+          "utf-8"
+        )
+      );
+      if (typeof info.commit === "string" && info.commit) commit = info.commit;
+    } catch {
+      // Neither git metadata nor a recorded build — "unknown" is honest.
+    }
+  }
+
   return {
     name,
     version,
