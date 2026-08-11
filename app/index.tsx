@@ -45,6 +45,7 @@ import {
   allowedDropMs,
   formatEta,
 } from "@/lib/eta";
+import { getPushToken } from "@/lib/push";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -526,6 +527,8 @@ export default function ScrollStitchScreen() {
   const [sensitivity, setSensitivity] = useState<SensitivityKey>("balanced");
   const [outputQuality, setOutputQuality] = useState<"png" | "jpeg">("png");
   const [eta, setEta] = useState<string | null>(null);
+  /** True once a job is registered for a completion push. */
+  const [canLeaveApp, setCanLeaveApp] = useState(false);
   const [cropTop, setCropTop] = useState(0);
   const [cropBottom, setCropBottom] = useState(0);
   const [isCropping, setIsCropping] = useState(false);
@@ -796,6 +799,7 @@ export default function ScrollStitchScreen() {
     etaTotalRef.current = etaPriorRef.current;
     etaShownRef.current = null;
     etaLastProgressRef.current = -1;
+    setCanLeaveApp(false);
     advanceProgress(0);
     setFrameCount(0);
     setEta(null);
@@ -893,6 +897,13 @@ export default function ScrollStitchScreen() {
       const processUrl = new URL("/api/process-frames", baseUrl);
       processUrl.searchParams.set("quality", outputQuality);
       processUrl.searchParams.set("sessionId", sessionId);
+      // Registered here rather than at launch: asking to send notifications
+      // means something at the moment there is a wait to be told about.
+      const pushToken = await getPushToken();
+      if (pushToken) {
+        processUrl.searchParams.set("pushToken", pushToken);
+        setCanLeaveApp(true);
+      }
 
       const doFetch = isWeb ? fetch : expoFetch!;
       const startRes = await doFetch(processUrl.toString(), { method: "POST" });
@@ -1523,6 +1534,14 @@ export default function ScrollStitchScreen() {
               <Text style={styles.statusText}>{statusText}</Text>
               {eta && (
                 <Text style={styles.etaText}>{eta}</Text>
+              )}
+              {canLeaveApp && (
+                <View style={styles.leaveHint}>
+                  <Feather name="bell" size={13} color={C.textTertiary} />
+                  <Text style={styles.leaveHintText}>
+                    You can leave the app — we&apos;ll notify you when it&apos;s done.
+                  </Text>
+                </View>
               )}
 
               <View style={styles.stageIndicators}>
@@ -2377,6 +2396,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 2,
     opacity: 0.8,
+  },
+  leaveHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 12,
+  },
+  leaveHintText: {
+    fontSize: 12,
+    fontFamily: "Archivo_400Regular",
+    color: C.textTertiary,
+    textAlign: "center",
+    flexShrink: 1,
   },
   cropPanel: {
     backgroundColor: C.surface,

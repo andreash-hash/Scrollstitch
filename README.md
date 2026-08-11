@@ -37,6 +37,35 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Tell me when it's done
+
+Jobs take long enough that people want to put the phone down. A *local*
+notification cannot deliver that: iOS suspends the app's JavaScript within
+seconds of backgrounding, so nothing is running at the moment the server
+finishes — exactly the moment worth reporting. The notice therefore comes from
+the server.
+
+- The client registers an Expo push token when a job starts, not at launch —
+  asking for notification permission means something when there is a wait to be
+  told about. The progress view then says the app can be left.
+- The server takes the token with the job and pushes on completion, including
+  the frame count and any gaps. Failures push too: someone who walked away
+  should not come back to a spinner that quietly stopped.
+- Every part is best-effort. A denied permission, a simulator, a missing key —
+  all resolve to "no notification", never to a failed stitch. The token is
+  validated against the Expo token format before it reaches an outbound
+  request, and a test asserts a malformed one costs the user nothing.
+
+**Two setup steps are still required, and until both are done the app simply
+runs without notifications:**
+
+1. `eas init` — writes `extra.eas.projectId` into `app.json`. Expo cannot mint a
+   push token without it. The code names this exact cause in the log.
+2. An APNs key in EAS credentials (`eas credentials`), so Apple will deliver.
+
+`expo-notifications` is a native module, so this needs a new build — it cannot
+ship as an OTA update.
+
 ### 2026-08 — Faster jobs, an honest countdown, and a paywall that only offers what exists
 
 From a real recording: the time estimate opened at 52s, climbed to 1m47s, then

@@ -200,6 +200,54 @@ function everyMs(fn: () => void, ms: number): void {
   timer.unref?.();
 }
 
+/**
+ * Tell a device its stitch is ready.
+ *
+ * The client cannot do this itself: iOS suspends its JavaScript seconds after
+ * the app is backgrounded, so nobody is listening at the moment the job
+ * finishes. Hence a push addressed to a token the client registered when it
+ * started the job.
+ *
+ * Best-effort by design — a job that succeeded must not be reported as failed
+ * because a notification could not be delivered.
+ */
+async function sendCompletionPush(
+  token: string,
+  body: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  try {
+    const res = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        to: token,
+        title: "ScrollStitch",
+        body,
+        sound: "default",
+        channelId: "stitch-complete",
+        data,
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`Push send failed: ${res.status} ${await res.text()}`);
+      return;
+    }
+    // Expo reports per-message failures (e.g. DeviceNotRegistered) in the body.
+    const payload = (await res.json()) as { data?: { status?: string; message?: string } };
+    if (payload.data?.status === "error") {
+      console.warn(`Push rejected: ${payload.data.message}`);
+    }
+  } catch (err) {
+    console.warn("Push send threw:", err);
+  }
+}
+
+/** An Expo push token, or "" if it is not one. Never trust a query parameter. */
+function validPushToken(raw: string): string {
+  return /^Expo(nent)?PushToken\[[^\]\s]{1,128}\]$/.test(raw) ? raw : "";
+}
+
 /** Express 5 types query/param values as string | string[] — take the first. */
 function firstString(value: unknown): string {
   if (Array.isArray(value)) value = value[0];
@@ -306,6 +354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
 
         const quality = firstString(req.query.quality) === "jpeg" ? "jpeg" : "png";
+        const pushToken = validPushToken(firstString(req.query.pushToken));
 
         jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
         res.json({ jobId, frameCount: framePaths.length });
@@ -435,11 +484,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 dimensions: { width: stitchResult.width, height: stitchResult.height },
               },
             });
+
+            if (pushToken) {
+              const pages = selection.paths.length;
+              await sendCompletionPush(
+                pushToken,
+                selection.gapCount > 0
+                  ? `Your screenshot is ready — ${pages} frames, ${selection.gapCount} gap${selection.gapCount === 1 ? "" : "s"}.`
+                  : `Your screenshot is ready — ${pages} frames stitched.`,
+                { jobId, status: "complete" }
+              );
+            }
           } catch (err) {
             const message =
               err instanceof Error ? err.message : "Processing failed unexpectedly.";
             console.error(`Processing error (job ${jobId}):`, err);
             updateJob(jobId, { stage: "Error", progress: 0, error: message });
+            if (pushToken) {
+              // Someone who left the app deserves to hear about a failure too,
+              // rather than coming back to a spinner that stopped.
+              await sendCompletionPush(pushToken, `Stitching failed: ${message}`, {
+                jobId,
+                status: "error",
+              });
+            }
           } finally {
             for (const f of [...framePaths, ...tempOutputs]) {
               try {

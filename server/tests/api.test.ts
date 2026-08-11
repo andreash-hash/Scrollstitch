@@ -277,6 +277,32 @@ describe("/api/process-frames end to end", () => {
     assert.equal(again.status, 200);
   });
 
+  test("ignores a malformed push token instead of failing the job", async () => {
+    const page = generatePage(WIDTH, 2880, 4242);
+    const frames = await renderFrames({
+      page,
+      outDir: makeTempDir("api-bad-token"),
+      frameHeight: FRAME_H,
+      frames: [0, 576, 1152, 1728].map((position) => ({ position })),
+      jpegQuality: 80,
+    });
+
+    // A token is a query parameter, so it is attacker-controlled and ends up in
+    // an outbound request. Anything that is not an Expo token is dropped, and
+    // dropping it must not cost the user their stitch.
+    const bogus = encodeURIComponent("https://evil.example/steal?x=1");
+    const res = await fetch(
+      `${baseUrl}/api/process-frames?quality=png&pushToken=${bogus}`,
+      { method: "POST", body: frameFormData(frames) }
+    );
+    assert.equal(res.status, 200);
+    const { jobId } = (await res.json()) as { jobId: string };
+
+    const done = await pollUntilDone(jobId);
+    assert.equal(done.stage, "Complete", done.error ?? "");
+    assert.ok(done.result!.dimensions.height > 0);
+  });
+
   test("404s for a PDF whose source image does not exist", async () => {
     const res = await fetch(`${baseUrl}/api/output/no-such-job.pdf`);
     assert.equal(res.status, 404);

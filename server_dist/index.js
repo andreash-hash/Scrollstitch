@@ -750,6 +750,35 @@ function everyMs(fn, ms) {
   const timer = setInterval(fn, ms);
   timer.unref?.();
 }
+async function sendCompletionPush(token, body, data) {
+  try {
+    const res = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        to: token,
+        title: "ScrollStitch",
+        body,
+        sound: "default",
+        channelId: "stitch-complete",
+        data
+      })
+    });
+    if (!res.ok) {
+      console.warn(`Push send failed: ${res.status} ${await res.text()}`);
+      return;
+    }
+    const payload = await res.json();
+    if (payload.data?.status === "error") {
+      console.warn(`Push rejected: ${payload.data.message}`);
+    }
+  } catch (err) {
+    console.warn("Push send threw:", err);
+  }
+}
+function validPushToken(raw) {
+  return /^Expo(nent)?PushToken\[[^\]\s]{1,128}\]$/.test(raw) ? raw : "";
+}
 function firstString(value) {
   if (Array.isArray(value)) value = value[0];
   return typeof value === "string" ? value : "";
@@ -825,6 +854,7 @@ async function registerRoutes(app2) {
           `Received ${framePaths.length} frames for job ${jobId}` + (sessionId ? ` (session ${sessionId})` : "")
         );
         const quality = firstString(req.query.quality) === "jpeg" ? "jpeg" : "png";
+        const pushToken = validPushToken(firstString(req.query.pushToken));
         jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
         res.json({ jobId, frameCount: framePaths.length });
         (async () => {
@@ -929,10 +959,24 @@ async function registerRoutes(app2) {
                 dimensions: { width: stitchResult.width, height: stitchResult.height }
               }
             });
+            if (pushToken) {
+              const pages = selection.paths.length;
+              await sendCompletionPush(
+                pushToken,
+                selection.gapCount > 0 ? `Your screenshot is ready \u2014 ${pages} frames, ${selection.gapCount} gap${selection.gapCount === 1 ? "" : "s"}.` : `Your screenshot is ready \u2014 ${pages} frames stitched.`,
+                { jobId, status: "complete" }
+              );
+            }
           } catch (err) {
             const message = err instanceof Error ? err.message : "Processing failed unexpectedly.";
             console.error(`Processing error (job ${jobId}):`, err);
             updateJob(jobId, { stage: "Error", progress: 0, error: message });
+            if (pushToken) {
+              await sendCompletionPush(pushToken, `Stitching failed: ${message}`, {
+                jobId,
+                status: "error"
+              });
+            }
           } finally {
             for (const f of [...framePaths, ...tempOutputs]) {
               try {

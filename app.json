@@ -20,6 +20,9 @@
         "NSPhotoLibraryUsageDescription": "ScrollStitch needs access to your screen recordings so it can extract the frames and stitch them into one long screenshot.",
         "NSPhotoLibraryAddUsageDescription": "ScrollStitch saves your finished long screenshot to your photo library.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "aps-environment": "production"
       }
     },
     "android": {
@@ -46,7 +49,13 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "color": "#ec3013"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
