@@ -45,6 +45,9 @@ const C = Colors.dark;
 // paywall unless the app ships its own terms.
 const TERMS_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
 
+/** Lifetime is a one-time purchase; the other two renew. */
+type Plan = "weekly" | "annual" | "lifetime";
+
 const webTopInset = Platform.OS === "web" ? 67 : 0;
 const webBottomInset = Platform.OS === "web" ? 34 : 0;
 
@@ -290,6 +293,7 @@ function PaywallSkeletonRow() {
 function PaywallSlide({
   weeklyPackage,
   annualPackage,
+  lifetimePackage,
   trialDays,
   onPurchase,
   onRestore,
@@ -301,6 +305,7 @@ function PaywallSlide({
 }: {
   weeklyPackage: PurchasesPackage | null;
   annualPackage: PurchasesPackage | null;
+  lifetimePackage: PurchasesPackage | null;
   trialDays: number | null;
   onPurchase: (pkg: PurchasesPackage) => void;
   onRestore: () => void;
@@ -310,7 +315,7 @@ function PaywallSlide({
   offeringsIsError: boolean;
   onRetryOfferings: () => void;
 }) {
-  const [billing, setBilling] = useState<"weekly" | "annual">("weekly");
+  const [billing, setBilling] = useState<Plan>("weekly");
   const [confirmVisible, setConfirmVisible] = useState(false);
   const btnScale = useSharedValue(1);
 
@@ -323,17 +328,33 @@ function PaywallSlide({
   // that never got attached to the package. Rendering a chip for it anyway
   // produced a plan priced "…" next to a button that could not be pressed. Only
   // offer what the store actually returned.
-  const availablePlans = ([] as ("weekly" | "annual")[]).concat(
+  const availablePlans = ([] as Plan[]).concat(
     weeklyPackage ? ["weekly"] : [],
-    annualPackage ? ["annual"] : []
+    annualPackage ? ["annual"] : [],
+    lifetimePackage ? ["lifetime"] : []
   );
   const noPlansAvailable = availablePlans.length === 0;
   const effectiveBilling = availablePlans.includes(billing) ? billing : availablePlans[0];
 
-  const selectedPackage = effectiveBilling === "weekly" ? weeklyPackage : annualPackage;
+  const packageFor: Record<Plan, PurchasesPackage | null> = {
+    weekly: weeklyPackage,
+    annual: annualPackage,
+    lifetime: lifetimePackage,
+  };
+  const selectedPackage = packageFor[effectiveBilling];
 
   const weeklyPrice = weeklyPackage?.product.priceString ?? "";
   const annualPrice = annualPackage?.product.priceString ?? "";
+  const lifetimePrice = lifetimePackage?.product.priceString ?? "";
+  const priceFor: Record<Plan, string> = {
+    weekly: weeklyPrice, annual: annualPrice, lifetime: lifetimePrice,
+  };
+  // Lifetime is bought once. Saying "per" anything about it would be a lie,
+  // and Apple checks that subscription terms match what is actually sold.
+  const periodFor: Record<Plan, string> = {
+    weekly: "per week", annual: "per year", lifetime: "one-time",
+  };
+  const isSubscriptionPlan = effectiveBilling !== "lifetime";
   // Only promise a trial when the store actually offers one on the weekly plan
   const showTrial = effectiveBilling === "weekly" && trialDays != null && trialDays > 0;
 
@@ -408,9 +429,11 @@ function PaywallSlide({
                   ]}
                   accessibilityRole="radio"
                   accessibilityLabel={
-                    b === "weekly"
-                      ? `Weekly plan, ${weeklyPrice} per week${trialDays ? `, ${trialDays} days free first` : ""}`
-                      : `Annual plan, ${annualPrice} per year, best value`
+                    b === "lifetime"
+                      ? `Lifetime, ${lifetimePrice}, one-time purchase`
+                      : b === "weekly"
+                        ? `Weekly plan, ${weeklyPrice} per week${trialDays ? `, ${trialDays} days free first` : ""}`
+                        : `Annual plan, ${annualPrice} per year, best value`
                   }
                   accessibilityState={{ selected: effectiveBilling === b }}
                 >
@@ -420,9 +443,17 @@ function PaywallSlide({
                       effectiveBilling === b && paywall.billingChipTextActive,
                     ]}
                   >
-                    {b === "weekly" ? `${weeklyPrice} / week` : `${annualPrice} / year`}
+                    {priceFor[b]}
                   </Text>
-                  {b === "annual" && availablePlans.length > 1 && (
+                  <Text
+                    style={[
+                      paywall.billingChipPeriod,
+                      effectiveBilling === b && paywall.billingChipTextActive,
+                    ]}
+                  >
+                    {periodFor[b]}
+                  </Text>
+                  {b === "annual" && availablePlans.length > 2 && (
                     <View style={paywall.saveBadge}>
                       <Text style={paywall.saveBadgeText}>BEST VALUE</Text>
                     </View>
@@ -442,7 +473,9 @@ function PaywallSlide({
                     ? "Processing purchase"
                     : showTrial
                       ? `Start ${trialDays} days free, then ${weeklyPrice} per week`
-                      : `Subscribe for ${effectiveBilling === "weekly" ? weeklyPrice + " per week" : annualPrice + " per year"}`
+                      : effectiveBilling === "lifetime"
+                        ? `Buy ScrollStitch Pro for ${lifetimePrice}, one-time payment`
+                        : `Subscribe for ${priceFor[effectiveBilling]} ${periodFor[effectiveBilling]}`
                 }
                 accessibilityState={{
                   disabled: isPurchasing || !selectedPackage,
@@ -456,7 +489,9 @@ function PaywallSlide({
                     <Text style={paywall.ctaText}>
                       {showTrial
                         ? `Start ${trialDays} days free`
-                        : `Subscribe — ${effectiveBilling === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"}`}
+                        : effectiveBilling === "lifetime"
+                          ? `Buy once — ${lifetimePrice}`
+                          : `Subscribe — ${priceFor[effectiveBilling]}`}
                     </Text>
                   )}
                 </View>
@@ -481,11 +516,11 @@ function PaywallSlide({
         </Pressable>
 
         <Text style={paywall.legal}>
-          {showTrial
-            ? `${trialDays} days free, then ${weeklyPrice} per week. Auto-renews until cancelled; cancel anytime in Settings at least 24 hours before renewal.`
-            : effectiveBilling === "weekly"
-              ? `${weeklyPrice} per week. Auto-renews until cancelled; cancel anytime in Settings.`
-              : `${annualPrice} per year. Auto-renews until cancelled; cancel anytime in Settings.`}
+          {!isSubscriptionPlan
+            ? `${lifetimePrice} once. This is a one-time purchase, not a subscription — nothing renews and there is nothing to cancel.`
+            : showTrial
+              ? `${trialDays} days free, then ${weeklyPrice} per week. Auto-renews until cancelled; cancel anytime in Settings at least 24 hours before renewal.`
+              : `${priceFor[effectiveBilling]} ${periodFor[effectiveBilling]}. Auto-renews until cancelled; cancel anytime in Settings.`}
         </Text>
 
         <View style={paywall.legalLinks}>
@@ -518,7 +553,7 @@ function PaywallSlide({
           <View style={paywall.modalCard}>
             <Text style={paywall.modalTitle}>Confirm Purchase</Text>
             <Text style={paywall.modalBody}>
-              {`You are in test mode. Confirm purchase of the ${effectiveBilling} plan (${effectiveBilling === "weekly" ? weeklyPrice + "/week" : annualPrice + "/year"})?`}
+              {`You are in test mode. Confirm purchase of the ${effectiveBilling} plan (${priceFor[effectiveBilling]} ${periodFor[effectiveBilling]})?`}
             </Text>
             <View style={paywall.modalActions}>
               <Pressable
@@ -572,7 +607,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { directPaywall } = useLocalSearchParams<{ directPaywall?: string }>();
   const { markOnboardingComplete } = useAppContext();
-  const { weeklyPackage, annualPackage, trialDays, purchase, restore, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings } = useSubscription();
+  const { weeklyPackage, annualPackage, lifetimePackage, trialDays, purchase, restore, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings } = useSubscription();
   const listRef = useRef<FlatList>(null);
   const initialIndex = directPaywall === "1" ? SLIDES.length : 0;
   const [activeIndex, setActiveIndex] = useState(initialIndex);
@@ -642,6 +677,7 @@ export default function OnboardingScreen() {
           <PaywallSlide
             weeklyPackage={weeklyPackage}
             annualPackage={annualPackage}
+            lifetimePackage={lifetimePackage}
             trialDays={trialDays}
             onPurchase={handlePurchase}
             onRestore={handleRestore}
@@ -656,7 +692,7 @@ export default function OnboardingScreen() {
       return <OnboardingSlide item={item} index={index} />;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [weeklyPackage, annualPackage, trialDays, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings]
+    [weeklyPackage, annualPackage, lifetimePackage, trialDays, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings]
   );
 
   const data: ((typeof SLIDES)[number] | "paywall")[] = [...SLIDES, "paywall"];
@@ -1014,6 +1050,12 @@ const paywall = StyleSheet.create({
   billingChipActive: {
     borderColor: C.accent,
     backgroundColor: "rgba(236,48,19,0.1)",
+  },
+  billingChipPeriod: {
+    fontSize: 11,
+    fontFamily: "Archivo_400Regular",
+    color: C.textTertiary,
+    marginTop: 1,
   },
   billingChipText: {
     fontSize: 13,

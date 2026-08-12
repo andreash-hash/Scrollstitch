@@ -46,6 +46,13 @@ const ANNUAL_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_annual:annual";
 const ANNUAL_DISPLAY_NAME = "ScrollStitch Pro Annual";
 const ANNUAL_DURATION = "P1Y" as const;
 
+// Lifetime — a one-time purchase, not a subscription. It exists mainly as a
+// price anchor: a dearer option above the annual makes the annual read as the
+// sensible middle rather than the expensive end. In App Store Connect this is
+// a Non-Consumable and lives outside the subscription group.
+const LIFETIME_IDENTIFIER = "scrollstitch_pro_lifetime";
+const LIFETIME_DISPLAY_NAME = "ScrollStitch Pro Lifetime";
+
 const APP_STORE_APP_NAME = "ScrollStitch iOS";
 const APP_STORE_BUNDLE_ID = "com.scrollstitch";
 const PLAY_STORE_APP_NAME = "ScrollStitch Android";
@@ -60,6 +67,7 @@ const OFFERING_DISPLAY_NAME = "Default Offering";
 // Weekly: $4.99 | Annual: $29.99
 const WEEKLY_PRICES = [{ amount_micros: 4990000, currency: "USD" }];
 const ANNUAL_PRICES = [{ amount_micros: 29990000, currency: "USD" }];
+const LIFETIME_PRICES = [{ amount_micros: 79990000, currency: "USD" }];
 
 type TestStorePricesResponse = {
   object: string;
@@ -201,7 +209,7 @@ async function seedRevenueCat() {
     label: string,
     productIdentifier: string,
     displayName: string,
-    duration: Duration,
+    duration: Duration | null,
     isTestStore: boolean
   ): Promise<Product> => {
     const existingProduct = existingProducts.items?.find(
@@ -213,15 +221,17 @@ async function seedRevenueCat() {
       return existingProduct;
     }
 
+    // A null duration means a one-time purchase (lifetime) rather than a
+    // subscription — a different product type, with no renewal period.
     const body: CreateProductData["body"] = {
       store_identifier: productIdentifier,
       app_id: targetApp.id,
-      type: "subscription",
+      type: duration ? "subscription" : "one_time",
       display_name: displayName,
     };
 
     if (isTestStore) {
-      body.subscription = { duration };
+      if (duration) body.subscription = { duration };
       body.title = displayName;
     }
 
@@ -246,6 +256,12 @@ async function seedRevenueCat() {
   const appAnnual = await ensureProductForApp(appStoreApp, "AppStore/Annual", ANNUAL_IDENTIFIER, ANNUAL_DISPLAY_NAME, ANNUAL_DURATION, false);
   const playAnnual = await ensureProductForApp(playStoreApp, "PlayStore/Annual", ANNUAL_PLAY_STORE_IDENTIFIER, ANNUAL_DISPLAY_NAME, ANNUAL_DURATION, false);
 
+  // Lifetime uses the same identifier on every store: unlike Play's
+  // subscriptions, a one-time product carries no base-plan suffix.
+  const testLifetime = await ensureProductForApp(testStoreApp, "Test/Lifetime", LIFETIME_IDENTIFIER, LIFETIME_DISPLAY_NAME, null, true);
+  const appLifetime = await ensureProductForApp(appStoreApp, "AppStore/Lifetime", LIFETIME_IDENTIFIER, LIFETIME_DISPLAY_NAME, null, false);
+  const playLifetime = await ensureProductForApp(playStoreApp, "PlayStore/Lifetime", LIFETIME_IDENTIFIER, LIFETIME_DISPLAY_NAME, null, false);
+
   // ── Prices ────────────────────────────────────────────────────────────────
   const addPrices = async (productId: string, prices: { amount_micros: number; currency: string }[], label: string) => {
     const { error } = await client.post<TestStorePricesResponse>({
@@ -266,6 +282,7 @@ async function seedRevenueCat() {
 
   await addPrices(testWeekly.id, WEEKLY_PRICES, "Weekly");
   await addPrices(testAnnual.id, ANNUAL_PRICES, "Annual");
+  await addPrices(testLifetime.id, LIFETIME_PRICES, "Lifetime");
 
   // ── Entitlement ───────────────────────────────────────────────────────────
   let entitlement: Entitlement | undefined;
@@ -297,7 +314,11 @@ async function seedRevenueCat() {
     client,
     path: { project_id: project.id, entitlement_id: entitlement.id },
     body: {
-      product_ids: [testWeekly.id, appWeekly.id, playWeekly.id, testAnnual.id, appAnnual.id, playAnnual.id],
+      product_ids: [
+        testWeekly.id, appWeekly.id, playWeekly.id,
+        testAnnual.id, appAnnual.id, playAnnual.id,
+        testLifetime.id, appLifetime.id, playLifetime.id,
+      ],
     },
   });
   if (attachEntitlementError) {
@@ -372,6 +393,7 @@ async function seedRevenueCat() {
 
   const weeklyPkg = await ensurePackage("$rc_weekly", "Weekly Subscription");
   const annualPkg = await ensurePackage("$rc_annual", "Annual Subscription");
+  const lifetimePkg = await ensurePackage("$rc_lifetime", "Lifetime Purchase");
 
   /** The products currently attached to a package, as ids. */
   const attachedProductIds = async (packageId: string): Promise<string[]> => {
@@ -450,6 +472,7 @@ async function seedRevenueCat() {
 
   await attachPackage(weeklyPkg, [testWeekly, appWeekly, playWeekly], "weekly");
   await attachPackage(annualPkg, [testAnnual, appAnnual, playAnnual], "annual");
+  await attachPackage(lifetimePkg, [testLifetime, appLifetime, playLifetime], "lifetime");
 
   // ── Retire the previous naming ────────────────────────────────────────────
   // The project was set up before the rename and before the plan changed from
@@ -461,7 +484,7 @@ async function seedRevenueCat() {
   // Deliberately narrow: only products whose identifier carries the old name
   // are touched, and only after they have been detached from everything.
   const LEGACY_IDENTIFIER = /scrollsnap/i;
-  const keepPackages = new Set(["$rc_weekly", "$rc_annual"]);
+  const keepPackages = new Set(["$rc_weekly", "$rc_annual", "$rc_lifetime"]);
 
   const { data: allPackages, error: allPackagesError } = await listPackages({
     client,

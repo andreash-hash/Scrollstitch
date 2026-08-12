@@ -37,6 +37,27 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — A lifetime tier, as a price anchor
+
+Weekly and annual gave the paywall no top end, so the annual was the dearest
+thing on it. A one-time purchase above it makes the annual read as the sensible
+middle instead.
+
+- `scrollstitch_pro_lifetime` at $79.99, attached to the same `pro`
+  entitlement, in a `$rc_lifetime` package. It is a **one-time** product, not a
+  subscription: the seeding script's product helper now takes a null duration
+  to mean that, and picks the `one_time` type accordingly. In App Store Connect
+  it is a **Non-Consumable**, outside the subscription group.
+- The paywall shows whichever plans the store returns, so it picked up the
+  third automatically. The chips carry the period on a second line, which is
+  what makes three fit across.
+- Nothing describes the lifetime plan as renewing. Its legal line says it is a
+  one-time purchase with nothing to cancel, the call to action says "Buy once",
+  and the trial copy stays on the weekly plan where the trial actually exists.
+  Terms that do not match what is sold are a review rejection.
+
+Prices can be changed later; product identifiers cannot.
+
 ### 2026-08 — RevenueCat caught up with the app
 
 The plan with no price was not a client bug. Inspecting the live project

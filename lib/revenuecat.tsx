@@ -105,6 +105,11 @@ function useSubscriptionContext() {
   const annualPackage = currentOffering?.availablePackages.find(
     (pkg) => pkg.packageType === "ANNUAL" || pkg.identifier === "$rc_annual"
   ) ?? null;
+  // A one-time purchase, not a subscription. It earns its place as the dearest
+  // option: with something above it, the annual reads as the sensible middle.
+  const lifetimePackage = currentOffering?.availablePackages.find(
+    (pkg) => pkg.packageType === "LIFETIME" || pkg.identifier === "$rc_lifetime"
+  ) ?? null;
 
   // Introductory offer on the weekly product, when the store reports one and
   // this user is still eligible for it. Drives the "3 days free" copy — never
@@ -118,6 +123,7 @@ function useSubscriptionContext() {
     currentOffering,
     weeklyPackage,
     annualPackage,
+    lifetimePackage,
     weeklyIntro,
     trialDays,
     activeProductId,
