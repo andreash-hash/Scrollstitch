@@ -37,6 +37,29 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The annual plan needs a new identifier
+
+`scrollstitch_pro_annual` was created in App Store Connect as a non-consumable
+in-app purchase rather than an auto-renewable subscription, and submitted for
+review. A submitted product cannot be deleted, and Apple never releases a
+product id for reuse, so that identifier is spent.
+
+The annual plan is now `scrollstitch_pro_yearly` (`…_yearly:yearly` on Play).
+The retirement pass, which already removed the products left over from the
+previous app name, also detaches and deletes the abandoned annual ones. Its
+pattern is unit-checked against every identifier in play, because it governs
+deletion and matching one character too loosely would take out a live product.
+
+Worth recording why this cost almost nothing in the app: **product ids appear
+in exactly one file.** The client never names a product — it asks for packages
+(`$rc_weekly`, `$rc_annual`, `$rc_lifetime`) and lets RevenueCat resolve them.
+Changing a store identifier is one constant and one script run, with no app
+change and no rebuild.
+
+The type mattered as much as the id. A non-consumable annual would not renew,
+could carry no introductory offer — so no three-day trial — and would have sold
+permanent access for $29.99 beside a $79.99 lifetime.
+
 ### 2026-08 — A lifetime tier, as a price anchor
 
 Weekly and annual gave the paywall no top end, so the annual was the dearest

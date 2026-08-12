@@ -41,8 +41,13 @@ const WEEKLY_DISPLAY_NAME = "ScrollStitch Pro Weekly";
 const WEEKLY_DURATION = "P1W" as const;
 
 // Annual product
-const ANNUAL_IDENTIFIER = "scrollstitch_pro_annual";
-const ANNUAL_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_annual:annual";
+// NOT "scrollstitch_pro_annual". That identifier was created in App Store
+// Connect as a non-consumable in-app purchase rather than an auto-renewable
+// subscription, and submitted for review. A submitted product cannot be
+// deleted, and Apple never releases a product id for reuse — so the identifier
+// is spent and the annual plan needs a fresh one.
+const ANNUAL_IDENTIFIER = "scrollstitch_pro_yearly";
+const ANNUAL_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_yearly:yearly";
 const ANNUAL_DISPLAY_NAME = "ScrollStitch Pro Annual";
 const ANNUAL_DURATION = "P1Y" as const;
 
@@ -481,9 +486,10 @@ async function seedRevenueCat() {
   // edited — RevenueCat only lets a product's display name change — so the old
   // products have to be detached and removed rather than renamed.
   //
-  // Deliberately narrow: only products whose identifier carries the old name
-  // are touched, and only after they have been detached from everything.
-  const LEGACY_IDENTIFIER = /scrollsnap/i;
+  // Deliberately narrow: only products whose identifier carries the old app
+  // name, or the spent annual identifier, are touched — and only after they
+  // have been detached from everything.
+  const LEGACY_IDENTIFIER = /^scrollsnap|^scrollstitch_pro_annual/i;
   const keepPackages = new Set(["$rc_weekly", "$rc_annual", "$rc_lifetime"]);
 
   const { data: allPackages, error: allPackagesError } = await listPackages({
