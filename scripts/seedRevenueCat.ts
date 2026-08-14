@@ -263,10 +263,17 @@ async function seedRevenueCat() {
 
     // A null duration means a one-time purchase (lifetime) rather than a
     // subscription — a different product type, with no renewal period.
+    // A null duration is the lifetime unlock. "one_time" is the wrong type for
+    // it: the API rejects that on the Test Store outright — "Allowed product
+    // types for Test Store: 'subscription', 'consumable' and 'non_consumable'"
+    // — and it is not what the product is anywhere else either. A lifetime
+    // unlock is bought once and kept forever, which is a non-consumable in App
+    // Store Connect and in Play. "one_time" is the umbrella the API reports
+    // such a product under, not a type it accepts when creating one.
     const body: CreateProductData["body"] = {
       store_identifier: productIdentifier,
       app_id: targetApp.id,
-      type: duration ? "subscription" : "one_time",
+      type: duration ? "subscription" : "non_consumable",
       display_name: displayName,
     };
 
@@ -281,7 +288,13 @@ async function seedRevenueCat() {
       body,
     });
 
-    if (error) throw new Error("Failed to create " + label + " product");
+    // Carry the API's own message. Swallowing it cost a full debugging round
+    // trip: "Failed to create Test/Lifetime product" says nothing about which
+    // field the store rejected, and the answer only came from repeating the
+    // call by hand.
+    if (error) {
+      throw new Error("Failed to create " + label + " product: " + JSON.stringify(error));
+    }
     console.log("Created " + label + " product:", createdProduct.id);
     return createdProduct;
   };

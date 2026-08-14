@@ -37,6 +37,24 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The lifetime product was created with a type no store accepts
+
+With the naming collision out of the way the seed got as far as the lifetime
+product and stopped there: `Allowed product types for Test Store:
+'subscription', 'consumable' and 'non_consumable'`. The script was sending
+`one_time`.
+
+`one_time` is the umbrella the API *reports* such a product under — it is in
+the product type enum, and there is a `one_time` field on a returned product —
+but it is not a type a store accepts when creating one. A lifetime unlock is
+bought once and kept: a **non-consumable**, in App Store Connect, in Play, and
+on the Test Store alike. That is what the seed sends now.
+
+Finding this took a round trip it should not have. The script threw
+`Failed to create Test/Lifetime product` and discarded the API's own response,
+so the message naming the offending field had to be recovered by repeating the
+call by hand. Product creation errors now carry the store's reply.
+
 ### 2026-08 — The seed could not create the plan that replaced the old one
 
 Moving the annual plan to `scrollstitch_pro_yearly` changed the constant but
