@@ -1,3 +1,5 @@
+import { baseProductId } from "../lib/planIdentity";
+
 /**
  * Which RevenueCat store identifiers belong to plans the project has left
  * behind, and how their display names are moved aside.
@@ -11,32 +13,52 @@
  * Two groups are retired:
  *
  *   - scrollsnap_*      the previous app name
- *   - scrollstitch_pro_annual[...]
- *                       created in App Store Connect as a non-consumable
- *                       in-app purchase rather than an auto-renewable
- *                       subscription, and submitted for review. A submitted
- *                       product cannot be deleted and Apple never releases a
- *                       product id for reuse, so the identifier is spent. The
- *                       annual plan is scrollstitch_pro_yearly now.
- *
- * Anchored at the start deliberately. An unanchored /scrollstitch_pro_annual/
- * would be the same string with a much wider reach, and the live weekly,
- * yearly and lifetime products sit one word away from it.
+ *   - the subscription identifiers burnt in App Store Connect by being created
+ *     as in-app purchases rather than auto-renewable subscriptions. Apple never
+ *     releases a product id, and deleting the product does not release it
+ *     either — an identifier is spent the moment it is used, whether or not it
+ *     was ever submitted for review.
  */
-export const RETIRED_IDENTIFIER = /^scrollsnap|^scrollstitch_pro_annual/i;
+const RETIRED_BASE_IDS = new Set([
+  // Created as a non-consumable in-app purchase and submitted for review.
+  // Replaced by scrollstitch_pro_yearly.
+  "scrollstitch_pro_annual",
+  // Created as an in-app purchase, never submitted, then deleted — and still
+  // rejected as "already being used" on re-creation. Replaced by
+  // scrollstitch_pro_weekly_v2.
+  "scrollstitch_pro_weekly",
+]);
+
+/** The previous app name. Nothing live begins with it. */
+const LEGACY_APP_NAME = /^scrollsnap/i;
 
 /**
  * Appended to a retired product's display name.
  *
  * A display name must be unique within its app, and it is the only field
- * RevenueCat lets an existing product change. The retired annual holds the
+ * RevenueCat lets an existing product change. A retired product holds the
  * exact name its replacement needs, so it has to be moved aside before the
  * replacement can be created — see the rename pass in seedRevenueCat.ts.
  */
 export const RETIRED_SUFFIX = " (retired)";
 
+/**
+ * Matched on the exact identifier, not as a prefix.
+ *
+ * This is the whole reason the check is a set rather than a regex. The
+ * replacement for the burnt weekly plan is `scrollstitch_pro_weekly_v2`, which
+ * a prefix pattern like /^scrollstitch_pro_weekly/ matches happily — the seed
+ * would create the live weekly product and then delete it in the same run, and
+ * the paywall would lose the plan the trial funnels into.
+ *
+ * Play's `:basePlanId` suffix is stripped first, so both spellings of the same
+ * retired subscription are caught.
+ */
 export function isRetiredIdentifier(storeIdentifier: string | null | undefined): boolean {
-  return RETIRED_IDENTIFIER.test(storeIdentifier ?? "");
+  const base = baseProductId(storeIdentifier);
+  if (base === null) return false;
+  if (LEGACY_APP_NAME.test(base)) return true;
+  return RETIRED_BASE_IDS.has(base.toLowerCase());
 }
 
 /**

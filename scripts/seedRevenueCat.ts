@@ -37,8 +37,15 @@ import { isRetiredIdentifier, retiredDisplayName } from "./retiredProducts";
 const PROJECT_NAME = "ScrollStitch";
 
 // Weekly product — the primary plan the trial funnels into
-const WEEKLY_IDENTIFIER = "scrollstitch_pro_weekly";
-const WEEKLY_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_weekly:weekly";
+//
+// NOT "scrollstitch_pro_weekly". That identifier was created in App Store
+// Connect as an in-app purchase rather than an auto-renewable subscription.
+// It was never submitted for review and the product was deleted, and App Store
+// Connect still refuses it: "The Product ID you entered is already being used
+// by another subscription." Deleting a product does not release its id — an
+// identifier is spent the moment it is used.
+const WEEKLY_IDENTIFIER = "scrollstitch_pro_weekly_v2";
+const WEEKLY_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_weekly_v2:weekly";
 const WEEKLY_DISPLAY_NAME = "ScrollStitch Pro Weekly";
 const WEEKLY_DURATION = "P1W" as const;
 

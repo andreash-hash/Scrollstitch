@@ -37,6 +37,33 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The weekly identifier was spent too, and deleting it changed nothing
+
+`scrollstitch_pro_weekly` was also created in App Store Connect as an in-app
+purchase rather than an auto-renewable subscription. It was never submitted for
+review and the product was deleted — and App Store Connect still answers *"The
+Product ID you entered is already being used by another subscription"* on
+re-creation.
+
+That is the part worth keeping: **deleting a product does not release its id.**
+The annual identifier was lost because it had been submitted, which made it
+easy to believe submission was the trigger. It is not. An identifier is spent
+the moment it is used. There is no state a product can be put into that gives
+it back.
+
+The weekly plan is `scrollstitch_pro_weekly_v2` now. The suffix is not a
+version scheme, it is a scar; a product id is never shown to anyone, so the
+only thing that matters is that it is free and that it matches RevenueCat
+exactly.
+
+Retiring the old one made the delete check dangerous in a way it had not been
+before. The live weekly identifier is the retired one plus a suffix, so the
+prefix pattern that had been fine until now — `/^scrollstitch_pro_weekly/` —
+matches both, and the seed would have created the weekly product and deleted it
+in the same run, taking out the plan the free trial funnels into. The check is
+an exact match on the identifier with Play's `:basePlanId` suffix stripped, and
+the test that fails on the prefix version is in `scripts/__tests__`.
+
 ### 2026-08 — Product ids did not live in exactly one file after all
 
 The note below claims the rename cost nothing in the app because the client

@@ -23,14 +23,35 @@ Inside your new app → **In-App Purchases** → **+**:
 
 | Product ID | Type | Price |
 |---|---|---|
-| `scrollstitch_pro_weekly` | Auto-Renewable Subscription | $4.99 / week — **add a 3-day free trial as an Introductory Offer** |
-| `scrollstitch_pro_annual` | Auto-Renewable Subscription | $29.99 / year |
+| `scrollstitch_pro_weekly_v2` | Auto-Renewable Subscription | $4.99 / week — **add a 3-day free trial as an Introductory Offer** |
+| `scrollstitch_pro_yearly` | Auto-Renewable Subscription | $29.99 / year |
+| `scrollstitch_pro_lifetime` | **Non-Consumable** — outside the subscription group | $79.99 once |
 
-For each product:
-- Set a **Subscription Group** (e.g. "ScrollStitch Pro").
+> **Get the type right the first time.** A product id is spent the moment it is
+> used, and deleting the product does not release it. Both of the original
+> identifiers — `scrollstitch_pro_weekly` and `scrollstitch_pro_annual` — were
+> lost this way by being created as in-app purchases instead of
+> auto-renewable subscriptions. One of them had never even been submitted for
+> review, and App Store Connect still refuses to reuse the id. The `_v2` suffix
+> above is the scar from that; there is no way to undo it.
+
+For the two subscriptions:
+- Set the **Subscription Group** to "ScrollStitch Pro" — both in the same group.
+- Set **Subscription Levels**: annual at Level 1, weekly at Level 2, so the
+  day-3 win-back offer upgrades a weekly subscriber immediately instead of
+  waiting for their next renewal.
 - Add **Localizations** (Display Name + Description) in at least English.
+  Display Name is capped at 30 characters, Description at 45.
+- Reference Name must be unique across every product in the app. The burnt ids
+  still hold theirs, so use `ScrollStitch Pro Yearly` rather than
+  `ScrollStitch Pro Annual`.
 - Set **Review Screenshot** (required before approval).
-- Submit for review (products are reviewed alongside the app).
+
+Lifetime is a Non-Consumable and does **not** belong to the subscription group —
+it has no duration, no renewal and no introductory offer.
+
+Products in **Ready to Submit** already work in the sandbox, so TestFlight
+testing does not have to wait for review.
 
 ### 1c. Link App Store Connect to RevenueCat
 RevenueCat needs an **App Store Connect API key** to validate receipts server-side:
@@ -74,12 +95,17 @@ Reduces Apple's commission from 30 % to 15 % for developers earning under $1 M/y
 
 | Product ID | Base plan ID | Price |
 |---|---|---|
-| `scrollstitch_pro_weekly` | `weekly` | $4.99 / week — add a 3-day free trial |
-| `scrollstitch_pro_annual` | `annual` | $29.99 / year |
+| `scrollstitch_pro_weekly_v2` | `weekly` | $4.99 / week — add a 3-day free trial |
+| `scrollstitch_pro_yearly` | `yearly` | $29.99 / year |
+
+Lifetime is a one-time product, not a subscription — create it under
+**Monetize** → **Products** → **In-app products** as `scrollstitch_pro_lifetime`
+at $79.99. One-time products carry no base plan, so there is no suffix on it.
 
 The full Play Store identifiers used by RevenueCat are:
-- `scrollstitch_pro_weekly:weekly`
-- `scrollstitch_pro_annual:annual`
+- `scrollstitch_pro_weekly_v2:weekly`
+- `scrollstitch_pro_yearly:yearly`
+- `scrollstitch_pro_lifetime`
 
 These already match the identifiers in `scripts/seedRevenueCat.ts`.
 
@@ -138,8 +164,9 @@ Before going live:
 | Android App ID | env: `REVENUECAT_GOOGLE_PLAY_STORE_APP_ID` |
 | Entitlement | `pro` |
 | Offerings | `default` (current) |
-| Weekly package | `$rc_weekly` → `scrollstitch_pro_weekly` |
-| Annual package | `$rc_annual` → `scrollstitch_pro_annual` |
+| Weekly package | `$rc_weekly` → `scrollstitch_pro_weekly_v2` |
+| Annual package | `$rc_annual` → `scrollstitch_pro_yearly` |
+| Lifetime package | `$rc_lifetime` → `scrollstitch_pro_lifetime` |
 | Privacy Policy URL | `https://<production-domain>/privacy` |
 
 
