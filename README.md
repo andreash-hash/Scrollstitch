@@ -37,6 +37,32 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Product ids did not live in exactly one file after all
+
+The note below claims the rename cost nothing in the app because the client
+never names a product. That was wrong, and worth correcting rather than
+quietly deleting: `lib/revenuecat.tsx` decided whether someone was already on
+the annual plan by asking whether their active product id *contained* the word
+`annual`.
+
+Moving the plan to `scrollstitch_pro_yearly` removed that substring from the
+identifier of the very plan the check was looking for. It answered false for
+every annual subscriber, and the day-3 win-back offer — which exists to move
+weekly subscribers up to annual — would have been shown to people already
+paying for annual, offering to sell them what they had.
+
+Nothing caught it, because a substring test against a literal has nothing to
+typecheck and the identifier it was reading is chosen in a different file. The
+check now compares against the product behind the annual package, so the two
+move together by construction. Lifetime buyers are excluded on the same
+grounds: there is nothing above their plan to upsell.
+
+The comparison also has to survive Play writing subscriptions as
+`productId:basePlanId` and reporting them both ways, so it matches on the part
+before the colon. It lives in `lib/planIdentity.ts` with tests, including the
+one that would have caught this: the same plan, spelled two ways, sharing no
+useful substring.
+
 ### 2026-08 — The lifetime product was created with a type no store accepts
 
 With the naming collision out of the way the seed got as far as the lifetime

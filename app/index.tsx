@@ -511,7 +511,7 @@ export default function ScrollStitchScreen() {
     customerInfoIsLoading,
     refetchCustomerInfo,
     annualPackage,
-    isAnnualSubscriber,
+    hasAnnualOrLifetime,
     purchase,
     isPurchasing,
   } = useSubscription();
@@ -679,7 +679,7 @@ export default function ScrollStitchScreen() {
       if (
         daysSinceFirstLaunch >= 3 &&
         !winBackShown &&
-        !isAnnualSubscriber &&
+        !hasAnnualOrLifetime &&
         annualPackage
       ) {
         setTimeout(() => setShowWinBack(true), 1200);
@@ -706,7 +706,7 @@ export default function ScrollStitchScreen() {
       recordSuccessfulStitch,
       daysSinceFirstLaunch,
       winBackShown,
-      isAnnualSubscriber,
+      hasAnnualOrLifetime,
       annualPackage,
       reviewPrompted,
       markReviewPrompted,
