@@ -37,6 +37,36 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The seed could not create the plan that replaced the old one
+
+Moving the annual plan to `scrollstitch_pro_yearly` changed the constant but
+never reached RevenueCat: the seed run failed on the first new product with
+`resource_already_exists`, and left the project exactly as it was.
+
+The cause was ordering. A product's display name must be unique within its app,
+and the new yearly product wanted `ScrollStitch Pro Annual` — the name still
+held by the product it was replacing, which the retirement pass does not remove
+until the end of the same run. Creation came first, so it collided every time.
+Because the run died there, nothing after it happened either: no yearly
+product, no lifetime product, no package swap, no retirement. That is why the
+lifetime tier was missing from the offering too — one failure, two features
+silently absent, and a script that reported the error and then exited.
+
+Retired products are now renamed out of the way before anything is created.
+Renaming is the only mutation RevenueCat allows on an existing product, which
+also makes it the only fix that survives the case the retirement pass already
+anticipated: a product with recorded transactions cannot be deleted, so
+deleting it first would not have been enough. A test purchase is all it takes
+to make a product permanent, and the name would have stayed occupied on every
+future run.
+
+The pattern that decides what gets retired now lives in
+`scripts/retiredProducts.ts` with tests in `scripts/__tests__`. It governs
+deletion and the two mistakes are not symmetric — keeping a dead product leaves
+clutter in a dashboard, deleting a live one takes a plan out of the paywall —
+so it is checked against every identifier the project has used, including the
+one-word gap between `…_pro_annual` and `…_pro_yearly`.
+
 ### 2026-08 — The annual plan needs a new identifier
 
 `scrollstitch_pro_annual` was created in App Store Connect as a non-consumable

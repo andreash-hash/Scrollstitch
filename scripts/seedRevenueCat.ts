@@ -18,6 +18,7 @@ import {
   createPackages,
   attachProductsToPackage,
   updateApp,
+  updateProduct,
   detachProductsFromPackage,
   detachProductsFromEntitlement,
   deletePackageFromOffering,
@@ -31,6 +32,7 @@ import {
   type CreateProductData,
   type Duration,
 } from "@replit/revenuecat-sdk";
+import { isRetiredIdentifier, retiredDisplayName } from "./retiredProducts";
 
 const PROJECT_NAME = "ScrollStitch";
 
@@ -208,6 +210,39 @@ async function seedRevenueCat() {
     query: { limit: 100 },
   });
   if (listProductsError) throw new Error("Failed to list products");
+
+  // ── Free the display names the replacements need ──────────────────────────
+  // A display name must be unique within its app. The retired annual holds the
+  // exact name the new yearly product wants, and it is not removed until the
+  // retirement pass at the end of this run — so creating the replacement first
+  // fails with resource_already_exists, and the run dies there, before the
+  // yearly product, the lifetime product, the package swap and the retirement
+  // pass have happened. Moving the name aside first is what lets the run reach
+  // any of them.
+  //
+  // This is also the only step that survives an undeletable product. A product
+  // with recorded transactions cannot be deleted — a test purchase is enough to
+  // earn that — so the retirement pass below may well have to leave it in
+  // place. Renaming is the one mutation RevenueCat allows on a product that
+  // already exists, which makes it the only way to guarantee the name is free
+  // on this run and on every future one.
+  for (const p of existingProducts.items ?? []) {
+    if (!isRetiredIdentifier(p.store_identifier)) continue;
+
+    const renamed = retiredDisplayName(p.display_name, p.store_identifier ?? "product");
+    if (renamed === p.display_name) continue;
+
+    const { error } = await updateProduct({
+      client,
+      path: { project_id: project.id, product_id: p.id },
+      body: { display_name: renamed },
+    });
+    if (error) {
+      console.warn(`Could not rename retired product ${p.store_identifier}:`, error);
+    } else {
+      console.log(`Renamed retired product ${p.store_identifier} -> "${renamed}"`);
+    }
+  }
 
   const ensureProductForApp = async (
     targetApp: App,
@@ -488,8 +523,8 @@ async function seedRevenueCat() {
   //
   // Deliberately narrow: only products whose identifier carries the old app
   // name, or the spent annual identifier, are touched — and only after they
-  // have been detached from everything.
-  const LEGACY_IDENTIFIER = /^scrollsnap|^scrollstitch_pro_annual/i;
+  // have been detached from everything. RETIRED_IDENTIFIER is unit-checked in
+  // scripts/__tests__/retiredProducts.test.ts, because it governs deletion.
   const keepPackages = new Set(["$rc_weekly", "$rc_annual", "$rc_lifetime"]);
 
   const { data: allPackages, error: allPackagesError } = await listPackages({
@@ -525,7 +560,7 @@ async function seedRevenueCat() {
   if (productsNowError) throw new Error("Failed to list products for cleanup");
 
   const legacyProducts = (productsNow.items ?? []).filter((p) =>
-    LEGACY_IDENTIFIER.test(p.store_identifier ?? "")
+    isRetiredIdentifier(p.store_identifier)
   );
 
   if (legacyProducts.length > 0) {
