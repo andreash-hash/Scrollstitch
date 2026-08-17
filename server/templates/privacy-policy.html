@@ -52,6 +52,13 @@
         but do not see your payment card details.
       </li>
       <li>
+        <strong>Notification token.</strong> If you allow notifications, your device is issued an
+        anonymous push token, which we send to our server together with the job so we can tell you
+        when your stitched image is ready. It identifies a device, not a person, and is used for
+        nothing else. Decline the permission and no token is created or sent; the app simply asks
+        you to stay on the screen while it works.
+      </li>
+      <li>
         <strong>No account registration.</strong> ScrollStitch does not require you to create an
         account or provide your name or email address.
       </li>
@@ -86,6 +93,11 @@
       Uploaded frames and generated output files are held in server-side temporary storage for up
       to 30 minutes, then automatically purged. We do not maintain a persistent copy of your video
       or image data.
+    </p>
+    <p>
+      A notification token is kept only for as long as the job it belongs to. Once the notification
+      has been sent, or the job has finished without one, the token is discarded with the rest of
+      the job.
     </p>
 
     <h2>5. Children's Privacy</h2>
