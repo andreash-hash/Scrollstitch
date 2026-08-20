@@ -42,6 +42,17 @@ For the two subscriptions:
   waiting for their next renewal.
 - Add **Localizations** (Display Name + Description) in at least English.
   Display Name is capped at 30 characters, Description at 45.
+
+  **Every product needs its own wording in both fields.** Reusing one
+  description across the plans is rejected under guideline 2.3.2 — "makes it
+  hard for users to identify what they are purchasing." These pass and stay
+  inside the limits:
+
+  | Product | Display Name | Description |
+  |---|---|---|
+  | weekly | `ScrollStitch Pro Weekly` | `Full access, billed weekly. Cancel anytime.` |
+  | yearly | `ScrollStitch Pro Annual` | `A full year of stitching. Best value.` |
+  | lifetime | `ScrollStitch Pro Lifetime` | `Pay once. Keep every feature forever.` |
 - Reference Name must be unique across every product in the app. The burnt ids
   still hold theirs, so use `ScrollStitch Pro Yearly` rather than
   `ScrollStitch Pro Annual`.
@@ -54,11 +65,32 @@ Products in **Ready to Submit** already work in the sandbox, so TestFlight
 testing does not have to wait for review.
 
 ### 1c. Link App Store Connect to RevenueCat
-RevenueCat needs an **App Store Connect API key** to validate receipts server-side:
 
-1. In App Store Connect → **Users and Access** → **Integrations** → **App Store Connect API**.
-2. Create a key with **App Manager** role and download the `.p8` file.
-3. In the RevenueCat dashboard → **Project Settings** → **Apps** → **ScrollStitch iOS** → **App Store Connect API Key**, paste the Issuer ID, Key ID, and upload the `.p8` file.
+Two different keys live on this page and only one of them is required. Getting
+this wrong produces the worst failure mode in the whole setup: the purchase
+succeeds at the store, the money moves, and the entitlement never arrives — so
+the app looks frozen rather than broken.
+
+**Required — In-App Purchase key.** Under StoreKit 2, RevenueCat cannot record
+a transaction without it.
+
+1. App Store Connect → **Users and Access** → **Integrations** → **In-App
+   Purchase**. Not *App Store Connect API*; they are different key types.
+2. Create a key and download the `.p8`. It can only be downloaded once.
+3. Note the **Key ID** next to the key and the **Issuer ID** above the list.
+4. RevenueCat → **Project Settings** → **Apps** → **ScrollStitch iOS** →
+   **In-app purchase key configuration**: upload the `.p8`, paste both IDs, and
+   confirm the bundle id is `com.scrollstitch`.
+
+An In-App Purchase key belongs to the Apple account, not to one app, so a key
+already uploaded for another app can be reused with **Select existing key** —
+and revoking it in App Store Connect breaks every app using it.
+
+**Optional — App Store Connect API key.** Only needed to import products into
+RevenueCat and sync price changes. Nothing about purchases depends on it.
+
+RevenueCat shows a yellow banner naming the missing key when this is wrong; if
+purchases are not granting access, read it before debugging anything else.
 
 ### 1d. Add the Privacy Policy URL
 The hosted privacy policy is served at:
@@ -121,28 +153,13 @@ RevenueCat needs a **Google Play service account** to validate purchases:
 
 ---
 
-## 4. Update `app.json` before submission
+## 4. Bundle identifiers — already settled
 
-Replace the placeholder bundle identifiers with your real ones:
-
-```json
-{
-  "expo": {
-    "ios": {
-      "bundleIdentifier": "com.yourcompany.scrollstitch"
-    },
-    "android": {
-      "package": "com.yourcompany.scrollstitch"
-    }
-  }
-}
-```
-
-Also update `scripts/seedRevenueCat.ts`:
-- `APP_STORE_BUNDLE_ID`
-- `PLAY_STORE_PACKAGE_NAME`
-
-Then re-run `npx tsx scripts/seedRevenueCat.ts` to sync the new identifiers to RevenueCat.
+`com.scrollstitch` is registered with Apple and Google, set in `app.json`, and
+matched by the RevenueCat apps. **Do not change it.** A bundle id is permanent
+once registered, and the App Store matches an uploaded build to an app record
+by bundle id alone — so a change here does not rename anything, it orphans the
+build from the app that holds the subscriptions.
 
 ---
 
