@@ -46,6 +46,7 @@ import {
   formatEta,
 } from "@/lib/eta";
 import { getPushToken } from "@/lib/push";
+import { readableMediaError } from "@/lib/mediaErrors";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -944,7 +945,7 @@ export default function ScrollStitchScreen() {
       await startUpload(filtered);
     } catch (err: any) {
       setStage("error");
-      setErrorMessage(err.message || "Failed to process video");
+      setErrorMessage(readableMediaError(err));
     }
   };
 
@@ -961,19 +962,51 @@ export default function ScrollStitchScreen() {
         sortBy: [MediaLibrary.SortBy.creationTime],
         first: 1,
       });
+
+      // Nothing to grab automatically. That is not necessarily an empty
+      // library: with "Selected Photos" access this query only sees what the
+      // user ticked. Either way the picker is the answer, not a dead end.
       if (!assets.length) {
-        Alert.alert("No videos found", "No screen recordings found in your library.");
+        await pickVideo();
         return;
       }
+
       const asset = assets[0];
-      const info = await MediaLibrary.getAssetInfoAsync(asset);
-      const uri = info.localUri || asset.uri;
+
+      // The shortcut ends here more often than it looks. Under "Optimise
+      // iPhone Storage" the recording lives in iCloud and has no file on the
+      // device, so PhotoKit has to fetch it — and that fetch is what fails on
+      // a weak connection, throwing PHPhotosErrorDomain at the user. Asking it
+      // to download harder is not an option either; shouldDownloadFromNetwork
+      // already defaults to true.
+      //
+      // Fall through to the system picker instead. It downloads iCloud assets
+      // itself, with Apple's own progress UI, and it lets the user point at
+      // the recording they actually meant rather than whatever they filmed
+      // last.
+      let localUri: string | null = null;
+      try {
+        const info = await MediaLibrary.getAssetInfoAsync(asset, {
+          shouldDownloadFromNetwork: true,
+        });
+        // A ph:// reference is not a file. Falling back to asset.uri here used
+        // to push that reference into the thumbnailer, which cannot open it.
+        localUri = info.localUri ?? null;
+      } catch {
+        localUri = null;
+      }
+
+      if (!localUri) {
+        await pickVideo();
+        return;
+      }
+
       const durationMs = (asset.duration || 10) * 1000;
-      const filtered = await processVideoUri(uri, durationMs);
+      const filtered = await processVideoUri(localUri, durationMs);
       await startUpload(filtered);
     } catch (err: any) {
       setStage("error");
-      setErrorMessage(err.message || "Failed to process video");
+      setErrorMessage(readableMediaError(err));
     }
   };
 

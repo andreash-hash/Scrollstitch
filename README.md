@@ -37,6 +37,39 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — A PhotoKit error reached a paying user
+
+The first thing someone saw after subscribing on the App Store build was:
+
+    Processing Failed
+    The operation couldn't be completed. (PHPhotosErrorDomain error 3164.)
+
+Two separate failures, one screen.
+
+The shortcut behind the main button takes the newest video in the library and
+opens it directly. Under "Optimise iPhone Storage" that recording lives in
+iCloud with no file on the device, so PhotoKit has to fetch it first — and on a
+weak connection the fetch fails. There was no flag to turn on:
+`shouldDownloadFromNetwork` already defaults to true, so the download had been
+attempted and had lost.
+
+The dead end was the bug. A failed fetch left the screen with nothing to do,
+and the fallback made it worse: `info.localUri || asset.uri` handed the
+thumbnailer a `ph://` reference, which is an identifier rather than a file.
+Failing to resolve an asset now falls through to the system picker, which
+downloads iCloud assets itself with Apple's progress UI and lets the user point
+at the recording they meant rather than whatever they filmed last. An empty
+result does the same, since "no videos" and "Selected Photos access that
+excludes the recording" are indistinguishable from here.
+
+The second failure is that the raw error was ever rendered. `readableMediaError`
+in `lib/mediaErrors.ts` matches on the error domain — the numeric codes vary and
+Apple documents almost none of them — and says the useful thing instead: the
+recording is probably still in iCloud. Writing the test for it turned up one
+more path to the same screen: an object with no `message` stringified to
+`[object Object]`.
+
+
 ### 2026-08 — The weekly identifier was spent too, and deleting it changed nothing
 
 `scrollstitch_pro_weekly` was also created in App Store Connect as an in-app
