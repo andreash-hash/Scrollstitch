@@ -37,6 +37,34 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The fallback covered one step out of four
+
+The previous entry added a fallback to the system picker and it did not fire.
+The build reached TestFlight, the raw PhotoKit string was gone — so the new
+error copy was live — and the same dead end appeared under a friendlier
+sentence.
+
+The fallback was wrapped around exactly one call, `getAssetInfoAsync`, because
+that was the call named in the error. Three others in the same path talk to
+PhotoKit and can fail the same way: the permission request, the library query,
+and the frame extraction that follows. Any of them threw straight past the
+fallback into the outer catch, which does nothing but render the message.
+
+`resolveLatestRecording` now owns the whole shortcut and returns null for every
+failure in it rather than throwing. Null means "the shortcut cannot deliver",
+and there is one answer to that: open the picker. Extraction is handled
+separately, because a file that resolves and still will not open is also the
+picker's problem, while a failed upload is not — reopening a picker there would
+discard work the user already waited through.
+
+The reason this took two attempts is in `extractFramesFromVideo`. Every frame
+was wrapped in `catch {}`. Dropping a frame that will not render is correct;
+dropping the reason is not, and when a video cannot be read at all, every
+iteration throws the same diagnosis and all of them were discarded. Total
+failure now rethrows the first one, so the cause survives to the screen instead
+of arriving as a count of zero.
+
+
 ### 2026-08 — A PhotoKit error reached a paying user
 
 The first thing someone saw after subscribing on the App Store build was:

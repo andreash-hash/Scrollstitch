@@ -264,6 +264,13 @@ async function extractFramesFromVideo(
   const totalFrames = Math.ceil(durationMs / intervalMs);
   const frameUris: string[] = [];
 
+  // A frame that will not render is normal — a seek past the end, a corrupt
+  // sample — and dropping it is the right call. Dropping the *reason* is not.
+  // Swallowing every failure here is what left "Processing Failed" with nothing
+  // behind it to explain: when a video cannot be read at all, every iteration
+  // throws the same diagnosis and all of them were discarded.
+  let firstFailure: unknown = null;
+
   for (let i = 0; i < totalFrames; i++) {
     const time = i * intervalMs;
     try {
@@ -272,8 +279,17 @@ async function extractFramesFromVideo(
         quality: 0.7,
       });
       frameUris.push(thumb.uri);
-    } catch {}
+    } catch (err) {
+      if (firstFailure === null) firstFailure = err;
+    }
     onProgress(i + 1, totalFrames);
+  }
+
+  // Nothing came out. Hand back why rather than a generic count of zero, so the
+  // caller can tell "this file is not readable" from "this video has no usable
+  // frames" and say something the reader can act on.
+  if (frameUris.length === 0 && firstFailure !== null) {
+    throw firstFailure;
   }
 
   return frameUris;
@@ -949,60 +965,73 @@ export default function ScrollStitchScreen() {
     }
   };
 
-  const pickLatestVideo = async () => {
+  /**
+   * Resolve the newest recording to a file this app can actually open.
+   *
+   * Every step here talks to PhotoKit, and every step can fail on a real phone:
+   * the permission prompt, the library query, and the fetch that materialises an
+   * iCloud asset. Returning null for all of them — rather than throwing — is the
+   * point. The shortcut is a convenience, and a convenience that cannot deliver
+   * should hand over to the picker instead of ending the journey.
+   */
+  const resolveLatestRecording = async (): Promise<{ uri: string; durationMs: number } | null> => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission needed", "Please grant access to your media library.");
-        return;
-      }
+      if (status !== "granted") return null;
+
       const { assets } = await MediaLibrary.getAssetsAsync({
         mediaType: MediaLibrary.MediaType.video,
         sortBy: [MediaLibrary.SortBy.creationTime],
         first: 1,
       });
 
-      // Nothing to grab automatically. That is not necessarily an empty
-      // library: with "Selected Photos" access this query only sees what the
-      // user ticked. Either way the picker is the answer, not a dead end.
-      if (!assets.length) {
-        await pickVideo();
-        return;
-      }
+      // Not necessarily an empty library: under "Selected Photos" this query
+      // only sees what the user ticked.
+      if (!assets.length) return null;
 
       const asset = assets[0];
+      const info = await MediaLibrary.getAssetInfoAsync(asset, {
+        shouldDownloadFromNetwork: true,
+      });
 
-      // The shortcut ends here more often than it looks. Under "Optimise
-      // iPhone Storage" the recording lives in iCloud and has no file on the
-      // device, so PhotoKit has to fetch it — and that fetch is what fails on
-      // a weak connection, throwing PHPhotosErrorDomain at the user. Asking it
-      // to download harder is not an option either; shouldDownloadFromNetwork
-      // already defaults to true.
-      //
-      // Fall through to the system picker instead. It downloads iCloud assets
-      // itself, with Apple's own progress UI, and it lets the user point at
-      // the recording they actually meant rather than whatever they filmed
-      // last.
-      let localUri: string | null = null;
-      try {
-        const info = await MediaLibrary.getAssetInfoAsync(asset, {
-          shouldDownloadFromNetwork: true,
-        });
-        // A ph:// reference is not a file. Falling back to asset.uri here used
-        // to push that reference into the thumbnailer, which cannot open it.
-        localUri = info.localUri ?? null;
-      } catch {
-        localUri = null;
-      }
+      // A ph:// reference is an identifier, not a file. Passing one on is what
+      // put PHPhotosErrorDomain in front of a paying user; without a localUri
+      // there is nothing here worth trying.
+      if (!info.localUri) return null;
 
-      if (!localUri) {
-        await pickVideo();
-        return;
-      }
+      return { uri: info.localUri, durationMs: (asset.duration || 10) * 1000 };
+    } catch {
+      return null;
+    }
+  };
 
-      const durationMs = (asset.duration || 10) * 1000;
-      const filtered = await processVideoUri(localUri, durationMs);
+  const pickLatestVideo = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const latest = await resolveLatestRecording();
+    if (!latest) {
+      await pickVideo();
+      return;
+    }
+
+    // Split deliberately. A failure to read the file is the shortcut's problem
+    // and the picker can still rescue it; a failure to upload is not, and
+    // reopening a picker there would throw away work the user already waited
+    // for.
+    let filtered: string[];
+    try {
+      filtered = await processVideoUri(latest.uri, latest.durationMs);
+    } catch {
+      // It resolved to a path and still would not open — an iCloud placeholder
+      // reporting a local file is the usual cause. Reset first, or the progress
+      // UI stays up behind the picker sheet.
+      setStage("idle");
+      setErrorMessage("");
+      await pickVideo();
+      return;
+    }
+
+    try {
       await startUpload(filtered);
     } catch (err: any) {
       setStage("error");
