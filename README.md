@@ -37,6 +37,37 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Two jobs, one session, and a race to delete each other's frames
+
+A push notification reached a lock screen reading:
+
+    Stitching failed: Input file is missing:
+    /tmp/scrollstitch-sessions/mt8xbwlmss701niv/00000_00025
+
+A job deletes its input frames when it finishes. Correct for one job, fatal for
+two: the first to finish removes the files the second is still reading, and
+Sharp reports it as a missing path — naming a frame the reader never saw, in a
+session that was intact when the run began.
+
+Two runs over one session is not hypothetical. The client posts to
+`/api/process-frames` once, but a POST whose connection drops *after* the
+server accepted it can be retried by the networking layer underneath, and the
+retry is indistinguishable from a fresh request. The same evening produced
+`fetch failed: The network connection was lost` two minutes after an unrelated
+failure, on 5G, which is exactly the condition that produces one.
+
+`sessionJobs` now records which job owns a session's frames. A second request
+for a session already being processed gets the running job's id instead of
+starting a rival over the same files, which is both the safe answer and the
+true one — there really is a job, and it really is running.
+
+The second fix is that the path was ever sent. `readableProcessingError` keeps
+Sharp's message in the server log, where the session id and frame number are
+precisely what is wanted, and sends the reader something in terms of what they
+did. Writing its tests caught the same hole found in `readableMediaError` a day
+earlier: an object with no `message` stringifying to `[object Object]`.
+
+
 ### 2026-08 — The fallback covered one step out of four
 
 The previous entry added a fallback to the system picker and it did not fire.

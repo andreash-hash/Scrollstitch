@@ -15,6 +15,8 @@ import {
   type Seam,
 } from "./video-processor";
 
+import { readableProcessingError } from "./processingErrors";
+
 const privacyPolicyHtml = fs.readFileSync(
   path.resolve(process.cwd(), "server", "templates", "privacy-policy.html"),
   "utf-8"
@@ -176,6 +178,24 @@ interface JobState {
 }
 const jobProgress = new Map<string, JobState>();
 
+/**
+ * Which job owns a session's staged frames, so a session is never processed
+ * twice at once.
+ *
+ * A job deletes its input frames when it finishes. That is correct for one job
+ * and fatal for two: the first to finish removes the files the second is still
+ * reading, and Sharp reports it as "Input file is missing" — a path the caller
+ * never chose, naming a frame they never saw, for a session that was fine when
+ * the run began.
+ *
+ * Two runs over one session is not a hypothetical. The client posts once, but a
+ * POST whose connection drops after the server accepted it can be retried by
+ * the networking layer underneath, and the second request looks exactly like a
+ * fresh one. Handing back the job already running is both the safe answer and
+ * the honest one.
+ */
+const sessionJobs = new Map<string, { jobId: string; frameCount: number }>();
+
 function updateJob(id: string, update: Partial<JobState>) {
   const existing = jobProgress.get(id);
   if (existing) {
@@ -335,6 +355,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let sessionDir: string | null = null;
 
         if (sessionId) {
+          // A run is already underway over these exact files. Starting a second
+          // one would have the two race to delete each other's inputs, so
+          // report the one that exists instead.
+          const owner = sessionJobs.get(sessionId);
+          if (owner && jobProgress.has(owner.jobId)) {
+            return res.json({ jobId: owner.jobId, frameCount: owner.frameCount });
+          }
+
           sessionDir = path.join(sessionsDir, sessionId);
           let staged: string[] = [];
           try {
@@ -369,6 +397,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const pushToken = validPushToken(firstString(req.query.pushToken));
 
         jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
+        if (sessionId) {
+          sessionJobs.set(sessionId, { jobId, frameCount: framePaths.length });
+        }
         res.json({ jobId, frameCount: framePaths.length });
 
         (async () => {
@@ -508,9 +539,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               );
             }
           } catch (err) {
-            const message =
-              err instanceof Error ? err.message : "Processing failed unexpectedly.";
+            // Log the original — the session id and frame number are exactly
+            // what is needed here — and send the reader something they can act
+            // on instead.
             console.error(`Processing error (job ${jobId}):`, err);
+            const message = readableProcessingError(err);
             updateJob(jobId, { stage: "Error", progress: 0, error: message });
             if (pushToken) {
               // Someone who left the app deserves to hear about a failure too,
@@ -528,6 +561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 // already gone (e.g. tmp stitch file was renamed) — ignore
               }
             }
+            if (sessionId) sessionJobs.delete(sessionId);
             if (sessionDir) {
               try {
                 fs.rmSync(sessionDir, { recursive: true, force: true });
