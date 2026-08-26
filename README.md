@@ -37,6 +37,30 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Fetch the recording rather than asking the reader to
+
+Build 8 still failed on some recordings and not others, with the message saying
+the video might be in iCloud. That message was most likely correct. The picker
+has no iCloud option — nothing in `ImagePickerOptions` says "fetch this from
+the network first" — so a recording that is not on the device can come back as
+a file the app cannot read, and the advice was to go and open it in Photos by
+hand.
+
+`MediaLibrary` does have the option, and the picker returns an `assetId` that
+`MediaLibrary` accepts as an `AssetRef`. So a read failure now retries through
+PhotoKit with the download switched on, and only reports failure if that also
+comes back empty. The reader is told what is happening while it runs, because
+a silent wait on a slow connection is its own bug.
+
+**Every failure screen now carries a short error code.** Two builds went into
+fixing the wrong call, and the reason is that a screen naming no step looks
+identical however it got there: the first attempt guarded one call out of four
+and was indistinguishable in a screenshot from having changed nothing. PICK,
+READ, READ2, AUTO-UPLOAD, UPLOAD, TIMEOUT and SERVER each name where the app
+gave up. It costs the reader a line of grey text and removes a whole class of
+guesswork.
+
+
 ### 2026-08 — Two jobs, one session, and a race to delete each other's frames
 
 A push notification reached a lock screen reading:

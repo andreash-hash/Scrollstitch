@@ -538,6 +538,15 @@ export default function ScrollStitchScreen() {
   const [statusText, setStatusText] = useState("");
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  /**
+   * Which step gave up, shown under the message.
+   *
+   * Two builds were spent fixing the wrong call because a failure screen that
+   * names no step is the same screen whatever went wrong: the first fix guarded
+   * one call out of four and looked identical in a screenshot to no fix at all.
+   * A short code costs the reader nothing and ends the guessing.
+   */
+  const [errorCode, setErrorCode] = useState("");
   const [frameCount, setFrameCount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -758,6 +767,7 @@ export default function ScrollStitchScreen() {
         if (Date.now() - startTime > TIMEOUT) {
           cleanupPolling();
           setStage("error");
+          setErrorCode("TIMEOUT");
           setErrorMessage("Processing timed out. Please try a shorter video.");
           return;
         }
@@ -769,6 +779,7 @@ export default function ScrollStitchScreen() {
           if (data.error && data.stage === "Error") {
             cleanupPolling();
             setStage("error");
+            setErrorCode("SERVER");
             setErrorMessage(data.error);
             return;
           }
@@ -826,6 +837,7 @@ export default function ScrollStitchScreen() {
     setStatusText(`Extracting ~${estimatedFrames} frames...`);
     setResult(null);
     setErrorMessage("");
+    setErrorCode("");
 
     const frameUris = await extractFramesFromVideo(
       uri,
@@ -936,11 +948,41 @@ export default function ScrollStitchScreen() {
       stopFakeTick();
       stopEtaTick();
       setStage("error");
-      setErrorMessage(err.message || "Failed to process video");
+      setErrorCode("UPLOAD");
+      setErrorMessage(readableMediaError(err));
+    }
+  };
+
+  /**
+   * Ask PhotoKit for a recording directly, with the iCloud download switched on.
+   *
+   * The picker has no such option — there is nothing in ImagePickerOptions that
+   * says "fetch this from iCloud first" — so a recording that is not on the
+   * device can come back as a file the app cannot read. MediaLibrary does have
+   * the option, and the picker hands back an assetId that MediaLibrary accepts,
+   * which makes this the one way to recover without sending the reader to the
+   * Photos app to do it by hand.
+   *
+   * Returns null whenever that is not possible: no assetId (the picker omits it
+   * under limited-library access), no permission, or the fetch itself failing.
+   */
+  const downloadFromICloud = async (assetId: string | null | undefined): Promise<string | null> => {
+    if (!assetId) return null;
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") return null;
+      setStatusText("Downloading from iCloud...");
+      const info = await MediaLibrary.getAssetInfoAsync(assetId, {
+        shouldDownloadFromNetwork: true,
+      });
+      return info.localUri ?? null;
+    } catch {
+      return null;
     }
   };
 
   const pickVideo = async () => {
+    let pickerResult: ImagePicker.ImagePickerResult;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -948,20 +990,50 @@ export default function ScrollStitchScreen() {
         Alert.alert("Permission needed", "Please grant access to your media library.");
         return;
       }
-      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      pickerResult = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["videos"],
         quality: 1,
         videoMaxDuration: 300,
       });
-      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
-      const asset = pickerResult.assets[0];
-      const rawDuration = asset.duration || 10000;
-      const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
-      const filtered = await processVideoUri(asset.uri, durationMs);
-      await startUpload(filtered);
     } catch (err: any) {
+      // The picker itself failed, before there was anything to open.
       setStage("error");
+      setErrorCode("PICK");
       setErrorMessage(readableMediaError(err));
+      return;
+    }
+
+    if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
+    const asset = pickerResult.assets[0];
+    const rawDuration = asset.duration || 10000;
+    const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
+
+    const run = async (uri: string) => {
+      const filtered = await processVideoUri(uri, durationMs);
+      await startUpload(filtered);
+    };
+
+    try {
+      await run(asset.uri);
+      return;
+    } catch (err: any) {
+      // The picker returned a file that will not open. Before saying so, fetch
+      // the asset properly — this is the case the reader was previously asked
+      // to fix themselves by opening it in Photos.
+      const recovered = await downloadFromICloud(asset.assetId);
+      if (!recovered || recovered === asset.uri) {
+        setStage("error");
+        setErrorCode("READ");
+        setErrorMessage(readableMediaError(err));
+        return;
+      }
+      try {
+        await run(recovered);
+      } catch (retryErr: any) {
+        setStage("error");
+        setErrorCode("READ2");
+        setErrorMessage(readableMediaError(retryErr));
+      }
     }
   };
 
@@ -1027,6 +1099,7 @@ export default function ScrollStitchScreen() {
       // UI stays up behind the picker sheet.
       setStage("idle");
       setErrorMessage("");
+    setErrorCode("");
       await pickVideo();
       return;
     }
@@ -1035,6 +1108,7 @@ export default function ScrollStitchScreen() {
       await startUpload(filtered);
     } catch (err: any) {
       setStage("error");
+      setErrorCode("AUTO-UPLOAD");
       setErrorMessage(readableMediaError(err));
     }
   };
@@ -1174,6 +1248,7 @@ export default function ScrollStitchScreen() {
     setStatusText("");
     setResult(null);
     setErrorMessage("");
+    setErrorCode("");
     setFrameCount(0);
     setIsSaving(false);
     setIsSharing(false);
@@ -1662,6 +1737,9 @@ export default function ScrollStitchScreen() {
               <Feather name="alert-circle" size={40} color={C.danger} />
               <Text style={styles.errorTitle}>Processing Failed</Text>
               <Text style={styles.errorMessage}>{errorMessage}</Text>
+              {errorCode ? (
+                <Text style={styles.errorCode}>{`Error code: ${errorCode}`}</Text>
+              ) : null}
               <Pressable
                 onPress={reset}
                 style={styles.retryButton}
@@ -2198,6 +2276,14 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     textAlign: "center",
     lineHeight: 20,
+  },
+  errorCode: {
+    fontSize: 11,
+    fontFamily: "Archivo_400Regular",
+    color: C.textTertiary,
+    textAlign: "center",
+    marginTop: 6,
+    letterSpacing: 0.5,
   },
   retryButton: {
     flexDirection: "row",
