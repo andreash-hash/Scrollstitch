@@ -495,6 +495,33 @@ async function clientDeduplicateFrames(
 /** How often the countdown is refreshed. */
 const ETA_TICK_MS = 500;
 
+const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
+  mediaTypes: ["videos"],
+  quality: 1,
+};
+
+/**
+ * Ask before re-opening the picker, because the retry costs a second selection.
+ *
+ * Silently reopening a picker the reader just used reads as the app losing
+ * their choice. Saying why first turns the same two taps into a step.
+ */
+function confirmSlowExport(): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      "One more tap",
+      "That recording has been edited or trimmed, so it needs converting before " +
+        "it can be read. Choose it once more and this will take a little longer " +
+        "than usual.",
+      [
+        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+        { text: "Choose again", onPress: () => resolve(true) },
+      ],
+      { cancelable: false }
+    );
+  });
+}
+
 /** "READ" plus Apple's own identifier when the error carries one. */
 function withDetail(step: string, err: unknown): string {
   const detail = technicalErrorCode(err);
@@ -1004,22 +1031,50 @@ export default function ScrollStitchScreen() {
       // like from in here.
       limitedAccess = permResult.accessPrivileges === "limited";
 
-      pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["videos"],
-        quality: 1,
-      });
+      pickerResult = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
     } catch (err: any) {
-      // The picker itself failed, before there was anything to open.
-      setStage("error");
-      setErrorCode(withDetail(limitedAccess ? "PICK-LTD" : "PICK", err));
-      setErrorMessage(
-        limitedAccess
-          ? "ScrollStitch only has access to the photos you have selected, and " +
+      // The picker threw while handing the recording over, after it was chosen.
+      //
+      // Its fast path is the likely reason. With the default passthrough preset
+      // expo-image-picker copies the asset's bytes directly, preferring the
+      // fullSizeVideo resource — the rendered one, which exists precisely when a
+      // recording has been trimmed or edited. Screen recordings get trimmed all
+      // the time, which is what a library where some work and others do not
+      // looks like from in here.
+      //
+      // Any preset other than passthrough skips that path and goes the slower,
+      // correct way, re-rendering the adjustment properly. Only worth paying for
+      // when the quick route has already failed.
+      if (limitedAccess) {
+        setStage("error");
+        setErrorCode(withDetail("PICK-LTD", err));
+        setErrorMessage(
+          "ScrollStitch only has access to the photos you have selected, and " +
             "this recording is not one of them. In Settings > ScrollStitch > Photos, " +
             "choose All Photos, or add this recording to the selection."
-          : readableMediaError(err)
-      );
-      return;
+        );
+        return;
+      }
+
+      const retry = await confirmSlowExport();
+      if (!retry) {
+        setStage("error");
+        setErrorCode(withDetail("PICK", err));
+        setErrorMessage(readableMediaError(err));
+        return;
+      }
+
+      try {
+        pickerResult = await ImagePicker.launchImageLibraryAsync({
+          ...PICKER_OPTIONS,
+          videoExportPreset: ImagePicker.VideoExportPreset.HighestQuality,
+        });
+      } catch (retryErr: any) {
+        setStage("error");
+        setErrorCode(withDetail("PICK2", retryErr));
+        setErrorMessage(readableMediaError(retryErr));
+        return;
+      }
     }
 
     if (pickerResult.canceled || !pickerResult.assets?.[0]) return;

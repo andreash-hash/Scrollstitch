@@ -37,6 +37,39 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Trimmed recordings, and a fast path that cannot carry them
+
+`PICK · PHPhotos-3164`, on a recording sitting on the device, with full photo
+library access. Not iCloud, not limited access — both were checked and both
+were wrong guesses. The answer was in expo-image-picker's own iOS source:
+
+```swift
+if options.videoExportPreset == .passthrough, let assetId = ... {
+  let resource = resources.first(where: { $0.type == .fullSizeVideo })
+              ?? resources.first(where: { $0.type == .video })
+  try await PHAssetResourceManager.default().writeData(for: resource, ...)
+```
+
+`passthrough` is the default, so this path is always taken, and it prefers
+`fullSizeVideo` — the *rendered* resource, which exists precisely when a
+recording has been trimmed or edited. The comment directly above it says as
+much: an adjusted asset makes the photo service re-render a temporary file, and
+this fast path exists to avoid that.
+
+Screen recordings get trimmed constantly. A library where some videos work and
+others do not is exactly what that looks like from inside the app.
+
+Any preset other than `passthrough` skips the fast path and takes the slower
+route that renders the adjustment properly. That is only worth paying for once
+the quick one has failed, so the pick is retried with `HighestQuality` — after
+asking, because silently reopening a picker someone just used reads as the app
+having lost their choice.
+
+Three wrong diagnoses preceded this one, and the difference was not cleverness:
+the first two were guesses about a black box, and this one came from reading
+what the library actually does.
+
+
 ### 2026-08 — PICK, and what the code line bought
 
 The error code shipped in the previous build and answered the question in one
