@@ -37,6 +37,31 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — PICK, and what the code line bought
+
+The error code shipped in the previous build and answered the question in one
+screenshot: `PICK · PHPhotos-3164`. `PICK` means `launchImageLibraryAsync`
+itself threw, before the app held a recording at all — not the extraction, not
+the upload, and not iCloud, which the reader had already ruled out by opening
+the file in Photos and watching it play instantly.
+
+Three builds went into the wrong calls for want of that one line.
+
+The picker failing to export an asset that exists locally points at what the
+app is allowed to read rather than at the file. `granted` is `true` for
+"Selected Photos" as well as "All Photos", and the app treated the two as the
+same thing. Under limited access it may only read the recordings the user
+ticked — and a library where some videos work and others do not is exactly what
+that looks like from inside the app.
+
+`accessPrivileges` is now read alongside `granted`. When it is `limited`, the
+failure says so and names the setting to change instead of offering a generic
+apology, and carries `PICK-LTD` so the next report distinguishes the two.
+
+`videoMaxDuration` is dropped from the picker call. It applies to camera
+recording, not to picking from the library, so it never did anything here.
+
+
 ### 2026-08 — The iCloud diagnosis was wrong
 
 The message said the recording was probably still in iCloud. It was checked

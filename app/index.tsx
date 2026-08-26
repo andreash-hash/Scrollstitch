@@ -989,6 +989,7 @@ export default function ScrollStitchScreen() {
 
   const pickVideo = async () => {
     let pickerResult: ImagePicker.ImagePickerResult;
+    let limitedAccess = false;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -996,16 +997,28 @@ export default function ScrollStitchScreen() {
         Alert.alert("Permission needed", "Please grant access to your media library.");
         return;
       }
+      // granted is true for "Selected Photos" as well as "All Photos", so it
+      // cannot be the whole answer. Under limited access the app may only read
+      // the recordings the user ticked, and everything else fails at export —
+      // which is what a library where some videos work and others do not looks
+      // like from in here.
+      limitedAccess = permResult.accessPrivileges === "limited";
+
       pickerResult = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["videos"],
         quality: 1,
-        videoMaxDuration: 300,
       });
     } catch (err: any) {
       // The picker itself failed, before there was anything to open.
       setStage("error");
-      setErrorCode(withDetail("PICK", err));
-      setErrorMessage(readableMediaError(err));
+      setErrorCode(withDetail(limitedAccess ? "PICK-LTD" : "PICK", err));
+      setErrorMessage(
+        limitedAccess
+          ? "ScrollStitch only has access to the photos you have selected, and " +
+            "this recording is not one of them. In Settings > ScrollStitch > Photos, " +
+            "choose All Photos, or add this recording to the selection."
+          : readableMediaError(err)
+      );
       return;
     }
 
