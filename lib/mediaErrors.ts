@@ -23,11 +23,45 @@ export function readableMediaError(err: unknown): string {
         : "";
 
   if (/PHPhotosErrorDomain/i.test(raw)) {
+    // Deliberately not "this is in iCloud". That was the first guess and it was
+    // wrong: the message shipped, and it appeared for a recording sitting on
+    // the device that played instantly in Photos. State what is known — the
+    // photo library would not hand the file over — and offer iCloud as one
+    // possibility rather than a diagnosis.
     return (
-      "That recording could not be opened. It may still be in iCloud rather " +
-      "than on this device — open it in Photos once to download it, then try again."
+      "This recording could not be read from your photo library. Try selecting " +
+      "it again, or a different one. If it is stored in iCloud, opening it once " +
+      "in Photos may help."
     );
   }
 
   return raw.trim() || "Failed to process video";
+}
+
+/**
+ * A short technical tag for the error screen's code line.
+ *
+ * The friendly message deliberately drops Apple's domain and number, and that
+ * turned out to cost more than it saved: the one screenshot that could have
+ * identified the failure no longer carried the one detail that identifies it.
+ * Keep the sentence readable and put the identifier on its own small line, the
+ * way a support code is meant to work.
+ */
+export function technicalErrorCode(err: unknown): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : "";
+
+  // "…(PHPhotosErrorDomain error 3164.)" -> "PHPhotos-3164"
+  const domain = raw.match(/([A-Za-z]+)ErrorDomain\s+error\s+(-?\d+)/i);
+  if (domain) return `${domain[1]}-${domain[2]}`;
+
+  // Node and RN style: err.code is already the identifier.
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && code.trim()) return code.trim();
+
+  return "";
 }

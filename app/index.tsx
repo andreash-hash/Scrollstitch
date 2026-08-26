@@ -46,7 +46,7 @@ import {
   formatEta,
 } from "@/lib/eta";
 import { getPushToken } from "@/lib/push";
-import { readableMediaError } from "@/lib/mediaErrors";
+import { readableMediaError, technicalErrorCode } from "@/lib/mediaErrors";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -494,6 +494,12 @@ async function clientDeduplicateFrames(
 
 /** How often the countdown is refreshed. */
 const ETA_TICK_MS = 500;
+
+/** "READ" plus Apple's own identifier when the error carries one. */
+function withDetail(step: string, err: unknown): string {
+  const detail = technicalErrorCode(err);
+  return detail ? `${step} · ${detail}` : step;
+}
 
 function formatRenewalDate(dateString: string | null | undefined): string {
   if (!dateString) return "—";
@@ -948,7 +954,7 @@ export default function ScrollStitchScreen() {
       stopFakeTick();
       stopEtaTick();
       setStage("error");
-      setErrorCode("UPLOAD");
+      setErrorCode(withDetail("UPLOAD", err));
       setErrorMessage(readableMediaError(err));
     }
   };
@@ -998,7 +1004,7 @@ export default function ScrollStitchScreen() {
     } catch (err: any) {
       // The picker itself failed, before there was anything to open.
       setStage("error");
-      setErrorCode("PICK");
+      setErrorCode(withDetail("PICK", err));
       setErrorMessage(readableMediaError(err));
       return;
     }
@@ -1023,7 +1029,7 @@ export default function ScrollStitchScreen() {
       const recovered = await downloadFromICloud(asset.assetId);
       if (!recovered || recovered === asset.uri) {
         setStage("error");
-        setErrorCode("READ");
+        setErrorCode(withDetail("READ", err));
         setErrorMessage(readableMediaError(err));
         return;
       }
@@ -1031,7 +1037,7 @@ export default function ScrollStitchScreen() {
         await run(recovered);
       } catch (retryErr: any) {
         setStage("error");
-        setErrorCode("READ2");
+        setErrorCode(withDetail("READ2", retryErr));
         setErrorMessage(readableMediaError(retryErr));
       }
     }
@@ -1108,7 +1114,7 @@ export default function ScrollStitchScreen() {
       await startUpload(filtered);
     } catch (err: any) {
       setStage("error");
-      setErrorCode("AUTO-UPLOAD");
+      setErrorCode(withDetail("AUTO-UPLOAD", err));
       setErrorMessage(readableMediaError(err));
     }
   };

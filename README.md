@@ -37,6 +37,27 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The iCloud diagnosis was wrong
+
+The message said the recording was probably still in iCloud. It was checked
+against a failing video in Photos: no cloud badge, no download, plays
+instantly. The file is on the device, and the app was confidently telling
+people something untrue about their own library.
+
+So the message now states only what is known — the photo library would not hand
+the file over — and offers iCloud as one possibility rather than the diagnosis.
+
+The deeper mistake was hiding Apple's error number. `readableMediaError` was
+written to keep `PHPhotosErrorDomain error 3164` off a paying user's screen,
+which is right, but it dropped the number entirely — and that number is the one
+thing that identifies which failure this is. A build cycle went into guessing
+what the sentence had erased.
+
+`technicalErrorCode` puts it back where it belongs: the sentence stays
+readable, and the identifier goes on the small grey code line next to the step
+that failed, as `READ · PHPhotos-3164`. That is what a support code is for.
+
+
 ### 2026-08 — Fetch the recording rather than asking the reader to
 
 Build 8 still failed on some recordings and not others, with the message saying
