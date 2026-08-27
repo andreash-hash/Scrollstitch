@@ -501,6 +501,29 @@ const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
 };
 
 /**
+ * Offer the fix while it is still cheap — before a recording has been chosen.
+ *
+ * Continuing is a real option, not a formality: a recording inside the selected
+ * set works fine, and someone who deliberately shares a few photos with an app
+ * should not be forced to widen that to use it.
+ */
+function confirmLimitedAccess(): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      "Limited photo access",
+      "ScrollStitch can only open the photos you have selected. The picker will " +
+        "still show everything, but recordings outside your selection cannot be " +
+        "read.",
+      [
+        { text: "Pick anyway", style: "cancel", onPress: () => resolve(false) },
+        { text: "Open Settings", onPress: () => resolve(true) },
+      ],
+      { cancelable: false }
+    );
+  });
+}
+
+/**
  * Ask before re-opening the picker, because the retry costs a second selection.
  *
  * Silently reopening a picker the reader just used reads as the app losing
@@ -570,6 +593,8 @@ export default function ScrollStitchScreen() {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [result, setResult] = useState<ProcessingResult | null>(null);
+  /** Limited-access notice is worth saying once a launch, not once a pick. */
+  const limitedNoticeShownRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState("");
   /**
    * Which step gave up, shown under the message.
@@ -1031,6 +1056,21 @@ export default function ScrollStitchScreen() {
       // like from in here.
       limitedAccess = permResult.accessPrivileges === "limited";
 
+      // Say it before the picker, not after. The picker shows the whole
+      // library whatever the app is allowed to read, so under limited access
+      // it happily offers recordings that cannot then be handed over — and
+      // finding that out *after* choosing one reads as the app breaking rather
+      // than as a setting to change. Once per launch; a warning repeated on
+      // every pick becomes noise the reader learns to dismiss.
+      if (limitedAccess && !limitedNoticeShownRef.current) {
+        limitedNoticeShownRef.current = true;
+        const openSettings = await confirmLimitedAccess();
+        if (openSettings) {
+          Linking.openSettings();
+          return;
+        }
+      }
+
       pickerResult = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
     } catch (err: any) {
       // The picker threw while handing the recording over, after it was chosen.
@@ -1108,82 +1148,6 @@ export default function ScrollStitchScreen() {
         setErrorCode(withDetail("READ2", retryErr));
         setErrorMessage(readableMediaError(retryErr));
       }
-    }
-  };
-
-  /**
-   * Resolve the newest recording to a file this app can actually open.
-   *
-   * Every step here talks to PhotoKit, and every step can fail on a real phone:
-   * the permission prompt, the library query, and the fetch that materialises an
-   * iCloud asset. Returning null for all of them — rather than throwing — is the
-   * point. The shortcut is a convenience, and a convenience that cannot deliver
-   * should hand over to the picker instead of ending the journey.
-   */
-  const resolveLatestRecording = async (): Promise<{ uri: string; durationMs: number } | null> => {
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") return null;
-
-      const { assets } = await MediaLibrary.getAssetsAsync({
-        mediaType: MediaLibrary.MediaType.video,
-        sortBy: [MediaLibrary.SortBy.creationTime],
-        first: 1,
-      });
-
-      // Not necessarily an empty library: under "Selected Photos" this query
-      // only sees what the user ticked.
-      if (!assets.length) return null;
-
-      const asset = assets[0];
-      const info = await MediaLibrary.getAssetInfoAsync(asset, {
-        shouldDownloadFromNetwork: true,
-      });
-
-      // A ph:// reference is an identifier, not a file. Passing one on is what
-      // put PHPhotosErrorDomain in front of a paying user; without a localUri
-      // there is nothing here worth trying.
-      if (!info.localUri) return null;
-
-      return { uri: info.localUri, durationMs: (asset.duration || 10) * 1000 };
-    } catch {
-      return null;
-    }
-  };
-
-  const pickLatestVideo = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const latest = await resolveLatestRecording();
-    if (!latest) {
-      await pickVideo();
-      return;
-    }
-
-    // Split deliberately. A failure to read the file is the shortcut's problem
-    // and the picker can still rescue it; a failure to upload is not, and
-    // reopening a picker there would throw away work the user already waited
-    // for.
-    let filtered: string[];
-    try {
-      filtered = await processVideoUri(latest.uri, latest.durationMs);
-    } catch {
-      // It resolved to a path and still would not open — an iCloud placeholder
-      // reporting a local file is the usual cause. Reset first, or the progress
-      // UI stays up behind the picker sheet.
-      setStage("idle");
-      setErrorMessage("");
-    setErrorCode("");
-      await pickVideo();
-      return;
-    }
-
-    try {
-      await startUpload(filtered);
-    } catch (err: any) {
-      setStage("error");
-      setErrorCode(withDetail("AUTO-UPLOAD", err));
-      setErrorMessage(readableMediaError(err));
     }
   };
 
@@ -1484,38 +1448,22 @@ export default function ScrollStitchScreen() {
 
             <Animated.View style={buttonAnimStyle}>
               <Pressable
-                onPress={Platform.OS === "web" ? pickVideo : pickLatestVideo}
+                onPress={pickVideo}
                 onPressIn={() => { buttonScale.value = withSpring(0.96); }}
                 onPressOut={() => { buttonScale.value = withSpring(1); }}
                 style={styles.pickButton}
                 accessibilityRole="button"
-                accessibilityLabel={
-                  Platform.OS === "web" ? "Pick a screen recording" : "Use latest recording"
-                }
+                accessibilityLabel="Pick a screen recording"
                 accessibilityHint="Extracts frames and stitches them into one long screenshot"
               >
                 <View
                   style={styles.pickButtonGradient}
                 >
-                  <Feather name={Platform.OS === "web" ? "upload" : "zap"} size={22} color="#f3f2f2" />
-                  <Text style={styles.pickButtonText}>
-                    {Platform.OS === "web" ? "Pick a Screen Recording" : "Use Latest Recording"}
-                  </Text>
+                  <Feather name="upload" size={22} color="#f3f2f2" />
+                  <Text style={styles.pickButtonText}>Pick a Screen Recording</Text>
                 </View>
               </Pressable>
             </Animated.View>
-
-            {Platform.OS !== "web" && (
-              <Pressable
-                onPress={pickVideo}
-                style={styles.secondaryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Pick from library"
-              >
-                <Feather name="folder" size={18} color={C.accent} />
-                <Text style={styles.secondaryButtonText}>Pick from Library</Text>
-              </Pressable>
-            )}
 
             <Pressable
               onPress={() => setShowSettings((v) => !v)}
@@ -2531,25 +2479,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
-  },
-  secondaryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 13,
-    borderRadius: 0,
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: C.border,
-    marginBottom: 12,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontFamily: "Archivo_800ExtraBold",
-    color: C.text,
-    letterSpacing: 0.02,
-    textTransform: "uppercase",
   },
   settingsToggle: {
     flexDirection: "row",

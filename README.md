@@ -37,6 +37,29 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The shortcut goes, and the access warning moves earlier
+
+"Use Latest Recording" is gone. One button now, and it opens the picker —
+which is what everyone expects from an app that wants a video, and what the
+secondary "Pick from Library" button was already offering underneath it.
+
+Removing it also removes where several of this week's failures lived. The
+shortcut read the library itself through `MediaLibrary`, and that is the only
+reason limited photo access stayed invisible for so long: under "Selected
+Photos" the query returns *only* the ticked assets, so the newest recording it
+could see was always one the app was allowed to read. The conflict could not
+occur. Adding the fallback to the system picker is what made it reachable —
+PHPicker shows the whole library whatever the app has been granted — so the
+failure was not old and newly surfaced, it was newly built.
+
+The limited-access warning now comes before the picker rather than after a
+recording has been chosen. It says the picker will show everything and that
+recordings outside the selection cannot be read, and offers Settings.
+Continuing is a real option: a recording inside the selected set works, and
+someone who deliberately shares a few photos with an app should not have to
+widen that to use it. Once per launch — a warning on every pick is noise.
+
+
 ### 2026-08 — Trimmed recordings, and a fast path that cannot carry them
 
 `PICK · PHPhotos-3164`, on a recording sitting on the device, with full photo
