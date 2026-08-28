@@ -817,20 +817,25 @@ export default function ScrollStitchScreen() {
   const pollProgress = useCallback(
     (jobId: string) => {
       const baseUrl = getApiUrl();
-      const startTime = Date.now();
+      // Measured from the last sign of life, not from the start. A long
+      // recording on a busy server can legitimately take longer than five
+      // minutes, and a fixed wall throws away a job that was still working,
+      // while one that is genuinely stuck stops reporting — which this catches.
+      let lastProgressAt = Date.now();
+      let lastSeen = "";
       // Assigning over a live pollRef loses the handle to it, and a poll nobody
       // can stop keeps finding the job Complete: it vibrates every 500ms and
       // puts the stage back to "complete", so Process Another Video appears to
       // bounce the reader straight back to the result they just left.
       cleanupPolling();
 
-      const TIMEOUT = 5 * 60 * 1000;
+      const STALL_TIMEOUT = 5 * 60 * 1000;
       pollRef.current = setInterval(async () => {
-        if (Date.now() - startTime > TIMEOUT) {
+        if (Date.now() - lastProgressAt > STALL_TIMEOUT) {
           cleanupPolling();
           setStage("error");
           setErrorCode("TIMEOUT");
-          setErrorMessage("Processing timed out. Please try a shorter video.");
+          setErrorMessage("Processing stopped responding. Please try again.");
           return;
         }
         try {
@@ -848,6 +853,13 @@ export default function ScrollStitchScreen() {
 
           // The server reports real progress (0..1) plus a per-frame counter
           // in `detail` — map it into the client's processing window.
+          // Any change at all counts as the job still being alive.
+          const seen = `${data.stage ?? ""}|${data.progress ?? ""}|${data.detail ?? ""}`;
+          if (seen !== lastSeen) {
+            lastSeen = seen;
+            lastProgressAt = Date.now();
+          }
+
           if (data.stage !== "Complete") {
             const label = STAGE_LABELS[data.stage] ?? data.stage ?? "Processing...";
             setStatusText(data.detail ? `${label} (${data.detail})` : label);
@@ -960,6 +972,32 @@ export default function ScrollStitchScreen() {
       const expoFetch = isWeb ? null : (await import("expo/fetch")).fetch;
       const ExpoFile = isWeb ? null : (await import("expo-file-system")).File;
 
+      const doFetch = isWeb ? fetch : expoFetch!;
+
+      // A phone loses its connection mid-upload as a matter of course, and one
+      // dropped batch used to end the whole job — which is what the batching
+      // was for in the first place. The server names a chunk's frames from that
+      // request alone, so resending one replaces it rather than doubling it.
+      const postWithRetry = async (url: string, buildBody?: () => Promise<FormData>) => {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) {
+            // Rebuilt per attempt: a FormData that has already been consumed by
+            // a failed send is not safe to hand over a second time.
+            await new Promise((r) => setTimeout(r, 700 * attempt));
+          }
+          try {
+            const body = buildBody ? await buildBody() : undefined;
+            const res = await doFetch(url, { method: "POST", ...(body ? { body } : {}) });
+            if (!res.ok) throw new Error(await res.text());
+            return res;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        throw lastError;
+      };
+
       for (let b = 0; b < batches.length; b++) {
         setStatusText(`Uploading batch ${b + 1} of ${batches.length}...`);
 
@@ -967,19 +1005,18 @@ export default function ScrollStitchScreen() {
         chunkUrl.searchParams.set("sessionId", sessionId);
         chunkUrl.searchParams.set("chunkIndex", String(b));
 
-        const formData = new FormData();
-        for (let i = 0; i < batches[b].length; i++) {
-          if (isWeb) {
-            const blob = await (await fetch(batches[b][i])).blob();
-            formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
-          } else {
-            formData.append("frames", new ExpoFile!(batches[b][i]) as any);
+        await postWithRetry(chunkUrl.toString(), async () => {
+          const formData = new FormData();
+          for (let i = 0; i < batches[b].length; i++) {
+            if (isWeb) {
+              const blob = await (await fetch(batches[b][i])).blob();
+              formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
+            } else {
+              formData.append("frames", new ExpoFile!(batches[b][i]) as any);
+            }
           }
-        }
-
-        const doFetch = isWeb ? fetch : expoFetch!;
-        const res = await doFetch(chunkUrl.toString(), { method: "POST", body: formData });
-        if (!res.ok) throw new Error(await res.text());
+          return formData;
+        });
 
         advanceProgress(0.26 + ((b + 1) / batches.length) * 0.07);
       }
@@ -996,9 +1033,9 @@ export default function ScrollStitchScreen() {
         setCanLeaveApp(true);
       }
 
-      const doFetch = isWeb ? fetch : expoFetch!;
-      const startRes = await doFetch(processUrl.toString(), { method: "POST" });
-      if (!startRes.ok) throw new Error(await startRes.text());
+      // Safe to retry: the server hands back the job already running for a
+      // session rather than starting a second one over the same frames.
+      const startRes = await postWithRetry(processUrl.toString());
       const data = await startRes.json();
 
       stopFakeTick();

@@ -133,15 +133,23 @@ const chunkStorage = multer.diskStorage({
   },
   filename: (req, _file, cb) => {
     // Frames must stitch in capture order, and readdir gives us lexical order —
-    // so the batch index and position within it are both zero-padded.
-    const chunk = String((req as Request).query.chunkIndex ?? "0")
+    // so the batch index and the position within it are both zero-padded.
+    //
+    // Both numbers are derived from this request alone. A counter shared across
+    // the process would make a name depend on how many frames the server had
+    // handled since it last restarted, which is a poor thing to build a
+    // filename on and a worse thing to retry against: a chunk resent after a
+    // dropped connection would land beside its own half-written first attempt
+    // instead of replacing it, and the stitch would contain the same frames
+    // twice. Named this way a retry overwrites exactly what it is retrying.
+    const r = req as Request & { _frameSeq?: number };
+    const chunk = String(r.query.chunkIndex ?? "0")
       .replace(/\D/g, "")
       .padStart(5, "0");
-    const seq = String(chunkSeq++).padStart(5, "0");
-    cb(null, `${chunk}_${seq}`);
+    r._frameSeq = (r._frameSeq ?? -1) + 1;
+    cb(null, `${chunk}_${String(r._frameSeq).padStart(5, "0")}`);
   },
 });
-let chunkSeq = 0;
 
 const chunkUpload = multer({
   storage: chunkStorage,

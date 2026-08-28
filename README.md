@@ -37,6 +37,36 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — A dropped batch should not lose the whole job
+
+Two runs, two failures: one `UPLOAD`, one `TIMEOUT`. Both are what a phone on a
+mobile network does to a long transfer, and neither was survivable.
+
+The comment above `UPLOAD_BATCH_SIZE` says the batches are "small enough to
+retry cheaply". The retry was never written. A single dropped connection ended
+the upload and the job with it.
+
+Writing one meant fixing the server first. A chunk's frames were named from a
+counter shared across the whole process, so a resent chunk landed *beside* its
+half-written first attempt rather than replacing it, and the stitch would have
+contained the same frames twice. Both numbers in a frame's name now come from
+its own request, which makes resending a chunk idempotent — and stops a
+filename depending on how many frames the server had handled since it last
+restarted. Each batch gets three attempts with a widening pause, rebuilding its
+body each time, because a FormData already consumed by a failed send is not
+safe to hand over again.
+
+The trigger is retried too, which is only safe because of the session-ownership
+fix a few builds back: a second request for a session already being processed
+gets the running job rather than starting a rival over the same frames.
+
+`TIMEOUT` was measured from the start of processing, so a long recording on a
+busy server hit a five-minute wall while it was still working. It measures the
+gap since the last sign of life now — any change in stage, progress or frame
+count resets it — which still catches a job that has genuinely stopped, and no
+longer throws away one that has not.
+
+
 ### 2026-08 — The silent gap where the picker used to be
 
 Still three taps to start a stitch, and after the alert was removed, no longer
