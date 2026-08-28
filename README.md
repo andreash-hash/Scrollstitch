@@ -37,6 +37,28 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — The silent gap where the picker used to be
+
+Still three taps to start a stitch, and after the alert was removed, no longer
+any explanation for them. That last part is what gave it away: nothing was
+failing. There was no error to report because there was no error.
+
+`launchImageLibraryAsync` resolves only once iOS has finished exporting the
+chosen recording, and the picker dismisses well before that. In between, the
+app is doing nothing and `stage` is still `"idle"` — so the start screen slides
+back into view with the pick button on it, exactly as though the tap had
+missed. Tap it again, and a second export starts behind the first. Three taps,
+and the third one appearing to work is only the first one finishing.
+
+Every theory before this assumed something was throwing. Nothing was.
+
+There is now a `"preparing"` stage, entered *before* the picker is presented so
+the screen underneath has already changed by the time it slides away, and a
+re-entry guard so a second pick cannot start on top of the first. The guard
+clears in a `finally`: a path that forgets to clear it would leave the button
+dead for the rest of the session, which is worse than the bug being fixed.
+
+
 ### 2026-08 — Three symptoms, one leaked interval
 
 Reported as three bugs: the phone vibrating without stopping once a result

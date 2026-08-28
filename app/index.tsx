@@ -56,6 +56,11 @@ const C = Colors.dark;
 
 type ProcessingStage =
   | "idle"
+  // The picker has dismissed and iOS is still exporting the recording. Nothing
+  // of ours is running yet, but the screen must not look untouched: leaving it
+  // on "idle" puts the pick button back under the closing picker, and a reader
+  // who sees the button again taps it again.
+  | "preparing"
   | "extracting"
   | "filtering"
   | "uploading"
@@ -584,6 +589,8 @@ export default function ScrollStitchScreen() {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [result, setResult] = useState<ProcessingResult | null>(null);
+  /** True while a pick is being exported by iOS; blocks a second one. */
+  const pickInFlightRef = useRef(false);
   /** Limited-access notice is worth saying once a launch, not once a pick. */
   const limitedNoticeShownRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -1036,7 +1043,7 @@ export default function ScrollStitchScreen() {
     }
   };
 
-  const pickVideo = async () => {
+  const runPickVideo = async () => {
     let pickerResult: ImagePicker.ImagePickerResult;
     let limitedAccess = false;
     try {
@@ -1068,6 +1075,15 @@ export default function ScrollStitchScreen() {
         }
       }
 
+      // Set before presenting, not after: the picker covers the app while it is
+      // open, so the screen underneath has to have changed already by the time
+      // it slides away. Otherwise the export happens behind an idle screen.
+      setStage("preparing");
+      setStatusText("Preparing recording...");
+      setProgress(0);
+      setErrorMessage("");
+      setErrorCode("");
+
       pickerResult = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
     } catch (err: any) {
       // The picker threw while handing the recording over, after it was chosen.
@@ -1083,7 +1099,11 @@ export default function ScrollStitchScreen() {
       return;
     }
 
-    if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
+    if (pickerResult.canceled || !pickerResult.assets?.[0]) {
+      setStage("idle");
+      setStatusText("");
+      return;
+    }
     const asset = pickerResult.assets[0];
     const rawDuration = asset.duration || 10000;
     const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
@@ -1118,6 +1138,26 @@ export default function ScrollStitchScreen() {
     // startUpload reports its own failures and does not rethrow, so wrapping it
     // here would only add a catch that never runs.
     await startUpload(filtered);
+  };
+
+  /**
+   * One pick at a time.
+   *
+   * iOS exports the recording after the picker dismisses, and nothing of ours
+   * runs during that export — so without a guard the reader sees the start
+   * screen again, assumes the tap missed, and starts a second pick on top of
+   * the first. The flag is cleared in a finally rather than on each exit,
+   * because a path that forgets to clear it leaves the button dead for the rest
+   * of the session, which is worse than the bug it is fixing.
+   */
+  const pickVideo = async () => {
+    if (pickInFlightRef.current) return;
+    pickInFlightRef.current = true;
+    try {
+      await runPickVideo();
+    } finally {
+      pickInFlightRef.current = false;
+    }
   };
 
   // Web: MediaLibrary/Sharing don't exist in the browser (and RN-web's Alert
@@ -1267,7 +1307,11 @@ export default function ScrollStitchScreen() {
   statusTextRef.current = statusText;
 
   const isProcessing =
-    stage === "extracting" || stage === "filtering" || stage === "uploading" || stage === "processing";
+    stage === "preparing" ||
+    stage === "extracting" ||
+    stage === "filtering" ||
+    stage === "uploading" ||
+    stage === "processing";
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
