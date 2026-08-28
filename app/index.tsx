@@ -498,6 +498,19 @@ const ETA_TICK_MS = 500;
 const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
   mediaTypes: ["videos"],
   quality: 1,
+  // Any preset other than the default passthrough skips expo-image-picker's
+  // fast path, which copies the asset's bytes directly and prefers the
+  // fullSizeVideo resource — the rendered one, present exactly when a recording
+  // has been trimmed. Screen recordings are trimmed constantly, so that path
+  // fails often enough that avoiding it up front beats recovering from it.
+  //
+  // Recovering meant re-opening the picker, because the asset is gone once the
+  // export fails, and it cost more than the transcode it saved: an alert, a
+  // second selection, and a picker presented while that alert was still
+  // dismissing — which iOS drops, so the second pick did nothing and a third
+  // was needed. The frames are downscaled to thumbnails anyway, so the quality
+  // this preset costs is quality the app discards.
+  videoExportPreset: ImagePicker.VideoExportPreset.HighestQuality,
 };
 
 /**
@@ -517,28 +530,6 @@ function confirmLimitedAccess(): Promise<boolean> {
       [
         { text: "Pick anyway", style: "cancel", onPress: () => resolve(false) },
         { text: "Open Settings", onPress: () => resolve(true) },
-      ],
-      { cancelable: false }
-    );
-  });
-}
-
-/**
- * Ask before re-opening the picker, because the retry costs a second selection.
- *
- * Silently reopening a picker the reader just used reads as the app losing
- * their choice. Saying why first turns the same two taps into a step.
- */
-function confirmSlowExport(): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(
-      "One more tap",
-      "That recording has been edited or trimmed, so it needs converting before " +
-        "it can be read. Choose it once more and this will take a little longer " +
-        "than usual.",
-      [
-        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-        { text: "Choose again", onPress: () => resolve(true) },
       ],
       { cancelable: false }
     );
@@ -820,6 +811,12 @@ export default function ScrollStitchScreen() {
     (jobId: string) => {
       const baseUrl = getApiUrl();
       const startTime = Date.now();
+      // Assigning over a live pollRef loses the handle to it, and a poll nobody
+      // can stop keeps finding the job Complete: it vibrates every 500ms and
+      // puts the stage back to "complete", so Process Another Video appears to
+      // bounce the reader straight back to the result they just left.
+      cleanupPolling();
+
       const TIMEOUT = 5 * 60 * 1000;
       pollRef.current = setInterval(async () => {
         if (Date.now() - startTime > TIMEOUT) {
@@ -1074,47 +1071,16 @@ export default function ScrollStitchScreen() {
       pickerResult = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
     } catch (err: any) {
       // The picker threw while handing the recording over, after it was chosen.
-      //
-      // Its fast path is the likely reason. With the default passthrough preset
-      // expo-image-picker copies the asset's bytes directly, preferring the
-      // fullSizeVideo resource — the rendered one, which exists precisely when a
-      // recording has been trimmed or edited. Screen recordings get trimmed all
-      // the time, which is what a library where some work and others do not
-      // looks like from in here.
-      //
-      // Any preset other than passthrough skips that path and goes the slower,
-      // correct way, re-rendering the adjustment properly. Only worth paying for
-      // when the quick route has already failed.
-      if (limitedAccess) {
-        setStage("error");
-        setErrorCode(withDetail("PICK-LTD", err));
-        setErrorMessage(
-          "ScrollStitch only has access to the photos you have selected, and " +
+      setStage("error");
+      setErrorCode(withDetail(limitedAccess ? "PICK-LTD" : "PICK", err));
+      setErrorMessage(
+        limitedAccess
+          ? "ScrollStitch only has access to the photos you have selected, and " +
             "this recording is not one of them. In Settings > ScrollStitch > Photos, " +
             "choose All Photos, or add this recording to the selection."
-        );
-        return;
-      }
-
-      const retry = await confirmSlowExport();
-      if (!retry) {
-        setStage("error");
-        setErrorCode(withDetail("PICK", err));
-        setErrorMessage(readableMediaError(err));
-        return;
-      }
-
-      try {
-        pickerResult = await ImagePicker.launchImageLibraryAsync({
-          ...PICKER_OPTIONS,
-          videoExportPreset: ImagePicker.VideoExportPreset.HighestQuality,
-        });
-      } catch (retryErr: any) {
-        setStage("error");
-        setErrorCode(withDetail("PICK2", retryErr));
-        setErrorMessage(readableMediaError(retryErr));
-        return;
-      }
+          : readableMediaError(err)
+      );
+      return;
     }
 
     if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
@@ -1122,14 +1088,12 @@ export default function ScrollStitchScreen() {
     const rawDuration = asset.duration || 10000;
     const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
 
-    const run = async (uri: string) => {
-      const filtered = await processVideoUri(uri, durationMs);
-      await startUpload(filtered);
-    };
-
+    // Only the read is retried. Retrying the whole chain ran startUpload twice,
+    // and a second upload starts a second poll — which is how the endless
+    // vibration and the bounced Process Another Video button came about.
+    let filtered: string[];
     try {
-      await run(asset.uri);
-      return;
+      filtered = await processVideoUri(asset.uri, durationMs);
     } catch (err: any) {
       // The picker returned a file that will not open. Before saying so, fetch
       // the asset properly — this is the case the reader was previously asked
@@ -1142,13 +1106,18 @@ export default function ScrollStitchScreen() {
         return;
       }
       try {
-        await run(recovered);
+        filtered = await processVideoUri(recovered, durationMs);
       } catch (retryErr: any) {
         setStage("error");
         setErrorCode(withDetail("READ2", retryErr));
         setErrorMessage(readableMediaError(retryErr));
+        return;
       }
     }
+
+    // startUpload reports its own failures and does not rethrow, so wrapping it
+    // here would only add a catch that never runs.
+    await startUpload(filtered);
   };
 
   // Web: MediaLibrary/Sharing don't exist in the browser (and RN-web's Alert

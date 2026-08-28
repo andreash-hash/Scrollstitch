@@ -37,6 +37,37 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Three symptoms, one leaked interval
+
+Reported as three bugs: the phone vibrating without stopping once a result
+appeared, "Process Another Video" returning the reader straight to the result
+they had just left, and a recording that needed picking three times before
+anything happened.
+
+One line explains the first two.
+
+    pollRef.current = setInterval(...)
+
+Assigning over a live `pollRef` loses the handle to the interval it replaces.
+That poll runs forever, finds the job `Complete` every 500ms, and each tick
+fires the success haptic — the endless vibration — and sets the stage back to
+`complete`, which is why leaving the result screen bounced straight back to it.
+`pollProgress` now clears before it starts.
+
+The second poll came from the retry added a build earlier. It re-ran the whole
+chain — read *and* upload — when only the read was worth attempting twice, so a
+recovered recording uploaded and polled a second time. Only the read is retried
+now, and the upload sits outside it.
+
+The third symptom was the recovery path itself. A failed export loses the
+asset, so retrying meant re-opening the picker: an alert, a second selection,
+and a picker presented while the alert was still dismissing — which iOS drops,
+so the second pick did nothing and a third was needed. The transcode that
+dance was avoiding is now simply done up front with `HighestQuality`. The
+frames get downscaled to thumbnails anyway, so the quality it costs is quality
+the app discards, and the alert and the second selection are gone with it.
+
+
 ### 2026-08 — The shortcut goes, and the access warning moves earlier
 
 "Use Latest Recording" is gone. One button now, and it opens the picker —
