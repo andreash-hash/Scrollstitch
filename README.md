@@ -37,6 +37,33 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — A theory that outlived its evidence
+
+    Failed to transcode picked video
+    → Caused by: Operation Interrupted
+    Error code: PICK · ERR_FAILED_TO_TRANSCODE_VIDEO
+
+That is the re-encode forced on every pick two builds ago, failing. A
+passthrough export cannot be interrupted, because there is nothing to
+interrupt; a full re-encode runs long enough to be, and this one was.
+
+Worth being exact about why it was there. The reasoning was that
+expo-image-picker's passthrough fast path mishandles trimmed recordings, and
+the evidence was a recording that needed picking twice. That double pick has
+since been explained completely — the app was showing its start screen while
+iOS was still exporting, so the second tap was someone reasonably assuming the
+first had missed. Nothing to do with trimming.
+
+The theory lost its evidence and the change stayed, which is how a fix becomes
+a bug. Passthrough is back.
+
+The trimming hypothesis may still be true; it was never actually tested. It is
+also no longer expensive to find out. A failure here reports `PICK` with
+Apple's own code attached, the re-entry guard stops a second pick landing on
+top of the first, and the `preparing` stage means a slow export looks like
+waiting rather than like nothing having happened.
+
+
 ### 2026-08 — A dropped batch should not lose the whole job
 
 Two runs, two failures: one `UPLOAD`, one `TIMEOUT`. Both are what a phone on a

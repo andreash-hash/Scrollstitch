@@ -503,19 +503,20 @@ const ETA_TICK_MS = 500;
 const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
   mediaTypes: ["videos"],
   quality: 1,
-  // Any preset other than the default passthrough skips expo-image-picker's
-  // fast path, which copies the asset's bytes directly and prefers the
-  // fullSizeVideo resource — the rendered one, present exactly when a recording
-  // has been trimmed. Screen recordings are trimmed constantly, so that path
-  // fails often enough that avoiding it up front beats recovering from it.
+  // Passthrough: hand the file over as it is, no re-encode.
   //
-  // Recovering meant re-opening the picker, because the asset is gone once the
-  // export fails, and it cost more than the transcode it saved: an alert, a
-  // second selection, and a picker presented while that alert was still
-  // dismissing — which iOS drops, so the second pick did nothing and a third
-  // was needed. The frames are downscaled to thumbnails anyway, so the quality
-  // this preset costs is quality the app discards.
-  videoExportPreset: ImagePicker.VideoExportPreset.HighestQuality,
+  // This was briefly HighestQuality, to skip a fast path in expo-image-picker
+  // that copies an asset's bytes directly and struggles with recordings that
+  // have been trimmed. The evidence for that theory was a recording needing
+  // two picks — which turned out to be the app showing its start screen while
+  // iOS was still exporting, and nothing to do with trimming at all. The
+  // theory outlived its evidence, and the transcode it justified had a cost of
+  // its own: a re-encode long enough to be interrupted, which is a failure
+  // passthrough simply cannot have.
+  //
+  // If a trimmed recording really does fail here, it now says so precisely —
+  // PICK plus Apple's own code — rather than being guessed at.
+  videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
 };
 
 /**
