@@ -824,6 +824,12 @@ export default function ScrollStitchScreen() {
       // while one that is genuinely stuck stops reporting — which this catches.
       let lastProgressAt = Date.now();
       let lastSeen = "";
+      // The interval callback is async: a tick that outlives its 500ms slot
+      // overlaps the next one, and both can read the same Complete. Clearing
+      // the interval stops future ticks, not one already in flight — so the
+      // completion itself has to be the thing that happens once, or the job
+      // counts twice, buzzes twice, and skews when the win-back is offered.
+      let completed = false;
       // Assigning over a live pollRef loses the handle to it, and a poll nobody
       // can stop keeps finding the job Complete: it vibrates every 500ms and
       // puts the stage back to "complete", so Process Another Video appears to
@@ -845,6 +851,8 @@ export default function ScrollStitchScreen() {
           const data = await res.json();
 
           if (data.error && data.stage === "Error") {
+            if (completed) return;
+            completed = true;
             cleanupPolling();
             setStage("error");
             setErrorCode("SERVER");
@@ -871,6 +879,8 @@ export default function ScrollStitchScreen() {
           }
 
           if (data.stage === "Complete" && data.result) {
+            if (completed) return;
+            completed = true;
             stopFakeTick();
             cleanupPolling();
             setStage("complete");

@@ -580,7 +580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         })();
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Upload failed.";
+        const message = readableProcessingError(err) || "Upload failed.";
         return res.status(500).json({ error: message });
       }
     }
@@ -721,7 +721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dimensions: { width: origWidth, height: newHeight },
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Crop failed.";
+      const message = readableProcessingError(err) || "Crop failed.";
       console.error("Crop error:", err);
       res.status(500).json({ error: message });
     }

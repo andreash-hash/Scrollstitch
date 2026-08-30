@@ -37,6 +37,31 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — A sweep for the same mistakes, before building again
+
+Rather than build straight after the last fix, the codebase was read for the
+classes of bug this week actually produced.
+
+**Completion could fire twice.** The poll's interval callback is `async`, so a
+tick that outlives its 500ms slot overlaps the next one and both can read the
+same `Complete`. Clearing the interval stops future ticks, not one already in
+flight. The result: two success haptics, `recordSuccessfulStitch` counting one
+job as two, and the win-back and review prompts triggering earlier than they
+should. Both terminal branches now run once.
+
+**Internal strings still reached the client from two server routes.** Upload
+and crop failures were sending `err.message` straight through — the same
+mistake as the Sharp path that arrived on a lock screen. Both go through
+`readableProcessingError` now.
+
+Checked and found sound: the other two intervals both guard against
+double-starting; `saveToPhotos`, `sharePdf` and `applyCrop` all clear their busy
+flags in a `finally`, so a failure cannot leave a button dead; the poll's empty
+`catch` is correct now that a stall is measured separately; and the swallowed
+`AsyncStorage` writes set in-memory state first, so a failed write costs
+persistence between launches and nothing in the session.
+
+
 ### 2026-08 — A theory that outlived its evidence
 
     Failed to transcode picked video
