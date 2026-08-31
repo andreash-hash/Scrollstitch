@@ -37,6 +37,23 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — 1.0.1 is spent
+
+Build 16 built cleanly from `af43aa9` and the submission was rejected:
+
+    SUBMISSION_SERVICE_IOS_OLD_APP_VERSION
+    You've already submitted this version of the app.
+
+1.0.1 has been through App Store Connect as a completed submission, and Apple
+will not take it again. The version string is baked into the binary as
+`CFBundleShortVersionString`, so build 16 cannot be re-submitted under another
+number — it needs a new build. The app is 1.0.2 now.
+
+Familiar shape: a store identifier that is used up the moment it is used.
+Product ids taught this twice already, and `autoIncrement` only moves the build
+number, which is enough for TestFlight and never enough for a submission.
+
+
 ### 2026-08 — A sweep for the same mistakes, before building again
 
 Rather than build straight after the last fix, the codebase was read for the
