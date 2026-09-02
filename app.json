@@ -23,7 +23,10 @@
       },
       "entitlements": {
         "aps-environment": "production"
-      }
+      },
+      "associatedDomains": [
+        "applinks:insertaffiliate.link"
+      ]
     },
     "android": {
       "package": "com.scrollstitch",

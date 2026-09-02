@@ -37,6 +37,40 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-08 — Affiliate attribution, hung off RevenueCat rather than the purchase
+
+Insert Affiliate is in. The integration is deliberately shallow: the SDK never
+touches a transaction. It resolves which affiliate link brought someone here,
+and that identifier is handed to RevenueCat as an *attribute*
+(`Purchases.setAttributes` plus `syncAttributesAndOfferingsIfNeeded`), with the
+attribution settled server-side by a RevenueCat webhook.
+
+Nothing in the paywall, the `pro` entitlement or the purchase flow changes. Two
+systems both deciding who owns a subscription is a class of bug this project has
+spent enough time on already.
+
+Three choices worth recording:
+
+**Clipboard reading is off.** The SDK can recover attributions by reading the
+clipboard on launch, which trips iOS's paste banner for every person who opens
+the app. A handful of recovered referrals is a poor trade for that.
+
+**A missing company code disables the feature rather than failing.** It reads
+from `EXPO_PUBLIC_INSERT_AFFILIATE_COMPANY_CODE`, and without one the app logs
+a line and carries on selling subscriptions. A marketing integration must never
+be able to stop the app starting.
+
+**No AppDelegate edit**, despite the README asking for one. There is no `ios/`
+directory — it is generated at build time — and Expo's own template already
+wires `RCTLinkingManager` for universal links. What was actually needed is
+`associatedDomains` in `app.json`, which is where the link handling comes from.
+
+The privacy policy names Insert Affiliate as a recipient. It was previously
+accurate that data went only to RevenueCat, Apple, Google and legal
+obligations; adding a fourth party without saying so would have made the
+document false, and it is the document the App Store review reads.
+
+
 ### 2026-08 — 1.0.1 is spent
 
 Build 16 built cleanly from `af43aa9` and the submission was rejected:
