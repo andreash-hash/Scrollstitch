@@ -3,6 +3,13 @@ import * as path from "path";
 import * as os from "os";
 import sharp from "sharp";
 
+// Per-frame work that is independent between frames (decoding a signature,
+// probing a frame, writing a cropped copy) is run a few frames at a time.
+// Each sharp call spends nearly all of its time in a native worker thread, so
+// one in flight leaves the other cores idle; the cap keeps the number of live
+// decode buffers bounded regardless of how many frames were uploaded.
+const IO_CONCURRENCY = Math.max(1, Math.min(4, os.cpus().length));
+
 // --- Server dedup ---
 const SIMILARITY_THRESHOLD = 0.93;   // 16×16 perceptual hash (was 8×8 at 0.90)
 const DEDUP_HASH_SIZE = 16;           // 16×16 = 256 pixels (was 8×8=64)
@@ -78,6 +85,37 @@ const MAX_OUTPUT_PIXELS = 200_000_000;   // ~600 MB RGB — refuse absurd output
 
 export type ProgressCallback = (done: number, total: number) => void;
 
+/**
+ * Map `items` through `fn` with at most `limit` calls in flight, preserving
+ * input order in the result.
+ *
+ * `onProgress` fires once per completion, so the counter it reports is
+ * monotonic even though the work itself finishes out of order.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+  onProgress?: ProgressCallback
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  let done = 0;
+
+  const worker = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+      onProgress?.(++done, items.length);
+    }
+  };
+
+  const workers = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+  return results;
+}
+
 interface FrameSignature {
   /** Plain 16×16 greyscale thumbnail. */
   raw: Buffer;
@@ -90,9 +128,16 @@ async function getFrameSignature(
   framePath: string,
   size: number = DEDUP_HASH_SIZE
 ): Promise<FrameSignature> {
-  const base = sharp(framePath).resize(size, size, { fit: "fill" }).greyscale();
-  const raw = await base.clone().raw().toBuffer();
-  const norm = await base.clone().normalise().raw().toBuffer();
+  // One decode, not two: the normalised channel is derived from the already
+  // downsampled thumbnail rather than from a second pass over the file. The
+  // `greyscale()` on the re-fed buffer is not decoration — without it sharp
+  // normalises into sRGB and hands back three channels.
+  const raw = await sharp(framePath).resize(size, size, { fit: "fill" }).greyscale().raw().toBuffer();
+  const norm = await sharp(raw, { raw: { width: size, height: size, channels: 1 } })
+    .greyscale()
+    .normalise()
+    .raw()
+    .toBuffer();
   return { raw, norm };
 }
 
@@ -142,39 +187,49 @@ export async function validateFrames(
   const valid: string[] = [];
   const warnings: string[] = [];
 
-  for (let i = 0; i < framePaths.length; i++) {
-    try {
-      // Tiny full decode: metadata() only reads the header and misses
-      // truncated scan data, so force an actual decode of the pixels.
-      const probe = await sharp(framePaths[i])
-        .resize(32, 32, { fit: "fill" })
-        .greyscale()
-        .raw()
-        .toBuffer();
+  // Each frame is probed independently, so they run a few at a time; the
+  // verdicts are collected in input order below so warnings stay in frame
+  // order whatever order the probes finish in.
+  const verdicts = await mapWithConcurrency(
+    framePaths,
+    IO_CONCURRENCY,
+    async (framePath): Promise<string | null> => {
+      try {
+        // Tiny full decode: metadata() only reads the header and misses
+        // truncated scan data, so force an actual decode of the pixels.
+        const probe = await sharp(framePath)
+          .resize(32, 32, { fit: "fill" })
+          .greyscale()
+          .raw()
+          .toBuffer();
 
-      // Uniform near-black frames are video-decoder glitches (iOS Safari can
-      // paint the canvas before the seeked frame is decoded), not content —
-      // they can never stitch and would force a gap on both sides. Legit dark
-      // content keeps its structure and passes the spread test.
-      let min = 255;
-      let max = 0;
-      for (let p = 0; p < probe.length; p++) {
-        if (probe[p] < min) min = probe[p];
-        if (probe[p] > max) max = probe[p];
+        // Uniform near-black frames are video-decoder glitches (iOS Safari can
+        // paint the canvas before the seeked frame is decoded), not content —
+        // they can never stitch and would force a gap on both sides. Legit dark
+        // content keeps its structure and passes the spread test.
+        let min = 255;
+        let max = 0;
+        for (let p = 0; p < probe.length; p++) {
+          if (probe[p] < min) min = probe[p];
+          if (probe[p] > max) max = probe[p];
+        }
+        return max - min < 5 && max < 12 ? "was blank (all black) and was skipped." : null;
+      } catch {
+        return "could not be decoded and was skipped.";
       }
-      if (max - min < 5 && max < 12) {
-        const msg = `Frame ${i + 1} of ${framePaths.length} was blank (all black) and was skipped.`;
-        console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
-        warnings.push(msg);
-      } else {
-        valid.push(framePaths[i]);
-      }
-    } catch {
-      const msg = `Frame ${i + 1} of ${framePaths.length} could not be decoded and was skipped.`;
-      console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
-      warnings.push(msg);
+    },
+    onProgress
+  );
+
+  for (let i = 0; i < framePaths.length; i++) {
+    const verdict = verdicts[i];
+    if (verdict === null) {
+      valid.push(framePaths[i]);
+      continue;
     }
-    onProgress?.(i + 1, framePaths.length);
+    const msg = `Frame ${i + 1} of ${framePaths.length} ${verdict}`;
+    console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
+    warnings.push(msg);
   }
 
   return { valid, warnings };
@@ -184,44 +239,19 @@ export async function validateFrames(
 // Sticky detection (up to HEADER_MAX_RATIO of frame)
 // ---------------------------------------------------------------------------
 
-async function detectStickyRegion(
-  framePaths: string[],
+/**
+ * Sticky height within one set of already-decoded strips.
+ *
+ * `strips` are `sampleWidth`-wide greyscale buffers of `maxCheckHeight` rows,
+ * taken from the same screen position in every sampled frame.
+ */
+function stickyHeightFromStrips(
+  strips: Buffer[],
+  sampleWidth: number,
+  maxCheckHeight: number,
+  frameHeight: number,
   region: "top" | "bottom"
-): Promise<number> {
-  if (framePaths.length < 3) return 0;
-
-  const sampleCount = Math.min(framePaths.length, HEADER_SAMPLE_FRAMES);
-  const indices: number[] = [];
-  const step = Math.max(1, Math.floor((framePaths.length - 1) / (sampleCount - 1)));
-  for (let i = 0; i < framePaths.length && indices.length < sampleCount; i += step) {
-    indices.push(i);
-  }
-  if (!indices.includes(framePaths.length - 1) && framePaths.length > 1) {
-    indices.push(framePaths.length - 1);
-  }
-  if (indices.length < 3) return 0;
-
-  const firstMeta = await sharp(framePaths[indices[0]]).metadata();
-  const frameWidth = firstMeta.width || 0;
-  const frameHeight = firstMeta.height || 0;
-  if (!frameWidth || !frameHeight) return 0;
-
-  // Search up to HEADER_MAX_RATIO of frame height (was 15%, now 50%)
-  const maxCheckHeight = Math.floor(frameHeight * HEADER_MAX_RATIO);
-  const sampleWidth = Math.min(frameWidth, 300);
-
-  const strips: Buffer[] = [];
-  for (const idx of indices) {
-    const extractTop = region === "top" ? 0 : frameHeight - maxCheckHeight;
-    const strip = await sharp(framePaths[idx])
-      .extract({ left: 0, top: extractTop, width: frameWidth, height: maxCheckHeight })
-      .resize(sampleWidth, maxCheckHeight, { fit: "fill" })
-      .greyscale()
-      .raw()
-      .toBuffer();
-    strips.push(strip);
-  }
-
+): number {
   let stickyHeight = 0;
 
   const checkRow = (row: number): boolean => {
@@ -269,6 +299,67 @@ async function detectStickyRegion(
   return realHeight;
 }
 
+/**
+ * Measure the sticky header and footer in one pass over the sampled frames.
+ *
+ * Header and footer used to be detected in separate passes, each decoding the
+ * same sampled frames again. A frame is decoded once here instead, to a
+ * full-height `sampleWidth`-wide greyscale buffer that both strips are sliced
+ * out of — the vertical scale is 1:1, so a slice is pixel-for-pixel what a
+ * region-limited extract produced.
+ */
+async function detectStickyRegions(
+  framePaths: string[]
+): Promise<{ headerHeight: number; footerHeight: number }> {
+  const none = { headerHeight: 0, footerHeight: 0 };
+  if (framePaths.length < 3) return none;
+
+  const sampleCount = Math.min(framePaths.length, HEADER_SAMPLE_FRAMES);
+  const indices: number[] = [];
+  const step = Math.max(1, Math.floor((framePaths.length - 1) / (sampleCount - 1)));
+  for (let i = 0; i < framePaths.length && indices.length < sampleCount; i += step) {
+    indices.push(i);
+  }
+  if (!indices.includes(framePaths.length - 1) && framePaths.length > 1) {
+    indices.push(framePaths.length - 1);
+  }
+  if (indices.length < 3) return none;
+
+  const firstMeta = await sharp(framePaths[indices[0]]).metadata();
+  const frameWidth = firstMeta.width || 0;
+  const frameHeight = firstMeta.height || 0;
+  if (!frameWidth || !frameHeight) return none;
+
+  // Search up to HEADER_MAX_RATIO of frame height (was 15%, now 50%)
+  const maxCheckHeight = Math.floor(frameHeight * HEADER_MAX_RATIO);
+  const sampleWidth = Math.min(frameWidth, 300);
+
+  const columns = await mapWithConcurrency(indices, IO_CONCURRENCY, (idx) =>
+    sharp(framePaths[idx])
+      .extract({ left: 0, top: 0, width: frameWidth, height: frameHeight })
+      .resize(sampleWidth, frameHeight, { fit: "fill" })
+      .greyscale()
+      .raw()
+      .toBuffer()
+  );
+
+  const topStrips = columns.map((c) => c.subarray(0, maxCheckHeight * sampleWidth));
+  const bottomStrips = columns.map((c) =>
+    c.subarray((frameHeight - maxCheckHeight) * sampleWidth, frameHeight * sampleWidth)
+  );
+
+  return {
+    headerHeight: stickyHeightFromStrips(topStrips, sampleWidth, maxCheckHeight, frameHeight, "top"),
+    footerHeight: stickyHeightFromStrips(
+      bottomStrips,
+      sampleWidth,
+      maxCheckHeight,
+      frameHeight,
+      "bottom"
+    ),
+  };
+}
+
 export async function detectAndRemoveStickyHeaders(
   framePaths: string[]
 ): Promise<{ paths: string[]; headerHeight: number; footerHeight: number }> {
@@ -276,8 +367,7 @@ export async function detectAndRemoveStickyHeaders(
     return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
   }
 
-  const headerHeight = await detectStickyRegion(framePaths, "top");
-  const footerHeight = await detectStickyRegion(framePaths, "bottom");
+  const { headerHeight, footerHeight } = await detectStickyRegions(framePaths);
 
   console.log(`Sticky detection: header=${headerHeight}px, footer=${footerHeight}px`);
 
@@ -288,35 +378,32 @@ export async function detectAndRemoveStickyHeaders(
   const outputDir = path.join(os.tmpdir(), "scrollstitch-cropped");
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const croppedPaths: string[] = [];
+  // Cropping is per-frame and independent — the slowest part of this stage is
+  // the PNG re-encode, so the frames are cropped a few at a time.
+  const croppedPaths = await mapWithConcurrency(
+    framePaths,
+    IO_CONCURRENCY,
+    async (framePath, i) => {
+      const meta = await sharp(framePath).metadata();
+      const w = meta.width || 0;
+      const h = meta.height || 0;
 
-  for (let i = 0; i < framePaths.length; i++) {
-    const meta = await sharp(framePaths[i]).metadata();
-    const w = meta.width || 0;
-    const h = meta.height || 0;
+      const cropTop = i === 0 ? 0 : headerHeight;
+      const cropBottom = i === framePaths.length - 1 ? 0 : footerHeight;
+      const newHeight = h - cropTop - cropBottom;
 
-    const cropTop = i === 0 ? 0 : headerHeight;
-    const cropBottom = i === framePaths.length - 1 ? 0 : footerHeight;
-    const newHeight = h - cropTop - cropBottom;
+      if (newHeight <= 0 || cropTop + cropBottom >= h) return framePath;
+      if (cropTop === 0 && cropBottom === 0) return framePath;
 
-    if (newHeight <= 0 || cropTop + cropBottom >= h) {
-      croppedPaths.push(framePaths[i]);
-      continue;
+      // PNG to avoid double-JPEG compression artifacts
+      const outPath = path.join(outputDir, `cropped_${i}_${path.basename(framePath)}.png`);
+      await sharp(framePath)
+        .extract({ left: 0, top: cropTop, width: w, height: newHeight })
+        .png()
+        .toFile(outPath);
+      return outPath;
     }
-
-    if (cropTop === 0 && cropBottom === 0) {
-      croppedPaths.push(framePaths[i]);
-      continue;
-    }
-
-    // PNG to avoid double-JPEG compression artifacts
-    const outPath = path.join(outputDir, `cropped_${i}_${path.basename(framePaths[i])}.png`);
-    await sharp(framePaths[i])
-      .extract({ left: 0, top: cropTop, width: w, height: newHeight })
-      .png()
-      .toFile(outPath);
-    croppedPaths.push(outPath);
-  }
+  );
 
   return { paths: croppedPaths, headerHeight, footerHeight };
 }
@@ -332,18 +419,26 @@ export async function deduplicateFrames(
   if (framePaths.length === 0) return [];
   if (framePaths.length === 1) return framePaths;
 
+  // Every frame's signature is needed regardless of what the comparisons
+  // decide, and none of them depends on another — so they are computed a few
+  // at a time and the (cheap, order-dependent) comparison walk runs after.
+  // A signature is 2×256 bytes, so holding them all costs nothing.
+  const signatures = await mapWithConcurrency(
+    framePaths,
+    IO_CONCURRENCY,
+    (framePath) => getFrameSignature(framePath),
+    onProgress
+  );
+
   const unique: string[] = [framePaths[0]];
-  let prevSig = await getFrameSignature(framePaths[0]);
-  onProgress?.(1, framePaths.length);
+  let prevSig = signatures[0];
 
   for (let i = 1; i < framePaths.length; i++) {
-    const sig = await getFrameSignature(framePaths[i]);
-    const sim = sigSimilarity(prevSig, sig);
+    const sim = sigSimilarity(prevSig, signatures[i]);
     if (sim < SIMILARITY_THRESHOLD) {
       unique.push(framePaths[i]);
-      prevSig = sig;
+      prevSig = signatures[i];
     }
-    onProgress?.(i + 1, framePaths.length);
   }
 
   return unique;
@@ -436,10 +531,11 @@ function pearsonFromStats(s: NccStats): number {
   return den > 0 ? num / den : 0;
 }
 
+/** Median of `values`, which is SORTED IN PLACE — the caller owns the array. */
 function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  values.sort((a, b) => a - b);
+  const mid = values.length >> 1;
+  return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
 }
 
 /**
@@ -533,9 +629,81 @@ export interface OverlapMeasurement {
   frameHeight: number;
 }
 
+/**
+ * Decoded frames, kept across the comparisons of one job.
+ *
+ * A frame is compared many times over — as the candidate, then as the
+ * reference for every candidate that follows, and again whenever a skipped
+ * frame is reconsidered — and each comparison used to re-open and re-decode
+ * both files. The cache holds each frame as a whole-height, NCC_SAMPLE_WIDTH
+ * column of greyscale pixels (the vertical scale is 1:1, so the search window
+ * is a slice of it, pixel for pixel).
+ *
+ * Entries are ~64 bytes per frame row — under 200 KB for a tall frame — and
+ * the cache is created per call site, so nothing survives the job that made it
+ * and a rewritten temp file can never be served from a stale entry.
+ */
+export class FrameBandCache {
+  private readonly columns = new Map<string, { height: number; column: Buffer }>();
+  private readonly metas = new Map<string, { width: number; height: number } | null>();
+
+  constructor(private readonly maxEntries: number = 4) {}
+
+  /** Header-only read of a frame's dimensions, remembered for the job. */
+  async size(framePath: string): Promise<{ width: number; height: number } | null> {
+    const known = this.metas.get(framePath);
+    if (known !== undefined) return known;
+    let value: { width: number; height: number } | null = null;
+    try {
+      const meta = await sharp(framePath).metadata();
+      if (meta.width && meta.height) value = { width: meta.width, height: meta.height };
+    } catch {
+      value = null; // unreadable — the caller reports "no overlap"
+    }
+    this.metas.set(framePath, value);
+    return value;
+  }
+
+  /** Whole-height greyscale column of a frame, squeezed to NCC_SAMPLE_WIDTH. */
+  async column(
+    framePath: string,
+    frameWidth: number
+  ): Promise<{ height: number; column: Buffer } | null> {
+    const key = `${framePath}|${frameWidth}`;
+    const hit = this.columns.get(key);
+    if (hit) {
+      // Refresh recency: Map preserves insertion order, so re-inserting moves
+      // the entry to the end and the eviction below takes the oldest.
+      this.columns.delete(key);
+      this.columns.set(key, hit);
+      return hit;
+    }
+
+    const meta = await this.size(framePath);
+    if (!meta) return null;
+
+    const column = await sharp(framePath)
+      .extract({ left: 0, top: 0, width: frameWidth, height: meta.height })
+      .resize(NCC_SAMPLE_WIDTH, meta.height, { fit: "fill" })
+      .greyscale()
+      .raw()
+      .toBuffer();
+
+    const entry = { height: meta.height, column };
+    this.columns.set(key, entry);
+    while (this.columns.size > this.maxEntries) {
+      const oldest = this.columns.keys().next().value;
+      if (oldest === undefined) break;
+      this.columns.delete(oldest);
+    }
+    return entry;
+  }
+}
+
 export async function measureOverlap(
   topImagePath: string,
-  bottomImagePath: string
+  bottomImagePath: string,
+  cache: FrameBandCache = new FrameBandCache()
 ): Promise<OverlapMeasurement> {
   const none = (frameHeight: number): OverlapMeasurement => ({
     matched: false,
@@ -546,10 +714,10 @@ export async function measureOverlap(
     frameHeight,
   });
 
-  const topMeta = await sharp(topImagePath).metadata();
-  const botMeta = await sharp(bottomImagePath).metadata();
+  const topMeta = await cache.size(topImagePath);
+  const botMeta = await cache.size(bottomImagePath);
 
-  if (!topMeta.width || !topMeta.height || !botMeta.width || !botMeta.height) {
+  if (!topMeta || !botMeta) {
     return none(0);
   }
 
@@ -564,22 +732,16 @@ export async function measureOverlap(
     return none(frameH);
   }
 
-  // Extract and downsample both search regions sequentially — only two small
-  // greyscale buffers (NCC_SAMPLE_WIDTH × maxSearch) live at any time.
+  // Search regions, sliced out of the cached columns:
   // topBuf: bottom maxSearch rows of Frame A, width→NCC_SAMPLE_WIDTH
   // botBuf: top    maxSearch rows of Frame B, width→NCC_SAMPLE_WIDTH
-  const topBuf = await sharp(topImagePath)
-    .extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch })
-    .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
-    .greyscale()
-    .raw()
-    .toBuffer();
-  const botBuf = await sharp(bottomImagePath)
-    .extract({ left: 0, top: 0, width: frameW, height: maxSearch })
-    .resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" })
-    .greyscale()
-    .raw()
-    .toBuffer();
+  const topColumn = await cache.column(topImagePath, frameW);
+  const botColumn = await cache.column(bottomImagePath, frameW);
+  if (!topColumn || !botColumn) return none(frameH);
+
+  const W = NCC_SAMPLE_WIDTH;
+  const topBuf = topColumn.column.subarray((topColumn.height - maxSearch) * W, topColumn.height * W);
+  const botBuf = botColumn.column.subarray(0, maxSearch * W);
 
   const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
   const baseThreshold = adaptiveNccThreshold(contrast);
@@ -711,6 +873,11 @@ export async function selectFrames(
   };
   if (framePaths.length === 1) return selection;
 
+  // One cache for the whole walk: the reference frame is compared against
+  // every candidate that follows it, so without this each of those comparisons
+  // decodes the reference again.
+  const cache = new FrameBandCache();
+
   let refPath = framePaths[0];
   let refSig: FrameSignature | null = null;
   try {
@@ -757,7 +924,7 @@ export async function selectFrames(
       continue;
     }
 
-    const m = await measureOverlap(refPath, candidate);
+    const m = await measureOverlap(refPath, candidate, cache);
 
     if (m.matched) {
       const fraction = m.overlapPx / Math.max(1, m.frameHeight);
@@ -933,12 +1100,15 @@ export async function stitchFrames(
   }
 
   // Metadata reads are header-only — cheap even for many frames.
+  const metas = await mapWithConcurrency(framePaths, IO_CONCURRENCY, (p) =>
+    sharp(p).metadata()
+  );
   const heights: number[] = [];
   const widths: number[] = [];
-  for (const p of framePaths) {
-    const meta = await sharp(p).metadata();
+  for (let i = 0; i < framePaths.length; i++) {
+    const meta = metas[i];
     if (!meta.width || !meta.height) {
-      throw new Error(`Frame could not be decoded: ${path.basename(p)}`);
+      throw new Error(`Frame could not be decoded: ${path.basename(framePaths[i])}`);
     }
     widths.push(meta.width);
     heights.push(meta.height);
@@ -956,8 +1126,9 @@ export async function stitchFrames(
     seamPlan = seams;
   } else {
     seamPlan = [{ ...START_SEAM }];
+    const cache = new FrameBandCache();
     for (let i = 1; i < framePaths.length; i++) {
-      const m = await measureOverlap(framePaths[i - 1], framePaths[i]);
+      const m = await measureOverlap(framePaths[i - 1], framePaths[i], cache);
       seamPlan.push(seamFromMeasurement(m));
     }
   }

@@ -263,25 +263,66 @@ function firstString(value: unknown): string {
 
 const outputDir = path.join(os.tmpdir(), "scrollstitch-output");
 
+/**
+ * Finished stitches would otherwise live forever.
+ *
+ * A result is a full-resolution PNG plus a preview and, once anyone asks for
+ * it, a PDF — tens of megabytes per job. Nothing ever deleted them, so a
+ * long-running deployment filled its disk at a rate set purely by how much the
+ * app was used, and the first symptom was jobs failing to write their output.
+ *
+ * Two hours is well past the point where a client is still fetching a result
+ * (the job record itself is dropped after 30 minutes) and short enough that
+ * the directory tracks recent use rather than all-time use.
+ */
+export const OUTPUT_TTL_MS = 2 * 60 * 60 * 1000;
+
+/** Delete finished outputs older than the TTL. Returns how many went. */
+export function sweepOutputs(now: number = Date.now()): number {
+  let removed = 0;
+  try {
+    for (const entry of fs.readdirSync(outputDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const file = path.join(outputDir, entry.name);
+      try {
+        if (now - fs.statSync(file).mtimeMs > OUTPUT_TTL_MS) {
+          fs.unlinkSync(file);
+          removed++;
+        }
+      } catch {
+        // Raced with a request that rebuilt or removed it — nothing to do
+      }
+    }
+  } catch {
+    // Output dir does not exist yet; it is created when the first job finishes
+  }
+  return removed;
+}
+
+everyMs(() => sweepOutputs(), 30 * 60 * 1000);
+
 // Progress budget per pipeline stage: [start, end] within 0..1.
 /**
  * How much of the progress bar each stage owns.
  *
  * These are shares of measured WALL TIME, not equal slices: at 80 frames the
- * stages come in at roughly validate 4%, dedup 14%, sticky 2%, select 58%,
- * stitch 16%, preview 6%. Giving every stage an equal slice is what made the
+ * stages come in at roughly validate 5%, dedup 14%, sticky 2%, select 50%,
+ * stitch 23%, preview 6%. Giving every stage an equal slice is what made the
  * bar sprint and then stall, and made any time estimate derived from it start
  * far too low. Weighted this way, progress advances at a roughly constant rate,
  * so elapsed/progress is a usable prediction of the total.
  *
- * Re-measure with the benchmark before changing these.
+ * Re-measure with the benchmark before changing these. They were last
+ * re-measured after selection stopped re-decoding its reference frame, which
+ * took selection from 58% of the job to 50% and left stitching — untouched,
+ * and single-threaded by nature — a correspondingly larger share.
  */
 const STAGE_SPANS = {
   validate: [0, 0.05],
-  dedup: [0.05, 0.18],
-  sticky: [0.18, 0.2],
-  select: [0.2, 0.78],
-  stitch: [0.78, 0.94],
+  dedup: [0.05, 0.19],
+  sticky: [0.19, 0.21],
+  select: [0.21, 0.71],
+  stitch: [0.71, 0.94],
   // 0.94 → 1.0 is the preview downscale, which reports no per-frame progress.
 } as const;
 
@@ -606,7 +647,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       "Content-Disposition",
       `inline; filename="${filename}"`
     );
-    fs.createReadStream(filePath).pipe(res);
+    const stream = fs.createReadStream(filePath);
+    // A file swept out from under an in-flight download used to reach the
+    // process as an unhandled 'error' event, which takes the server down with
+    // it. The client sees a truncated response either way — but only this one
+    // leaves the server running to answer the retry.
+    stream.on("error", (err) => {
+      console.error(`Output stream failed for ${filename}:`, err);
+      if (!res.headersSent) res.status(500).json({ error: "File could not be read" });
+      else res.destroy();
+    });
+    stream.pipe(res);
   });
 
   app.get("/api/output-base64/:filename", async (req: Request, res: Response) => {
@@ -617,7 +668,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ error: "File not found" });
     }
 
-    const data = fs.readFileSync(filePath);
+    // Async read: a stitched PNG runs to tens of megabytes, and reading it
+    // synchronously parks the whole event loop — including the progress polls
+    // of every other job in flight — for the duration.
+    const data = await fs.promises.readFile(filePath);
     const base64 = data.toString("base64");
     const ext = path.extname(filePath).toLowerCase();
     const mimeType =

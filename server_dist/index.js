@@ -14,6 +14,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import sharp from "sharp";
+var IO_CONCURRENCY = Math.max(1, Math.min(4, os.cpus().length));
 var SIMILARITY_THRESHOLD = 0.93;
 var DEDUP_HASH_SIZE = 16;
 var HEADER_SAMPLE_FRAMES = 7;
@@ -42,10 +43,25 @@ var SELECT_NEAR_DUP_FRACTION = 0.8;
 var SELECT_NEAR_DUP_SIMILARITY = 0.9;
 var JPEG_MAX_DIMENSION = 65500;
 var MAX_OUTPUT_PIXELS = 2e8;
+async function mapWithConcurrency(items, limit, fn, onProgress) {
+  const results = new Array(items.length);
+  let next = 0;
+  let done = 0;
+  const worker = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+      onProgress?.(++done, items.length);
+    }
+  };
+  const workers = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+  return results;
+}
 async function getFrameSignature(framePath, size = DEDUP_HASH_SIZE) {
-  const base = sharp(framePath).resize(size, size, { fit: "fill" }).greyscale();
-  const raw = await base.clone().raw().toBuffer();
-  const norm = await base.clone().normalise().raw().toBuffer();
+  const raw = await sharp(framePath).resize(size, size, { fit: "fill" }).greyscale().raw().toBuffer();
+  const norm = await sharp(raw, { raw: { width: size, height: size, channels: 1 } }).greyscale().normalise().raw().toBuffer();
   return { raw, norm };
 }
 function bufferSimilarity(a, b) {
@@ -75,55 +91,38 @@ function greyStddev(buf) {
 async function validateFrames(framePaths, onProgress) {
   const valid = [];
   const warnings = [];
+  const verdicts = await mapWithConcurrency(
+    framePaths,
+    IO_CONCURRENCY,
+    async (framePath) => {
+      try {
+        const probe = await sharp(framePath).resize(32, 32, { fit: "fill" }).greyscale().raw().toBuffer();
+        let min = 255;
+        let max = 0;
+        for (let p = 0; p < probe.length; p++) {
+          if (probe[p] < min) min = probe[p];
+          if (probe[p] > max) max = probe[p];
+        }
+        return max - min < 5 && max < 12 ? "was blank (all black) and was skipped." : null;
+      } catch {
+        return "could not be decoded and was skipped.";
+      }
+    },
+    onProgress
+  );
   for (let i = 0; i < framePaths.length; i++) {
-    try {
-      const probe = await sharp(framePaths[i]).resize(32, 32, { fit: "fill" }).greyscale().raw().toBuffer();
-      let min = 255;
-      let max = 0;
-      for (let p = 0; p < probe.length; p++) {
-        if (probe[p] < min) min = probe[p];
-        if (probe[p] > max) max = probe[p];
-      }
-      if (max - min < 5 && max < 12) {
-        const msg = `Frame ${i + 1} of ${framePaths.length} was blank (all black) and was skipped.`;
-        console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
-        warnings.push(msg);
-      } else {
-        valid.push(framePaths[i]);
-      }
-    } catch {
-      const msg = `Frame ${i + 1} of ${framePaths.length} could not be decoded and was skipped.`;
-      console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
-      warnings.push(msg);
+    const verdict = verdicts[i];
+    if (verdict === null) {
+      valid.push(framePaths[i]);
+      continue;
     }
-    onProgress?.(i + 1, framePaths.length);
+    const msg = `Frame ${i + 1} of ${framePaths.length} ${verdict}`;
+    console.warn(`validateFrames: ${msg} (${path.basename(framePaths[i])})`);
+    warnings.push(msg);
   }
   return { valid, warnings };
 }
-async function detectStickyRegion(framePaths, region) {
-  if (framePaths.length < 3) return 0;
-  const sampleCount = Math.min(framePaths.length, HEADER_SAMPLE_FRAMES);
-  const indices = [];
-  const step = Math.max(1, Math.floor((framePaths.length - 1) / (sampleCount - 1)));
-  for (let i = 0; i < framePaths.length && indices.length < sampleCount; i += step) {
-    indices.push(i);
-  }
-  if (!indices.includes(framePaths.length - 1) && framePaths.length > 1) {
-    indices.push(framePaths.length - 1);
-  }
-  if (indices.length < 3) return 0;
-  const firstMeta = await sharp(framePaths[indices[0]]).metadata();
-  const frameWidth = firstMeta.width || 0;
-  const frameHeight = firstMeta.height || 0;
-  if (!frameWidth || !frameHeight) return 0;
-  const maxCheckHeight = Math.floor(frameHeight * HEADER_MAX_RATIO);
-  const sampleWidth = Math.min(frameWidth, 300);
-  const strips = [];
-  for (const idx of indices) {
-    const extractTop = region === "top" ? 0 : frameHeight - maxCheckHeight;
-    const strip = await sharp(framePaths[idx]).extract({ left: 0, top: extractTop, width: frameWidth, height: maxCheckHeight }).resize(sampleWidth, maxCheckHeight, { fit: "fill" }).greyscale().raw().toBuffer();
-    strips.push(strip);
-  }
+function stickyHeightFromStrips(strips, sampleWidth, maxCheckHeight, frameHeight, region) {
   let stickyHeight = 0;
   const checkRow = (row) => {
     const rowStart = row * sampleWidth;
@@ -166,54 +165,92 @@ async function detectStickyRegion(framePaths, region) {
   if (realHeight < HEADER_MIN_HEIGHT) return 0;
   return realHeight;
 }
+async function detectStickyRegions(framePaths) {
+  const none = { headerHeight: 0, footerHeight: 0 };
+  if (framePaths.length < 3) return none;
+  const sampleCount = Math.min(framePaths.length, HEADER_SAMPLE_FRAMES);
+  const indices = [];
+  const step = Math.max(1, Math.floor((framePaths.length - 1) / (sampleCount - 1)));
+  for (let i = 0; i < framePaths.length && indices.length < sampleCount; i += step) {
+    indices.push(i);
+  }
+  if (!indices.includes(framePaths.length - 1) && framePaths.length > 1) {
+    indices.push(framePaths.length - 1);
+  }
+  if (indices.length < 3) return none;
+  const firstMeta = await sharp(framePaths[indices[0]]).metadata();
+  const frameWidth = firstMeta.width || 0;
+  const frameHeight = firstMeta.height || 0;
+  if (!frameWidth || !frameHeight) return none;
+  const maxCheckHeight = Math.floor(frameHeight * HEADER_MAX_RATIO);
+  const sampleWidth = Math.min(frameWidth, 300);
+  const columns = await mapWithConcurrency(
+    indices,
+    IO_CONCURRENCY,
+    (idx) => sharp(framePaths[idx]).extract({ left: 0, top: 0, width: frameWidth, height: frameHeight }).resize(sampleWidth, frameHeight, { fit: "fill" }).greyscale().raw().toBuffer()
+  );
+  const topStrips = columns.map((c) => c.subarray(0, maxCheckHeight * sampleWidth));
+  const bottomStrips = columns.map(
+    (c) => c.subarray((frameHeight - maxCheckHeight) * sampleWidth, frameHeight * sampleWidth)
+  );
+  return {
+    headerHeight: stickyHeightFromStrips(topStrips, sampleWidth, maxCheckHeight, frameHeight, "top"),
+    footerHeight: stickyHeightFromStrips(
+      bottomStrips,
+      sampleWidth,
+      maxCheckHeight,
+      frameHeight,
+      "bottom"
+    )
+  };
+}
 async function detectAndRemoveStickyHeaders(framePaths) {
   if (framePaths.length < 3) {
     return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
   }
-  const headerHeight = await detectStickyRegion(framePaths, "top");
-  const footerHeight = await detectStickyRegion(framePaths, "bottom");
+  const { headerHeight, footerHeight } = await detectStickyRegions(framePaths);
   console.log(`Sticky detection: header=${headerHeight}px, footer=${footerHeight}px`);
   if (headerHeight === 0 && footerHeight === 0) {
     return { paths: framePaths, headerHeight: 0, footerHeight: 0 };
   }
   const outputDir2 = path.join(os.tmpdir(), "scrollstitch-cropped");
   fs.mkdirSync(outputDir2, { recursive: true });
-  const croppedPaths = [];
-  for (let i = 0; i < framePaths.length; i++) {
-    const meta = await sharp(framePaths[i]).metadata();
-    const w = meta.width || 0;
-    const h = meta.height || 0;
-    const cropTop = i === 0 ? 0 : headerHeight;
-    const cropBottom = i === framePaths.length - 1 ? 0 : footerHeight;
-    const newHeight = h - cropTop - cropBottom;
-    if (newHeight <= 0 || cropTop + cropBottom >= h) {
-      croppedPaths.push(framePaths[i]);
-      continue;
+  const croppedPaths = await mapWithConcurrency(
+    framePaths,
+    IO_CONCURRENCY,
+    async (framePath, i) => {
+      const meta = await sharp(framePath).metadata();
+      const w = meta.width || 0;
+      const h = meta.height || 0;
+      const cropTop = i === 0 ? 0 : headerHeight;
+      const cropBottom = i === framePaths.length - 1 ? 0 : footerHeight;
+      const newHeight = h - cropTop - cropBottom;
+      if (newHeight <= 0 || cropTop + cropBottom >= h) return framePath;
+      if (cropTop === 0 && cropBottom === 0) return framePath;
+      const outPath = path.join(outputDir2, `cropped_${i}_${path.basename(framePath)}.png`);
+      await sharp(framePath).extract({ left: 0, top: cropTop, width: w, height: newHeight }).png().toFile(outPath);
+      return outPath;
     }
-    if (cropTop === 0 && cropBottom === 0) {
-      croppedPaths.push(framePaths[i]);
-      continue;
-    }
-    const outPath = path.join(outputDir2, `cropped_${i}_${path.basename(framePaths[i])}.png`);
-    await sharp(framePaths[i]).extract({ left: 0, top: cropTop, width: w, height: newHeight }).png().toFile(outPath);
-    croppedPaths.push(outPath);
-  }
+  );
   return { paths: croppedPaths, headerHeight, footerHeight };
 }
 async function deduplicateFrames(framePaths, onProgress) {
   if (framePaths.length === 0) return [];
   if (framePaths.length === 1) return framePaths;
+  const signatures = await mapWithConcurrency(
+    framePaths,
+    IO_CONCURRENCY,
+    (framePath) => getFrameSignature(framePath),
+    onProgress
+  );
   const unique = [framePaths[0]];
-  let prevSig = await getFrameSignature(framePaths[0]);
-  onProgress?.(1, framePaths.length);
+  let prevSig = signatures[0];
   for (let i = 1; i < framePaths.length; i++) {
-    const sig = await getFrameSignature(framePaths[i]);
-    const sim = sigSimilarity(prevSig, sig);
+    const sim = sigSimilarity(prevSig, signatures[i]);
     if (sim < SIMILARITY_THRESHOLD) {
       unique.push(framePaths[i]);
-      prevSig = sig;
+      prevSig = signatures[i];
     }
-    onProgress?.(i + 1, framePaths.length);
   }
   return unique;
 }
@@ -258,9 +295,9 @@ function pearsonFromStats(s) {
   return den > 0 ? num / den : 0;
 }
 function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  values.sort((a, b) => a - b);
+  const mid = values.length >> 1;
+  return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
 }
 function computeNCC(topBuf, botBuf, maxSearch, overlap, guard = 0) {
   const lo = guard;
@@ -295,7 +332,49 @@ function nccThresholdFor(base, overlapPx, frameHeight) {
   const smallness = (OVERLAP_SMALL_FRACTION - fraction) / OVERLAP_SMALL_FRACTION;
   return Math.min(0.98, base + smallness * OVERLAP_SMALL_PENALTY);
 }
-async function measureOverlap(topImagePath, bottomImagePath) {
+var FrameBandCache = class {
+  constructor(maxEntries = 4) {
+    this.maxEntries = maxEntries;
+  }
+  columns = /* @__PURE__ */ new Map();
+  metas = /* @__PURE__ */ new Map();
+  /** Header-only read of a frame's dimensions, remembered for the job. */
+  async size(framePath) {
+    const known = this.metas.get(framePath);
+    if (known !== void 0) return known;
+    let value = null;
+    try {
+      const meta = await sharp(framePath).metadata();
+      if (meta.width && meta.height) value = { width: meta.width, height: meta.height };
+    } catch {
+      value = null;
+    }
+    this.metas.set(framePath, value);
+    return value;
+  }
+  /** Whole-height greyscale column of a frame, squeezed to NCC_SAMPLE_WIDTH. */
+  async column(framePath, frameWidth) {
+    const key = `${framePath}|${frameWidth}`;
+    const hit = this.columns.get(key);
+    if (hit) {
+      this.columns.delete(key);
+      this.columns.set(key, hit);
+      return hit;
+    }
+    const meta = await this.size(framePath);
+    if (!meta) return null;
+    const column = await sharp(framePath).extract({ left: 0, top: 0, width: frameWidth, height: meta.height }).resize(NCC_SAMPLE_WIDTH, meta.height, { fit: "fill" }).greyscale().raw().toBuffer();
+    const entry = { height: meta.height, column };
+    this.columns.set(key, entry);
+    while (this.columns.size > this.maxEntries) {
+      const oldest = this.columns.keys().next().value;
+      if (oldest === void 0) break;
+      this.columns.delete(oldest);
+    }
+    return entry;
+  }
+};
+async function measureOverlap(topImagePath, bottomImagePath, cache = new FrameBandCache()) {
   const none = (frameHeight) => ({
     matched: false,
     overlapPx: 0,
@@ -304,9 +383,9 @@ async function measureOverlap(topImagePath, bottomImagePath) {
     contrast: 0,
     frameHeight
   });
-  const topMeta = await sharp(topImagePath).metadata();
-  const botMeta = await sharp(bottomImagePath).metadata();
-  if (!topMeta.width || !topMeta.height || !botMeta.width || !botMeta.height) {
+  const topMeta = await cache.size(topImagePath);
+  const botMeta = await cache.size(bottomImagePath);
+  if (!topMeta || !botMeta) {
     return none(0);
   }
   const frameH = Math.min(topMeta.height, botMeta.height);
@@ -317,8 +396,12 @@ async function measureOverlap(topImagePath, bottomImagePath) {
     console.log(`  overlap: skipped (frame too short: ${frameH}px)`);
     return none(frameH);
   }
-  const topBuf = await sharp(topImagePath).extract({ left: 0, top: topMeta.height - maxSearch, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer();
-  const botBuf = await sharp(bottomImagePath).extract({ left: 0, top: 0, width: frameW, height: maxSearch }).resize(NCC_SAMPLE_WIDTH, maxSearch, { fit: "fill" }).greyscale().raw().toBuffer();
+  const topColumn = await cache.column(topImagePath, frameW);
+  const botColumn = await cache.column(bottomImagePath, frameW);
+  if (!topColumn || !botColumn) return none(frameH);
+  const W = NCC_SAMPLE_WIDTH;
+  const topBuf = topColumn.column.subarray((topColumn.height - maxSearch) * W, topColumn.height * W);
+  const botBuf = botColumn.column.subarray(0, maxSearch * W);
   const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
   const baseThreshold = adaptiveNccThreshold(contrast);
   const stickyGuard = Math.round(frameH * STICKY_GUARD_FRACTION);
@@ -382,6 +465,7 @@ async function selectFrames(framePaths, onProgress) {
     seams: [{ ...START_SEAM }]
   };
   if (framePaths.length === 1) return selection;
+  const cache = new FrameBandCache();
   let refPath = framePaths[0];
   let refSig = null;
   try {
@@ -415,7 +499,7 @@ async function selectFrames(framePaths, onProgress) {
       i++;
       continue;
     }
-    const m = await measureOverlap(refPath, candidate);
+    const m = await measureOverlap(refPath, candidate, cache);
     if (m.matched) {
       const fraction = m.overlapPx / Math.max(1, m.frameHeight);
       if (fraction > SELECT_NEAR_DUP_FRACTION) {
@@ -519,12 +603,17 @@ async function stitchFrames(framePaths, outputPath, quality = "png", seams = nul
     onProgress?.(1, 1);
     return { width, height, format: format2 };
   }
+  const metas = await mapWithConcurrency(
+    framePaths,
+    IO_CONCURRENCY,
+    (p) => sharp(p).metadata()
+  );
   const heights = [];
   const widths = [];
-  for (const p of framePaths) {
-    const meta = await sharp(p).metadata();
+  for (let i = 0; i < framePaths.length; i++) {
+    const meta = metas[i];
     if (!meta.width || !meta.height) {
-      throw new Error(`Frame could not be decoded: ${path.basename(p)}`);
+      throw new Error(`Frame could not be decoded: ${path.basename(framePaths[i])}`);
     }
     widths.push(meta.width);
     heights.push(meta.height);
@@ -540,8 +629,9 @@ async function stitchFrames(framePaths, outputPath, quality = "png", seams = nul
     seamPlan = seams;
   } else {
     seamPlan = [{ ...START_SEAM }];
+    const cache = new FrameBandCache();
     for (let i = 1; i < framePaths.length; i++) {
-      const m = await measureOverlap(framePaths[i - 1], framePaths[i]);
+      const m = await measureOverlap(framePaths[i - 1], framePaths[i], cache);
       seamPlan.push(seamFromMeasurement(m));
     }
   }
@@ -788,12 +878,32 @@ function firstString(value) {
   return typeof value === "string" ? value : "";
 }
 var outputDir = path2.join(os2.tmpdir(), "scrollstitch-output");
+var OUTPUT_TTL_MS = 2 * 60 * 60 * 1e3;
+function sweepOutputs(now = Date.now()) {
+  let removed = 0;
+  try {
+    for (const entry of fs2.readdirSync(outputDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const file = path2.join(outputDir, entry.name);
+      try {
+        if (now - fs2.statSync(file).mtimeMs > OUTPUT_TTL_MS) {
+          fs2.unlinkSync(file);
+          removed++;
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return removed;
+}
+everyMs(() => sweepOutputs(), 30 * 60 * 1e3);
 var STAGE_SPANS = {
   validate: [0, 0.05],
-  dedup: [0.05, 0.18],
-  sticky: [0.18, 0.2],
-  select: [0.2, 0.78],
-  stitch: [0.78, 0.94]
+  dedup: [0.05, 0.19],
+  sticky: [0.19, 0.21],
+  select: [0.21, 0.71],
+  stitch: [0.71, 0.94]
   // 0.94 → 1.0 is the preview downscale, which reports no per-frame progress.
 };
 async function registerRoutes(app2) {
@@ -1049,7 +1159,13 @@ async function registerRoutes(app2) {
       "Content-Disposition",
       `inline; filename="${filename}"`
     );
-    fs2.createReadStream(filePath).pipe(res);
+    const stream = fs2.createReadStream(filePath);
+    stream.on("error", (err) => {
+      console.error(`Output stream failed for ${filename}:`, err);
+      if (!res.headersSent) res.status(500).json({ error: "File could not be read" });
+      else res.destroy();
+    });
+    stream.pipe(res);
   });
   app2.get("/api/output-base64/:filename", async (req, res) => {
     const filename = path2.basename(firstString(req.params.filename));
@@ -1057,7 +1173,7 @@ async function registerRoutes(app2) {
     if (!await ensurePdf(filePath)) {
       return res.status(404).json({ error: "File not found" });
     }
-    const data = fs2.readFileSync(filePath);
+    const data = await fs2.promises.readFile(filePath);
     const base64 = data.toString("base64");
     const ext = path2.extname(filePath).toLowerCase();
     const mimeType = ext === ".pdf" ? "application/pdf" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";

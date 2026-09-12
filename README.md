@@ -37,6 +37,56 @@ which the client surfaces in the UI.
 
 ## CHANGELOG
 
+### 2026-09 — The pipeline was decoding the same frames over and over
+
+A stitch got about a third faster (80 frames: 5.6s → 4.0s, and 7.0s → 4.5s when
+sticky chrome has to be cropped off every frame) without a single pixel of the
+output changing — the same synthetic recordings hash to the same bytes before
+and after. Nothing was made cleverer; work that was being done repeatedly is
+now done once.
+
+**Selection re-decoded its reference frame for every comparison.** The
+reference is compared against each following candidate, and every one of those
+comparisons re-opened and re-decoded both files. Frames are now decoded once
+into a whole-height, 64px-wide greyscale column that each search window is
+sliced out of. That is not an approximation: the search window's vertical scale
+was always 1:1, so a slice is bit-for-bit what the region-limited extract
+produced — verified on JPEG and PNG frames before the change was made.
+
+**A frame signature cost two decodes.** The plain and contrast-normalised 16×16
+thumbnails came from two full passes over the file; the normalised one is now
+derived from the already-downsampled thumbnail. (The `greyscale()` on the
+re-fed buffer is load-bearing — without it sharp normalises into sRGB and hands
+back three channels.)
+
+**Sticky detection decoded every sampled frame twice**, once looking for a
+header and again for a footer. One decode now serves both.
+
+**Per-frame work ran one frame at a time.** Validation, signatures and the
+sticky crop are independent per frame, and each is almost entirely native
+decode time, so one in flight left three cores idle. They now run four at a
+time — capped, so the number of live decode buffers does not grow with the
+length of the recording. Order is still input order and progress counters are
+still monotonic, so warnings and the progress bar are unchanged.
+
+Stitching was left alone: it decodes each frame exactly once already, and it
+writes into one shared canvas, which is what keeps its memory bounded.
+
+Two things found while measuring, unrelated to speed:
+
+- **Nothing ever deleted finished outputs.** A result is a full-resolution PNG
+  plus a preview plus, on demand, a PDF — tens of megabytes per job, kept
+  forever. The disk filled at a rate set by all-time use, and the first symptom
+  would have been jobs failing to write their output. There is now a sweep with
+  a two-hour TTL, and a test pinning both halves of it: stale files go, fresh
+  ones stay.
+- **`/api/output-base64` read the file synchronously**, parking the event loop
+  — and with it every other job's progress poll — for the length of a
+  multi-megabyte read.
+
+The progress-bar stage weights were re-measured, since they are shares of wall
+time and selection no longer owns as much of it.
+
 ### 2026-08 — The annual plan needs a new identifier
 
 `scrollstitch_pro_annual` was created in App Store Connect as a non-consumable

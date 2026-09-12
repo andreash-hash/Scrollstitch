@@ -1,11 +1,12 @@
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import express from "express";
-import { registerRoutes } from "../routes";
+import { registerRoutes, sweepOutputs, OUTPUT_TTL_MS } from "../routes";
 import {
   generatePage,
   renderFrames,
@@ -311,6 +312,31 @@ describe("/api/process-frames end to end", () => {
   test("returns 404 for unknown jobs", async () => {
     const res = await fetch(`${baseUrl}/api/progress/nope`);
     assert.equal(res.status, 404);
+  });
+
+  test("sweeps stale outputs and leaves fresh ones alone", async () => {
+    // Outputs are tens of megabytes each. Nothing used to delete them, so the
+    // disk filled in proportion to all-time use and jobs eventually failed to
+    // write their result. Both halves matter: a sweep that took the fresh file
+    // too would delete results out from under a client still fetching them.
+    const outputDir = path.join(os.tmpdir(), "scrollstitch-output");
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const stale = path.join(outputDir, `sweep-test-stale-${process.pid}.png`);
+    const fresh = path.join(outputDir, `sweep-test-fresh-${process.pid}.png`);
+    fs.writeFileSync(stale, "x");
+    fs.writeFileSync(fresh, "x");
+    const old = new Date(Date.now() - OUTPUT_TTL_MS - 60_000);
+    fs.utimesSync(stale, old, old);
+
+    try {
+      sweepOutputs();
+      assert.equal(fs.existsSync(stale), false, "stale output should be swept");
+      assert.equal(fs.existsSync(fresh), true, "fresh output must survive");
+    } finally {
+      fs.rmSync(stale, { force: true });
+      fs.rmSync(fresh, { force: true });
+    }
   });
 });
 
