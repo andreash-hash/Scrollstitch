@@ -188,6 +188,7 @@ function RootLayoutNav() {
       <SubscriptionSync />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="library" />
         <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
       </Stack>
     </>

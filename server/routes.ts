@@ -682,6 +682,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ base64, mimeType, filename });
   });
 
+  // ── Rehydrate ──────────────────────────────────────────────────────────────
+  // Outputs live in the container's temp directory, and the deployment target
+  // is Cloud Run: the container is recycled when traffic stops and replaced on
+  // every deploy, and a warm request can land on an instance that never held
+  // the file. So a result URL is good for minutes, not hours — which is why
+  // leaving the app and coming back produced "Failed to fetch file" on save.
+  //
+  // The client now keeps its own copy of every stitch. This endpoint takes
+  // that copy back and re-establishes the server-side state for it, so PDF
+  // rendering and trimming — both of which need the pixels server-side — work
+  // on a stitch of any age without anything else having to know it was gone.
+  app.post(
+    "/api/rehydrate",
+    upload.single("image"),
+    async (req: Request, res: Response) => {
+      const uploaded = req.file as Express.Multer.File | undefined;
+      try {
+        if (!uploaded) {
+          return res.status(400).json({ error: "No image was uploaded" });
+        }
+
+        const sharp = (await import("sharp")).default;
+        let meta;
+        try {
+          meta = await sharp(uploaded.path, { limitInputPixels: false }).metadata();
+        } catch {
+          meta = undefined;
+        }
+        if (!meta?.width || !meta.height || (meta.format !== "png" && meta.format !== "jpeg")) {
+          return res.status(400).json({ error: "The uploaded file is not a PNG or JPEG image" });
+        }
+
+        fs.mkdirSync(outputDir, { recursive: true });
+        const id = `rehydrated-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+        const ext = meta.format === "jpeg" ? "jpg" : "png";
+        const imageFilename = `${id}.${ext}`;
+
+        // Moved, not copied: the upload is already a complete file in the same
+        // temp filesystem, and re-encoding a 200-megapixel stitch to prove it
+        // is what it says it is would cost more than the request is worth.
+        fs.renameSync(uploaded.path, path.join(outputDir, imageFilename));
+
+        let previewUrl = `/api/output/${imageFilename}`;
+        const previewFilename = `${id}_preview.jpg`;
+        const preview = await generatePreviewImage(
+          path.join(outputDir, imageFilename),
+          path.join(outputDir, previewFilename)
+        );
+        if (preview.scaled) previewUrl = `/api/output/${previewFilename}`;
+
+        // As with a fresh job, the PDF is left to /api/output to build on the
+        // first request that actually asks for one.
+        res.json({
+          imageUrl: `/api/output/${imageFilename}`,
+          previewUrl,
+          pdfUrl: `/api/output/${id}.pdf`,
+          dimensions: { width: meta.width, height: meta.height },
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Rehydrate failed.";
+        console.error("Rehydrate error:", err);
+        if (uploaded) {
+          try {
+            fs.unlinkSync(uploaded.path);
+          } catch {
+            // Already moved into the output dir, or already gone
+          }
+        }
+        res.status(500).json({ error: message });
+      }
+    }
+  );
+
   app.get("/api/crop/:filename", async (req: Request, res: Response) => {
     try {
       const sharp = (await import("sharp")).default;

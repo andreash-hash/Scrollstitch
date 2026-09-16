@@ -1179,6 +1179,56 @@ async function registerRoutes(app2) {
     const mimeType = ext === ".pdf" ? "application/pdf" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
     res.json({ base64, mimeType, filename });
   });
+  app2.post(
+    "/api/rehydrate",
+    upload.single("image"),
+    async (req, res) => {
+      const uploaded = req.file;
+      try {
+        if (!uploaded) {
+          return res.status(400).json({ error: "No image was uploaded" });
+        }
+        const sharp2 = (await import("sharp")).default;
+        let meta;
+        try {
+          meta = await sharp2(uploaded.path, { limitInputPixels: false }).metadata();
+        } catch {
+          meta = void 0;
+        }
+        if (!meta?.width || !meta.height || meta.format !== "png" && meta.format !== "jpeg") {
+          return res.status(400).json({ error: "The uploaded file is not a PNG or JPEG image" });
+        }
+        fs2.mkdirSync(outputDir, { recursive: true });
+        const id = `rehydrated-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+        const ext = meta.format === "jpeg" ? "jpg" : "png";
+        const imageFilename = `${id}.${ext}`;
+        fs2.renameSync(uploaded.path, path2.join(outputDir, imageFilename));
+        let previewUrl = `/api/output/${imageFilename}`;
+        const previewFilename = `${id}_preview.jpg`;
+        const preview = await generatePreviewImage(
+          path2.join(outputDir, imageFilename),
+          path2.join(outputDir, previewFilename)
+        );
+        if (preview.scaled) previewUrl = `/api/output/${previewFilename}`;
+        res.json({
+          imageUrl: `/api/output/${imageFilename}`,
+          previewUrl,
+          pdfUrl: `/api/output/${id}.pdf`,
+          dimensions: { width: meta.width, height: meta.height }
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Rehydrate failed.";
+        console.error("Rehydrate error:", err);
+        if (uploaded) {
+          try {
+            fs2.unlinkSync(uploaded.path);
+          } catch {
+          }
+        }
+        res.status(500).json({ error: message });
+      }
+    }
+  );
   app2.get("/api/crop/:filename", async (req, res) => {
     try {
       const sharp2 = (await import("sharp")).default;

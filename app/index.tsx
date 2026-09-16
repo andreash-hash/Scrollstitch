@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppContext } from "@/contexts/AppContext";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -46,6 +46,15 @@ import {
   formatEta,
 } from "@/lib/eta";
 import { getPushToken } from "@/lib/push";
+import {
+  saveStitchToLibrary,
+  deleteStitch,
+  loadLibrary,
+  stitchImageUri,
+  stitchDisplayUri,
+} from "@/lib/library";
+import { preparePdf, rehydrateStitch } from "@/lib/stitch-files";
+import { rememberPendingJob, forgetPendingJob, loadPendingJob } from "@/lib/pending-job";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -74,6 +83,18 @@ interface ProcessingResult {
   gapCount?: number;
   warnings?: string[];
   dimensions: { width: number; height: number };
+  /**
+   * The device's own copy, filed into the library the moment the job finished.
+   *
+   * Server outputs live in a Cloud Run container's temp directory, so the URLs
+   * above expire when it goes idle — which is how saving a stitch an hour
+   * later produced "Failed to fetch file". Once these are set, displaying and
+   * saving read the local file and never touch the network.
+   */
+  localImageUri?: string;
+  localDisplayUri?: string;
+  /** Library record this result is filed under, so a trim can replace it. */
+  libraryId?: string;
 }
 
 // Sampling has to be dense enough that even a fast flick leaves shared content
@@ -533,6 +554,9 @@ export default function ScrollStitchScreen() {
   const [cropBottom, setCropBottom] = useState(0);
   const [isCropping, setIsCropping] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  /** Drives the badge on the library button; refreshed whenever this screen
+   *  comes back into focus, since the library screen can delete from it. */
+  const [libraryCount, setLibraryCount] = useState(0);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showWinBack, setShowWinBack] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -566,7 +590,11 @@ export default function ScrollStitchScreen() {
     // Only revise the estimate of the TOTAL here. What the user sees is driven
     // by the ticker below, so the number keeps falling between progress
     // updates instead of freezing whenever a slow stage goes quiet.
-    if (next > 0.02 && next < 0.99 && startTimeRef.current > 0) {
+    //
+    // No prior means no estimate: a job resumed after a relaunch never saw the
+    // frame count the prior is seeded from, and revising up from zero would
+    // produce a number with nothing behind it.
+    if (next > 0.02 && next < 0.99 && startTimeRef.current > 0 && etaPriorRef.current > 0) {
       etaTotalRef.current = reviseTotalMs(
         etaTotalRef.current,
         Date.now() - startTimeRef.current,
@@ -666,6 +694,93 @@ export default function ScrollStitchScreen() {
   }, [stage]);
 
   /**
+   * Pick a job back up after a relaunch.
+   *
+   * The common way to lose a stitch was to start one, leave the app, and come
+   * back to an app iOS had killed: the poll loop went with it, so the finished
+   * result was never collected, never saved, and the server eventually dropped
+   * it. Runs once, and only when something was actually left running.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const pending = await loadPendingJob();
+      if (cancelled || !pending) return;
+      progressRef.current = 0.34;
+      startTimeRef.current = pending.startedAt;
+      setStage("processing");
+      setProgress(0.34);
+      setStatusText("Picking up where you left off...");
+      pollProgress(pending.jobId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-counted on focus rather than once on mount: the library screen can
+  // delete stitches, and coming back to a stale badge would be wrong.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      loadLibrary().then((records) => {
+        if (!cancelled) setLibraryCount(records.length);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
+
+  /**
+   * File a finished stitch into the on-device library and switch the screen
+   * over to the local copy.
+   *
+   * Deliberately not awaited by the caller: the result is already visible, and
+   * a multi-megabyte download must not sit between the user and their stitch.
+   */
+  const archiveResult = useCallback(
+    async (res: ProcessingResult, replaceId?: string) => {
+      const baseUrl = getApiUrl();
+      const record = await saveStitchToLibrary({
+        imageUrl: new URL(res.imageUrl, baseUrl).toString(),
+        previewUrl: res.previewUrl ? new URL(res.previewUrl, baseUrl).toString() : null,
+        width: res.dimensions.width,
+        height: res.dimensions.height,
+        frameCount: res.frameCount,
+        selectedFrames: res.selectedFrames ?? res.uniqueFrames,
+        gapCount: res.gapCount ?? 0,
+        warnings: res.warnings ?? [],
+      });
+      if (!record) return; // web, or storage unavailable — server URLs still work
+
+      // A trim replaces what it trimmed: the user asked for the stitch without
+      // those edges, not for two copies of it. Only after the new one is
+      // safely on disk.
+      if (replaceId) {
+        await deleteStitch(replaceId);
+      } else {
+        setLibraryCount((n) => n + 1);
+      }
+
+      setResult((prev) =>
+        // Only if the user is still looking at this stitch: by now they may
+        // have reset, or started another video.
+        prev && prev.imageUrl === res.imageUrl
+          ? {
+              ...prev,
+              libraryId: record.id,
+              localImageUri: stitchImageUri(record),
+              localDisplayUri: stitchDisplayUri(record),
+            }
+          : prev
+      );
+    },
+    []
+  );
+
+  /**
    * Runs once a stitch lands. Two prompts hang off this moment, and both are
    * deliberately gated: the App Store rate-limits review requests and ignores
    * extras silently, and a win-back shown too early just reads as a second
@@ -747,10 +862,27 @@ export default function ScrollStitchScreen() {
         try {
           const url = new URL(`/api/progress/${jobId}`, baseUrl);
           const res = await fetch(url.toString());
+
+          // The server forgets a job 30 minutes after it starts, and its
+          // container may be replaced sooner. Polling one that no longer
+          // exists would otherwise sit there until the five-minute timeout and
+          // then blame the video — most likely on a job resumed after a
+          // relaunch, which is exactly when the truth is easy to say.
+          if (res.status === 404) {
+            cleanupPolling();
+            void forgetPendingJob();
+            setStage("error");
+            setErrorMessage(
+              "This stitch expired before the app could pick it up. Please run it again."
+            );
+            return;
+          }
+
           const data = await res.json();
 
           if (data.error && data.stage === "Error") {
             cleanupPolling();
+            void forgetPendingJob();
             setStage("error");
             setErrorMessage(data.error);
             return;
@@ -777,6 +909,11 @@ export default function ScrollStitchScreen() {
               Haptics.NotificationFeedbackType.Success
             );
             onStitchSucceeded(data.result);
+            void forgetPendingJob();
+            // Take the copy NOW, while the container that made it is certainly
+            // still up. The result is already on screen, so this runs behind
+            // it — and if it fails the server URLs still work for a while.
+            archiveResult(data.result);
           }
         } catch {}
       }, 500);
@@ -914,6 +1051,10 @@ export default function ScrollStitchScreen() {
       setStage("processing");
       advanceProgress(0.34);
       setStatusText("Processing frames on server...");
+      // Written down before polling starts: if iOS kills the app while this
+      // runs, the next launch picks the job back up instead of losing a stitch
+      // that finished while nobody was listening.
+      await rememberPendingJob(data.jobId);
       pollProgress(data.jobId);
     } catch (err: any) {
       stopFakeTick();
@@ -1029,7 +1170,11 @@ export default function ScrollStitchScreen() {
       // Match the real format — a JPEG saved as .png confuses Photos and any
       // app the user later opens it in.
       const ext = result.imageUrl.endsWith(".jpg") ? "jpg" : "png";
-      const localUri = await fetchAndSaveFile(result.imageUrl, `scrollstitch_${Date.now()}.${ext}`);
+      // The library copy when there is one: saving then needs no network at
+      // all, so it works long after the server has forgotten the job.
+      const localUri =
+        result.localImageUri ??
+        (await fetchAndSaveFile(result.imageUrl, `scrollstitch_${Date.now()}.${ext}`));
       await MediaLibrary.saveToLibraryAsync(localUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", "Image saved to your photo library.");
@@ -1050,7 +1195,10 @@ export default function ScrollStitchScreen() {
         await webDownloadOutput(result.pdfUrl, `scrollstitch_${Date.now()}.pdf`);
         return;
       }
-      const localUri = await fetchAndSaveFile(result.pdfUrl, `scrollstitch_${Date.now()}.pdf`);
+      // The PDF is rendered server-side, so this is the one action that still
+      // needs the server. If the job's PDF URL has expired with its container,
+      // preparePdf sends the device's copy back up and renders a new one.
+      const localUri = await preparePdf(result.localImageUri ?? null, result.pdfUrl);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {
           mimeType: "application/pdf",
@@ -1074,26 +1222,38 @@ export default function ScrollStitchScreen() {
     setIsCropping(true);
     try {
       const baseUrl = getApiUrl();
-      const filename = result.imageUrl.split("/").pop();
-      const url = new URL(`/api/crop/${filename}`, baseUrl);
-      url.searchParams.set("top", String(cropTop));
-      url.searchParams.set("bottom", String(cropBottom));
-      const res = await fetch(url.toString());
+      const cropUrlFor = (imageUrl: string) => {
+        const url = new URL(`/api/crop/${imageUrl.split("/").pop()}`, baseUrl);
+        url.searchParams.set("top", String(cropTop));
+        url.searchParams.set("bottom", String(cropBottom));
+        return url.toString();
+      };
+
+      // Trimming happens server-side on the stitched file. If the container
+      // that held it has been recycled, send the device's copy back up and
+      // trim that instead — same result, one extra round trip.
+      let res = await fetch(cropUrlFor(result.imageUrl));
+      if (res.status === 404 && result.localImageUri) {
+        const restored = await rehydrateStitch(result.localImageUri);
+        res = await fetch(cropUrlFor(restored.imageUrl));
+      }
       if (!res.ok) throw new Error("Crop failed");
       const data = await res.json();
-      setResult((prev) =>
-        prev
-          ? {
-              ...prev,
-              imageUrl: data.imageUrl,
-              pdfUrl: data.pdfUrl,
-              previewUrl: data.previewUrl ?? data.imageUrl,
-              dimensions: data.dimensions ?? prev.dimensions,
-            }
-          : prev
-      );
+      const trimmed: ProcessingResult = {
+        ...result,
+        imageUrl: data.imageUrl,
+        pdfUrl: data.pdfUrl,
+        previewUrl: data.previewUrl ?? data.imageUrl,
+        dimensions: data.dimensions ?? result.dimensions,
+        // The local copy is of the untrimmed stitch — drop it until the
+        // trimmed one has been filed, so nothing saves the wrong pixels.
+        localImageUri: undefined,
+        localDisplayUri: undefined,
+      };
+      setResult(trimmed);
       setCropTop(0);
       setCropBottom(0);
+      archiveResult(trimmed, result.libraryId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: any) {
       Alert.alert("Crop failed", err.message);
@@ -1105,6 +1265,10 @@ export default function ScrollStitchScreen() {
   const reset = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     cleanupPolling();
+    // Starting over means this job is no longer wanted; leaving it remembered
+    // would have the next launch resume a stitch the user walked away from.
+    // The library keeps the finished one either way.
+    void forgetPendingJob();
     progressRef.current = 0;
     startTimeRef.current = 0;
     setStage("idle");
@@ -1139,17 +1303,42 @@ export default function ScrollStitchScreen() {
             </View>
           )}
         </View>
-        {(stage === "complete" || stage === "error") && (
+        <View style={styles.headerRight}>
           <Pressable
-            onPress={reset}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push("/library");
+            }}
             style={styles.headerButton}
             accessibilityRole="button"
-            accessibilityLabel="Start over"
-            accessibilityHint="Clears the result and returns to the start screen"
+            accessibilityLabel={
+              libraryCount > 0
+                ? `Saved stitches, ${libraryCount} saved`
+                : "Saved stitches"
+            }
+            accessibilityHint="Opens the stitches saved on this device"
           >
-            <Feather name="rotate-ccw" size={20} color={C.textSecondary} />
+            <Feather name="layers" size={20} color={C.textSecondary} />
+            {libraryCount > 0 && (
+              <View style={styles.headerBadge}>
+                <Text style={styles.headerBadgeText}>
+                  {libraryCount > 9 ? "9+" : libraryCount}
+                </Text>
+              </View>
+            )}
           </Pressable>
-        )}
+          {(stage === "complete" || stage === "error") && (
+            <Pressable
+              onPress={reset}
+              style={styles.headerButton}
+              accessibilityRole="button"
+              accessibilityLabel="Start over"
+              accessibilityHint="Clears the result and returns to the start screen"
+            >
+              <Feather name="rotate-ccw" size={20} color={C.textSecondary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {/* Upgrade modal for free users */}
@@ -1693,7 +1882,12 @@ export default function ScrollStitchScreen() {
                   accessibilityRole="image"
                   accessibilityLabel={`Stitched screenshot, ${result.dimensions.width} by ${result.dimensions.height} pixels`}
                   source={{
-                    uri: new URL(result.previewUrl ?? result.imageUrl, getApiUrl()).toString(),
+                    // The local copy once it has landed: the preview then keeps
+                    // rendering after the server has dropped the job, instead
+                    // of turning into a broken image on a result still on screen.
+                    uri:
+                      result.localDisplayUri ??
+                      new URL(result.previewUrl ?? result.imageUrl, getApiUrl()).toString(),
                   }}
                   style={{
                     width: SCREEN_WIDTH - 64,
@@ -1901,12 +2095,32 @@ const styles = StyleSheet.create({
     letterSpacing: -0.01,
     textTransform: "uppercase",
   },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   headerButton: {
     width: 40,
     height: 40,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 0,
+  },
+  headerBadge: {
+    position: "absolute",
+    top: 4,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.accent,
+  },
+  headerBadgeText: {
+    color: C.onAccent,
+    fontSize: 10,
+    fontFamily: "Archivo_600SemiBold",
   },
   replayIntroBtn: {
     flexDirection: "row",

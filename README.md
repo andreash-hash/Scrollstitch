@@ -10,6 +10,10 @@ Turn a scrolling screen recording into one long, seamless screenshot (PNG/JPEG +
   selects the best frames by NCC overlap, stitches everything into one image, and
   renders a PDF.
 
+Server outputs are temporary — the deployment is Cloud Run, so they die with the
+container. The finished stitch is downloaded to the device and kept in an
+on-device library; that copy is the durable one.
+
 ## Scripts
 
 | Command | What it does |
@@ -36,6 +40,51 @@ selection** → stitch → PDF. Progress (stage, percent, frame counter) is poll
 which the client surfaces in the UI.
 
 ## CHANGELOG
+
+### 2026-09 — A stitch only existed on a server that forgets
+
+Reported as "Failed to fetch file" when saving a stitch that had been on screen
+a while, and separately as: leave the app, come back an hour later, the stitch
+is gone and there is no way back to it. Same root cause, two faces.
+
+**Outputs lived only in the server's temp directory, and the deployment target
+is `cloudrun`** — Replit Autoscale. That container is recycled when traffic
+stops, replaced on every deploy, and a later request can land on an instance
+that never held the file. So `/api/output/<jobId>.png` is good for minutes, not
+hours. The client held nothing but that URL, so Save to Photos fetched a file
+that no longer existed. It was never a bug in the fetch; the file was
+genuinely gone.
+
+The second half was the client's: the result lived only in React state. iOS
+suspends a backgrounded app within seconds and may kill it outright, and when
+it did, the finished stitch had nobody to collect it.
+
+So a stitch is now **the device's, not the server's**:
+
+- The full-resolution image is downloaded the moment the job completes, while
+  the container that made it is certainly still up, and filed into an
+  on-device library. Displaying, saving to Photos and trimming read that copy;
+  none of them touch the network any more.
+- **A library screen** (the layers button in the header) lists every saved
+  stitch with its date, size and frame count. Open one to view, save or share
+  it; delete one, or all. Kept to 20 stitches and 500 MB, oldest dropped
+  first — a tall stitch is tens of megabytes, and an uncapped library would
+  quietly become the largest thing on the phone. The newest is never dropped,
+  even if it alone exceeds the budget: finishing a very long stitch must not
+  delete it on arrival.
+- **`POST /api/rehydrate`** takes the device's copy back and re-establishes
+  server-side state for it. PDF rendering and trimming need the pixels on the
+  server, and this is what lets them work on a stitch of any age. Everything
+  else about those features is unchanged — they just get a fresh URL to work
+  against.
+- **An interrupted job is picked back up.** The job id is written down before
+  polling starts, so a launch after iOS killed the app resumes it and files the
+  result away. Bounded by the server's own 30-minute memory of a job: past
+  that, polling a dead job now says so instead of timing out after five
+  minutes and blaming the video.
+
+The two prior symptoms map onto this directly: saving works offline from the
+local copy, and the stitch that used to vanish is in the library.
 
 ### 2026-09 — The pipeline was decoding the same frames over and over
 

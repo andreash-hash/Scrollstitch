@@ -36,11 +36,16 @@ A mobile app that converts screen recordings into a single long stitched image o
 6. Server greedily selects frames by NCC overlap (band-median scored, adaptive
    confidence) and stitches them, PNG or JPEG output
 7. Server generates a PDF from the stitched image (pdfkit)
-8. Client can save to Photos or share as PDF; crop trimming available via /api/crop endpoint
+8. Client downloads the finished image into its on-device library, then saves to
+   Photos or shares a PDF from that local copy; crop trimming via /api/crop
 
 ## Key Files
 
 - `app/index.tsx` — Main single-screen UI with all processing logic, settings, zoom, crop
+- `app/library.tsx` — Saved stitches kept on the device: list, view, save, share, delete
+- `lib/library.ts` — Downloads each finished stitch to the device and indexes it;
+  `lib/library-retention.ts` holds the (unit-tested) 20-stitch / 500 MB rule
+- `lib/pending-job.ts` — Remembers the running job id so a relaunch can resume it
 - `server/video-processor.ts` — Frame deduplication, stitching (PNG/JPEG), and PDF generation
 - `server/routes.ts` — API endpoints for frame upload, progress polling, output, crop
 - `constants/colors.ts` — Modernist design tokens (light ground, red accent, square corners)
@@ -52,6 +57,10 @@ A mobile app that converts screen recordings into a single long stitched image o
 - `GET /api/output/:filename` — Stream output PNG/JPEG/PDF
 - `GET /api/output-base64/:filename` — Get output as base64 JSON (used by mobile client)
 - `GET /api/crop/:filename?top=N&bottom=N` — Crop top/bottom pixels from a stitched image, returns new image + PDF URLs
+- `POST /api/rehydrate` — Upload the client's own copy of a stitch to re-create
+  server-side state for it (image + preview + PDF URL). Outputs live in the
+  container's temp dir and the deployment target is `cloudrun`, so a result URL
+  dies with the container; this is how PDF and crop keep working on an old stitch
 
 ## Features
 

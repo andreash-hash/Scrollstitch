@@ -304,6 +304,88 @@ describe("/api/process-frames end to end", () => {
     assert.ok(done.result!.dimensions.height > 0);
   });
 
+  test("rehydrates a stitch the server no longer has, PDF and all", async () => {
+    // The whole point of the endpoint: an output that is gone from the server
+    // — deleted here, recycled with the container in production — comes back
+    // from the client's own copy, and the features that need pixels
+    // server-side work again on it.
+    const page = generatePage(WIDTH, 2880, 31337);
+    const frames = await renderFrames({
+      page,
+      outDir: makeTempDir("api-rehydrate"),
+      frameHeight: FRAME_H,
+      frames: [0, 576, 1152, 1728].map((position) => ({ position })),
+      jpegQuality: 80,
+    });
+
+    const uploadRes = await fetch(`${baseUrl}/api/process-frames?quality=png`, {
+      method: "POST",
+      body: frameFormData(frames),
+    });
+    const { jobId } = (await uploadRes.json()) as { jobId: string };
+    const done = await pollUntilDone(jobId);
+    assert.equal(done.stage, "Complete", done.error ?? "");
+
+    // The client's copy, taken while the server still had it.
+    const original = Buffer.from(
+      await (await fetch(`${baseUrl}${done.result!.imageUrl}`)).arrayBuffer()
+    );
+
+    // Now lose it the way a recycled container does.
+    const outputDir = path.join(os.tmpdir(), "scrollstitch-output");
+    for (const name of fs.readdirSync(outputDir)) {
+      if (name.startsWith(jobId)) fs.rmSync(path.join(outputDir, name), { force: true });
+    }
+    assert.equal(
+      (await fetch(`${baseUrl}${done.result!.imageUrl}`)).status,
+      404,
+      "the output should be gone before rehydrating"
+    );
+
+    const fd = new FormData();
+    fd.append("image", new Blob([original], { type: "image/png" }), "stitch.png");
+    const rehydrated = await fetch(`${baseUrl}/api/rehydrate`, { method: "POST", body: fd });
+    assert.equal(rehydrated.status, 200);
+    const restored = (await rehydrated.json()) as {
+      imageUrl: string;
+      previewUrl: string;
+      pdfUrl: string;
+      dimensions: { width: number; height: number };
+    };
+    assert.deepEqual(restored.dimensions, done.result!.dimensions);
+
+    const imageRes = await fetch(`${baseUrl}${restored.imageUrl}`);
+    assert.equal(imageRes.status, 200);
+    assert.ok(
+      Buffer.from(await imageRes.arrayBuffer()).equals(original),
+      "rehydrated image must be the same bytes the client sent"
+    );
+
+    const pdfRes = await fetch(`${baseUrl}${restored.pdfUrl}`);
+    assert.equal(pdfRes.status, 200);
+    const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());
+    assert.equal(pdfBytes.subarray(0, 5).toString(), "%PDF-");
+
+    // Trimming works on it too, which is what makes a restored stitch a
+    // first-class one rather than a read-only copy.
+    const cropRes = await fetch(
+      `${baseUrl}/api/crop/${restored.imageUrl.split("/").pop()}?top=100&bottom=50`
+    );
+    assert.equal(cropRes.status, 200);
+    const cropped = (await cropRes.json()) as { dimensions: { height: number } };
+    assert.equal(cropped.dimensions.height, restored.dimensions.height - 150);
+  });
+
+  test("refuses a rehydrate that is not an image", async () => {
+    const fd = new FormData();
+    fd.append("image", new Blob([Buffer.from("not an image at all")], { type: "image/png" }), "x.png");
+    const res = await fetch(`${baseUrl}/api/rehydrate`, { method: "POST", body: fd });
+    assert.equal(res.status, 400);
+
+    const empty = await fetch(`${baseUrl}/api/rehydrate`, { method: "POST", body: new FormData() });
+    assert.equal(empty.status, 400);
+  });
+
   test("404s for a PDF whose source image does not exist", async () => {
     const res = await fetch(`${baseUrl}/api/output/no-such-job.pdf`);
     assert.equal(res.status, 404);
