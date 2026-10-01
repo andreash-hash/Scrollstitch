@@ -956,6 +956,9 @@ export default function ScrollStitchScreen() {
       pollRef.current = setInterval(async () => {
         if (Date.now() - lastProgressAt > STALL_TIMEOUT) {
           cleanupPolling();
+          // Like every other way this job can end: a relaunch must not pick a
+          // job back up that has already been reported as dead.
+          void forgetPendingJob();
           setStage("error");
           setErrorCode("TIMEOUT");
           setErrorMessage("Processing stopped responding. Please try again.");
