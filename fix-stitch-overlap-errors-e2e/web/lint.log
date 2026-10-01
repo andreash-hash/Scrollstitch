@@ -1,0 +1,31 @@
+
+> expo-app@1.0.0 lint
+> npx expo lint
+
+
+/home/runner/work/Scrollstitch/Scrollstitch/app/_layout.tsx
+  51:6  warning  React Hook useEffect has a missing dependency: 'setIsPro'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/Scrollstitch/Scrollstitch/app/index.tsx
+  143:6  warning  React Hook useEffect has a missing dependency: 'opacity'. Either include it or remove the dependency array        react-hooks/exhaustive-deps
+  155:6  warning  React Hook useEffect has a missing dependency: 'animatedWidth'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  177:6  warning  React Hook useEffect has a missing dependency: 'shimmer'. Either include it or remove the dependency array        react-hooks/exhaustive-deps
+  741:9  warning  'startFakeTick' is assigned a value but never used                                                                @typescript-eslint/no-unused-vars
+
+/home/runner/work/Scrollstitch/Scrollstitch/app/onboarding.tsx
+   13:8   warning  '/home/runner/work/Scrollstitch/Scrollstitch/node_modules/react-native/index.js' imported multiple times                                       import/no-duplicates
+   27:3   warning  'useAnimatedScrollHandler' is defined but never used                                                                                           @typescript-eslint/no-unused-vars
+   28:3   warning  'runOnJS' is defined but never used                                                                                                            @typescript-eslint/no-unused-vars
+   34:35  warning  '/home/runner/work/Scrollstitch/Scrollstitch/node_modules/react-native/index.js' imported multiple times                                       import/no-duplicates
+   41:38  warning  'SCREEN_HEIGHT' is assigned a value but never used                                                                                             @typescript-eslint/no-unused-vars
+   66:6   warning  React Hook useEffect has missing dependencies: 'glow' and 'scale'. Either include them or remove the dependency array                          react-hooks/exhaustive-deps
+  101:6   warning  React Hook useEffect has missing dependencies: 'dot' and 'float'. Either include them or remove the dependency array                           react-hooks/exhaustive-deps
+  145:6   warning  React Hook useEffect has missing dependencies: 'arrow', 'f1', 'f2', 'f3', 'f4', and 'out'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  180:6   warning  React Hook useEffect has missing dependencies: 'badge' and 'height'. Either include them or remove the dependency array                        react-hooks/exhaustive-deps
+  284:6   warning  React Hook useEffect has a missing dependency: 'opacity'. Either include it or remove the dependency array                                     react-hooks/exhaustive-deps
+  620:7   warning  'TOTAL' is assigned a value but never used                                                                                                     @typescript-eslint/no-unused-vars
+  643:6   warning  React Hook useEffect has a missing dependency: 'directPaywall'. Either include it or remove the dependency array                               react-hooks/exhaustive-deps
+
+✖ 17 problems (0 errors, 17 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

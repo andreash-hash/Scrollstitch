@@ -1,0 +1,1132 @@
+
+> expo-app@1.0.0 test
+> tsx --test server/tests/*.test.ts lib/__tests__/*.test.ts scripts/__tests__/*.test.ts
+
+TAP version 13
+# Subtest: time remaining
+    # Subtest: never increases once it has been shown
+    ok 1 - never increases once it has been shown
+      ---
+      duration_ms: 4.498744
+      type: 'test'
+      ...
+    # Subtest: the first estimate is not wildly short of the real duration
+    ok 2 - the first estimate is not wildly short of the real duration
+      ---
+      duration_ms: 0.655623
+      type: 'test'
+      ...
+    # Subtest: keeps counting down while progress is flat
+    ok 3 - keeps counting down while progress is flat
+      ---
+      duration_ms: 0.601752
+      type: 'test'
+      ...
+    # Subtest: converges towards zero by the time the job ends
+    ok 4 - converges towards zero by the time the job ends
+      ---
+      duration_ms: 0.736244
+      type: 'test'
+      ...
+    # Subtest: a job that runs long lands on zero rather than going negative
+    ok 5 - a job that runs long lands on zero rather than going negative
+      ---
+      duration_ms: 1.830436
+      type: 'test'
+      ...
+    # Subtest: the naive model is the thing being fixed
+    ok 6 - the naive model is the thing being fixed
+      ---
+      duration_ms: 0.924505
+      type: 'test'
+      ...
+    # Subtest: short jobs still get a sensible floor
+    ok 7 - short jobs still get a sensible floor
+      ---
+      duration_ms: 0.336508
+      type: 'test'
+      ...
+    # Subtest: formats in coarse steps so the digits do not flicker
+    ok 8 - formats in coarse steps so the digits do not flicker
+      ---
+      duration_ms: 0.359761
+      type: 'test'
+      ...
+    1..8
+ok 1 - time remaining
+  ---
+  duration_ms: 11.864148
+  type: 'suite'
+  ...
+# Subtest: uses the server's own sentence from a JSON error body
+ok 2 - uses the server's own sentence from a JSON error body
+  ---
+  duration_ms: 1.52745
+  type: 'test'
+  ...
+# Subtest: never shows braces and quotes on screen
+ok 3 - never shows braces and quotes on screen
+  ---
+  duration_ms: 0.31049
+  type: 'test'
+  ...
+# Subtest: accepts a `message` field as well as `error`
+ok 4 - accepts a `message` field as well as `error`
+  ---
+  duration_ms: 0.227124
+  type: 'test'
+  ...
+# Subtest: replaces a proxy's HTML page with a plain sentence
+ok 5 - replaces a proxy's HTML page with a plain sentence
+  ---
+  duration_ms: 0.265806
+  type: 'test'
+  ...
+# Subtest: passes a short plain-text reason through
+ok 6 - passes a short plain-text reason through
+  ---
+  duration_ms: 0.252592
+  type: 'test'
+  ...
+# Subtest: explains the statuses a person can act on
+ok 7 - explains the statuses a person can act on
+  ---
+  duration_ms: 0.32147
+  type: 'test'
+  ...
+# Subtest: drops a plain-text body too long to be a sentence
+ok 8 - drops a plain-text body too long to be a sentence
+  ---
+  duration_ms: 0.282778
+  type: 'test'
+  ...
+# Subtest: retries only what a second attempt could fix
+ok 9 - retries only what a second attempt could fix
+  ---
+  duration_ms: 0.290993
+  type: 'test'
+  ...
+# Subtest: an HttpError reads cleanly on the error screen and carries its status code
+ok 10 - an HttpError reads cleanly on the error screen and carries its status code
+  ---
+  duration_ms: 0.938742
+  type: 'test'
+  ...
+# Subtest: stitch library retention
+    # Subtest: keeps everything while under both limits
+    ok 1 - keeps everything while under both limits
+      ---
+      duration_ms: 3.485915
+      type: 'test'
+      ...
+    # Subtest: returns newest first regardless of input order
+    ok 2 - returns newest first regardless of input order
+      ---
+      duration_ms: 0.56837
+      type: 'test'
+      ...
+    # Subtest: drops the oldest once the count limit is passed
+    ok 3 - drops the oldest once the count limit is passed
+      ---
+      duration_ms: 0.355262
+      type: 'test'
+      ...
+    # Subtest: drops the oldest once the byte budget is passed
+    ok 4 - drops the oldest once the byte budget is passed
+      ---
+      duration_ms: 0.572118
+      type: 'test'
+      ...
+    # Subtest: keeps the newest stitch even when it alone exceeds the budget
+    ok 5 - keeps the newest stitch even when it alone exceeds the budget
+      ---
+      duration_ms: 0.406539
+      type: 'test'
+      ...
+    # Subtest: a record with no measured size is not treated as free
+    ok 6 - a record with no measured size is not treated as free
+      ---
+      duration_ms: 2.268573
+      type: 'test'
+      ...
+    # Subtest: handles an empty library
+    ok 7 - handles an empty library
+      ---
+      duration_ms: 0.401119
+      type: 'test'
+      ...
+    # Subtest: formats sizes the way the library screen shows them
+    ok 8 - formats sizes the way the library screen shows them
+      ---
+      duration_ms: 0.33198
+      type: 'test'
+      ...
+    1..8
+ok 11 - stitch library retention
+  ---
+  duration_ms: 10.854614
+  type: 'suite'
+  ...
+# Subtest: translates the error that shipped
+ok 12 - translates the error that shipped
+  ---
+  duration_ms: 1.321626
+  type: 'test'
+  ...
+# Subtest: matches the domain, not the code
+ok 13 - matches the domain, not the code
+  ---
+  duration_ms: 0.409093
+  type: 'test'
+  ...
+# Subtest: is case insensitive about the domain
+ok 14 - is case insensitive about the domain
+  ---
+  duration_ms: 0.186688
+  type: 'test'
+  ...
+# Subtest: passes other messages through unchanged
+ok 15 - passes other messages through unchanged
+  ---
+  duration_ms: 0.131075
+  type: 'test'
+  ...
+# Subtest: never renders as empty or as [object Object]
+ok 16 - never renders as empty or as [object Object]
+  ---
+  duration_ms: 0.277979
+  type: 'test'
+  ...
+# Subtest: accepts a thrown string
+ok 17 - accepts a thrown string
+  ---
+  duration_ms: 0.125785
+  type: 'test'
+  ...
+# Subtest: extracts the identifier that was being hidden
+ok 18 - extracts the identifier that was being hidden
+  ---
+  duration_ms: 0.372896
+  type: 'test'
+  ...
+# Subtest: works for any Apple error domain
+ok 19 - works for any Apple error domain
+  ---
+  duration_ms: 0.275524
+  type: 'test'
+  ...
+# Subtest: falls back to a code property
+ok 20 - falls back to a code property
+  ---
+  duration_ms: 2.011303
+  type: 'test'
+  ...
+# Subtest: returns empty when there is nothing technical to show
+ok 21 - returns empty when there is nothing technical to show
+  ---
+  duration_ms: 2.35797
+  type: 'test'
+  ...
+# Subtest: the message no longer asserts iCloud as the cause
+ok 22 - the message no longer asserts iCloud as the cause
+  ---
+  duration_ms: 0.303226
+  type: 'test'
+  ...
+# Subtest: the identifiers that broke the substring check
+ok 23 - the identifiers that broke the substring check
+  ---
+  duration_ms: 1.044949
+  type: 'test'
+  ...
+# Subtest: matches across Play's base-plan suffix
+ok 24 - matches across Play's base-plan suffix
+  ---
+  duration_ms: 0.18792
+  type: 'test'
+  ...
+# Subtest: does not confuse one plan for another
+ok 25 - does not confuse one plan for another
+  ---
+  duration_ms: 0.216073
+  type: 'test'
+  ...
+# Subtest: a weekly subscriber is not on the annual plan
+ok 26 - a weekly subscriber is not on the annual plan
+  ---
+  duration_ms: 0.253422
+  type: 'test'
+  ...
+# Subtest: an unknown plan is never a match
+ok 27 - an unknown plan is never a match
+  ---
+  duration_ms: 0.207828
+  type: 'test'
+  ...
+# Subtest: baseProductId strips only the suffix
+ok 28 - baseProductId strips only the suffix
+  ---
+  duration_ms: 0.203841
+  type: 'test'
+  ...
+# Subtest: retires the old app name and every burnt identifier
+ok 29 - retires the old app name and every burnt identifier
+  ---
+  duration_ms: 1.670026
+  type: 'test'
+  ...
+# Subtest: keeps every live product
+ok 30 - keeps every live product
+  ---
+  duration_ms: 0.261087
+  type: 'test'
+  ...
+# Subtest: the replacement weekly is not caught by the retired weekly
+ok 31 - the replacement weekly is not caught by the retired weekly
+  ---
+  duration_ms: 0.215511
+  type: 'test'
+  ...
+# Subtest: yearly is not caught by the annual it replaced
+ok 32 - yearly is not caught by the annual it replaced
+  ---
+  duration_ms: 1.042796
+  type: 'test'
+  ...
+# Subtest: matches the whole identifier, not a fragment of it
+ok 33 - matches the whole identifier, not a fragment of it
+  ---
+  duration_ms: 0.210102
+  type: 'test'
+  ...
+# Subtest: catches both spellings of a Play subscription
+ok 34 - catches both spellings of a Play subscription
+  ---
+  duration_ms: 0.177011
+  type: 'test'
+  ...
+# Subtest: is case insensitive
+ok 35 - is case insensitive
+  ---
+  duration_ms: 0.154628
+  type: 'test'
+  ...
+# Subtest: treats a missing identifier as live
+ok 36 - treats a missing identifier as live
+  ---
+  duration_ms: 0.157844
+  type: 'test'
+  ...
+# Subtest: repeated calls agree
+ok 37 - repeated calls agree
+  ---
+  duration_ms: 0.369961
+  type: 'test'
+  ...
+# Subtest: moves a retired display name aside
+ok 38 - moves a retired display name aside
+  ---
+  duration_ms: 0.592736
+  type: 'test'
+  ...
+# Subtest: renaming is idempotent
+ok 39 - renaming is idempotent
+  ---
+  duration_ms: 0.200695
+  type: 'test'
+  ...
+# Subtest: falls back to the store identifier when there is no display name
+ok 40 - falls back to the store identifier when there is no display name
+  ---
+  duration_ms: 0.144109
+  type: 'test'
+  ...
+# Received 6 frames for job 1790846324901ougxzexm4
+# Deduplicated: 6 -> 6 frames
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.0)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.848, contrast=39.3)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.848)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.840, contrast=36.9)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.840)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.842, contrast=37.6)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.842)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.841, contrast=37.1)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.841)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+# Selected 6/6 frames, 0 gap(s)
+# Subtest: /api/process-frames end to end
+    # Subtest: uploads frames, reports progress and serves the stitched result
+    ok 1 - uploads frames, reports progress and serves the stitched result
+      ---
+      duration_ms: 1306.55982
+      type: 'test'
+      ...
+# Received 6 frames for job 1790846326076hoz7k32mu (session testmupbnwv9)
+# Deduplicated: 6 -> 6 frames
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.6)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.8)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.849)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.840, contrast=36.7)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.840)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.836, contrast=35.5)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.836)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.832, contrast=34.2)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.832)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+# Selected 6/6 frames, 0 gap(s)
+    # Subtest: chunked upload stages frames and stitches them in order
+    ok 2 - chunked upload stages frames and stitches them in order
+      ---
+      duration_ms: 792.912198
+      type: 'test'
+      ...
+    # Subtest: rejects a session that staged nothing
+    ok 3 - rejects a session that staged nothing
+      ---
+      duration_ms: 3.59215
+      type: 'test'
+      ...
+    # Subtest: rejects a chunk without a session id
+    ok 4 - rejects a chunk without a session id
+      ---
+      duration_ms: 3.651
+      type: 'test'
+      ...
+    # Subtest: rejects an upload without frames
+    ok 5 - rejects an upload without frames
+      ---
+      duration_ms: 3.031913
+      type: 'test'
+      ...
+# Received 3 frames for job 1790846326708431q3kzlv
+# validateFrames: Frame 1 of 3 could not be decoded and was skipped. (ded86d430ddaabfbfd6ed297f34e9be1)
+# validateFrames: Frame 2 of 3 could not be decoded and was skipped. (dae98cbef4eab98d7834ce5d016a9dd0)
+# validateFrames: Frame 3 of 3 could not be decoded and was skipped. (8379a018e3a86afb8448255629ee5407)
+# Processing error (job 1790846326708431q3kzlv): Error: None of the uploaded frames could be read as images. The recording may be corrupt — please try recording again.
+#     at <anonymous> (/home/runner/work/Scrollstitch/Scrollstitch/server/routes.ts:476:21)
+    # Subtest: reports a clear error for an undecodable upload
+    ok 6 - reports a clear error for an undecodable upload
+      ---
+      duration_ms: 12.448324
+      type: 'test'
+      ...
+    # Subtest: reports build identity so a stale deployment is visible
+    ok 7 - reports build identity so a stale deployment is visible
+      ---
+      duration_ms: 2.962223
+      type: 'test'
+      ...
+# Received 4 frames for job 1790846326810umx67zewh
+# Deduplicated: 4 -> 4 frames
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.0)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.7)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.3)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+# Selection: 4 → 4 frames (0 near-duplicates, 0 redundant, 0 gaps)
+# Selected 4/4 frames, 0 gap(s)
+    # Subtest: builds the PDF on demand, once, without blocking the job
+    ok 8 - builds the PDF on demand, once, without blocking the job
+      ---
+      duration_ms: 597.4756
+      type: 'test'
+      ...
+# Received 4 frames for job 1790846327420vj3b0w4d7
+# Deduplicated: 4 -> 4 frames
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.8)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.849)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.847, contrast=39.1)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.843, contrast=37.7)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.843)
+# Selection: 4 → 4 frames (0 near-duplicates, 0 redundant, 0 gaps)
+# Selected 4/4 frames, 0 gap(s)
+    # Subtest: ignores a malformed push token instead of failing the job
+    ok 9 - ignores a malformed push token instead of failing the job
+      ---
+      duration_ms: 519.912378
+      type: 'test'
+      ...
+# Received 4 frames for job 17908463279231fj15t56w
+# Deduplicated: 4 -> 4 frames
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.845, contrast=38.3)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.845)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.9)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.3)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+# Selection: 4 → 4 frames (0 near-duplicates, 0 redundant, 0 gaps)
+# Selected 4/4 frames, 0 gap(s)
+    # Subtest: rehydrates a stitch the server no longer has, PDF and all
+    ok 10 - rehydrates a stitch the server no longer has, PDF and all
+      ---
+      duration_ms: 713.803817
+      type: 'test'
+      ...
+    # Subtest: refuses a trim that would leave nothing, instead of crashing
+    ok 11 - refuses a trim that would leave nothing, instead of crashing
+      ---
+      duration_ms: 28.100807
+      type: 'test'
+      ...
+    # Subtest: refuses a rehydrate that is not an image
+    ok 12 - refuses a rehydrate that is not an image
+      ---
+      duration_ms: 8.374764
+      type: 'test'
+      ...
+    # Subtest: 404s for a PDF whose source image does not exist
+    ok 13 - 404s for a PDF whose source image does not exist
+      ---
+      duration_ms: 2.391017
+      type: 'test'
+      ...
+    # Subtest: returns 404 for unknown jobs
+    ok 14 - returns 404 for unknown jobs
+      ---
+      duration_ms: 1.162651
+      type: 'test'
+      ...
+    # Subtest: sweeps stale outputs and leaves fresh ones alone
+    ok 15 - sweeps stale outputs and leaves fresh ones alone
+      ---
+      duration_ms: 1.068436
+      type: 'test'
+      ...
+    1..15
+ok 41 - /api/process-frames end to end
+  ---
+  duration_ms: 4004.19413
+  type: 'suite'
+  ...
+# Subtest: deployed bundle
+    # Subtest: exposes every route the source registers
+    ok 1 - exposes every route the source registers
+      ---
+      duration_ms: 0.737227
+      type: 'test'
+      ...
+    # Subtest: records the commit it was built from
+    ok 2 - records the commit it was built from
+      ---
+      duration_ms: 0.24602
+      type: 'test'
+      ...
+    1..2
+ok 42 - deployed bundle
+  ---
+  duration_ms: 1.125072
+  type: 'suite'
+  ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.2)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.7)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.849)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.8)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.849)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.3)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=44.1)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+# Subtest: scroll stitching pipeline (e2e on synthetic recordings)
+    # Subtest: smooth scrolling reconstructs the page without gaps or duplicates
+    ok 1 - smooth scrolling reconstructs the page without gaps or duplicates
+      ---
+      duration_ms: 974.318311
+      type: 'test'
+      ...
+# Sticky detection: header=119px, footer=95px
+#   overlap: 416px/56% (NCC=1.000, threshold=0.850, contrast=48.0)
+#   select: frame 1 kept (overlap=416px 56%, NCC=1.000, threshold=0.850)
+#   overlap: 416px/56% (NCC=0.999, threshold=0.850, contrast=46.4)
+#   select: frame 2 kept (overlap=416px 56%, NCC=0.999, threshold=0.850)
+#   overlap: 416px/56% (NCC=0.999, threshold=0.850, contrast=43.9)
+#   select: frame 3 kept (overlap=416px 56%, NCC=0.999, threshold=0.850)
+#   overlap: 416px/56% (NCC=0.999, threshold=0.850, contrast=41.8)
+#   select: frame 4 kept (overlap=416px 56%, NCC=0.999, threshold=0.850)
+#   overlap: 416px/56% (NCC=0.999, threshold=0.845, contrast=38.3)
+#   select: frame 5 kept (overlap=416px 56%, NCC=0.999, threshold=0.845)
+#   overlap: 416px/56% (NCC=0.999, threshold=0.834, contrast=34.9)
+#   select: frame 6 kept (overlap=416px 56%, NCC=0.999, threshold=0.834)
+# Selection: 7 → 7 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: sticky header and footer are detected, removed and kept once
+    ok 2 - sticky header and footer are detected, removed and kept once
+      ---
+      duration_ms: 987.868817
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.4)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.4)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: none (best NCC=0.383 at 381px/40% < threshold=0.847, contrast=38.9, searched 38–950px)
+#   select: GAP at frame 4/6 (best NCC 0.383 < threshold 0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.844, contrast=37.9)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.844)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.844, contrast=38.0)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.844)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 1 gaps)
+    # Subtest: a scroll jump produces a gap seam and a client-visible warning
+    ok 3 - a scroll jump produces a gap seam and a client-visible warning
+      ---
+      duration_ms: 750.702841
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.3)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.2)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.4)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.843, contrast=37.8)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.843)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.839, contrast=36.3)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.839)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: near-identical frames are dropped instead of duplicating content
+    ok 4 - near-identical frames are dropped instead of duplicating content
+      ---
+      duration_ms: 674.528175
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.765, contrast=12.7)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.765)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.764, contrast=12.5)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.764)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.764, contrast=12.6)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.764)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.764, contrast=12.5)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.764)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.764, contrast=12.4)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.764)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: dark low-contrast screens stitch via the adaptive NCC threshold
+    ok 5 - dark low-contrast screens stitch via the adaptive NCC threshold
+      ---
+      duration_ms: 746.405765
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.2)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.5)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: none (best NCC=0.621 at 70px/7% < threshold=0.921, contrast=40.6, searched 38–950px)
+#   select: GAP at frame 4/7 (best NCC 0.621 < threshold 0.921)
+#   overlap: none (best NCC=0.535 at 660px/69% < threshold=0.850, contrast=40.5, searched 38–950px)
+#   select: GAP at frame 5/7 (best NCC 0.535 < threshold 0.850)
+#   overlap: none (best NCC=0.546 at 660px/69% < threshold=0.850, contrast=41.3, searched 38–950px)
+#   select: GAP at frame 6/7 (best NCC 0.546 < threshold 0.850)
+#   overlap: none (best NCC=0.630 at 157px/16% < threshold=0.885, contrast=40.8, searched 38–950px)
+# Selection: 7 → 7 frames (0 near-duplicates, 0 redundant, 4 gaps)
+#   select: GAP at frame 7/7 (best NCC 0.630 < threshold 0.885)
+    # Subtest: a keyboard appearing mid-scroll degrades gracefully with warnings
+    ok 6 - a keyboard appearing mid-scroll degrades gracefully with warnings
+      ---
+      duration_ms: 822.312488
+      type: 'test'
+      ...
+    # Subtest: a single frame passes through unchanged
+    ok 7 - a single frame passes through unchanged
+      ---
+      duration_ms: 69.004384
+      type: 'test'
+      ...
+#   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.7)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.849)
+# Selection: 2 → 2 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: two overlapping frames stitch into one image
+    ok 8 - two overlapping frames stitch into one image
+      ---
+      duration_ms: 171.211862
+      type: 'test'
+      ...
+#   overlap: none (best NCC=0.536 at 48px/5% < threshold=0.929, contrast=39.5, searched 38–950px)
+# Selection: 2 → 2 frames (0 near-duplicates, 0 redundant, 1 gaps)
+#   select: GAP at frame 2/2 (best NCC 0.536 < threshold 0.929)
+    # Subtest: two non-overlapping frames butt together with a gap warning
+    ok 9 - two non-overlapping frames butt together with a gap warning
+      ---
+      duration_ms: 203.938141
+      type: 'test'
+      ...
+# validateFrames: Frame 4 of 7 could not be decoded and was skipped. (frame_zz_corrupt.jpg)
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.8)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.849)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.847, contrast=39.1)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.843, contrast=37.7)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.843)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.7)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.3)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: corrupt frames are skipped with a warning, the rest still stitch
+    ok 10 - corrupt frames are skipped with a warning, the rest still stitch
+      ---
+      duration_ms: 560.11591
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.845, contrast=38.3)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.845)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.9)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.3)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.6)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.5)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.5)
+#   select: frame 6 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.5)
+#   select: frame 7 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.7)
+#   select: frame 8 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=46.0)
+#   select: frame 9 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.0)
+#   select: frame 10 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.2)
+#   select: frame 11 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.8)
+#   select: frame 12 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.5)
+#   select: frame 13 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.4)
+#   select: frame 14 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.848, contrast=39.2)
+#   select: frame 15 kept (overlap=384px 40%, NCC=1.000, threshold=0.848)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.846, contrast=38.7)
+#   select: frame 16 kept (overlap=384px 40%, NCC=1.000, threshold=0.846)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.5)
+#   select: frame 17 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.0)
+#   select: frame 18 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.0)
+#   select: frame 19 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.5)
+#   select: frame 20 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.7)
+#   select: frame 21 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.7)
+#   select: frame 22 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.840, contrast=36.7)
+#   select: frame 23 kept (overlap=384px 40%, NCC=1.000, threshold=0.840)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.839, contrast=36.6)
+#   select: frame 24 kept (overlap=384px 40%, NCC=1.000, threshold=0.839)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.844, contrast=38.1)
+#   select: frame 25 kept (overlap=384px 40%, NCC=1.000, threshold=0.844)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.1)
+#   select: frame 26 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=46.0)
+#   select: frame 27 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.2)
+#   select: frame 28 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.848, contrast=39.4)
+#   select: frame 29 kept (overlap=384px 40%, NCC=1.000, threshold=0.848)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.2)
+#   select: frame 30 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.6)
+#   select: frame 31 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.845, contrast=38.6)
+#   select: frame 32 kept (overlap=384px 40%, NCC=1.000, threshold=0.845)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.5)
+#   select: frame 33 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.7)
+#   select: frame 34 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.840, contrast=36.7)
+#   select: frame 35 kept (overlap=384px 40%, NCC=1.000, threshold=0.840)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.842, contrast=37.5)
+#   select: frame 36 kept (overlap=384px 40%, NCC=1.000, threshold=0.842)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.8)
+#   select: frame 37 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=44.2)
+#   select: frame 38 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.2)
+#   select: frame 39 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.1)
+#   select: frame 40 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.8)
+#   select: frame 41 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=44.8)
+#   select: frame 42 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.1)
+#   select: frame 43 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.839, contrast=36.6)
+#   select: frame 44 kept (overlap=384px 40%, NCC=1.000, threshold=0.839)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.828, contrast=33.1)
+#   select: frame 45 kept (overlap=384px 40%, NCC=1.000, threshold=0.828)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.831, contrast=33.8)
+#   select: frame 46 kept (overlap=384px 40%, NCC=1.000, threshold=0.831)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.3)
+#   select: frame 47 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.7)
+#   select: frame 48 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.9)
+#   select: frame 49 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.4)
+#   select: frame 50 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.2)
+#   select: frame 51 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.3)
+#   select: frame 52 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.5)
+#   select: frame 53 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.847, contrast=39.0)
+#   select: frame 54 kept (overlap=384px 40%, NCC=1.000, threshold=0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.843, contrast=37.6)
+#   select: frame 55 kept (overlap=384px 40%, NCC=1.000, threshold=0.843)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.845, contrast=38.4)
+#   select: frame 56 kept (overlap=384px 40%, NCC=1.000, threshold=0.845)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.1)
+#   select: frame 57 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.7)
+#   select: frame 58 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.3)
+#   select: frame 59 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.6)
+#   select: frame 60 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.843, contrast=37.8)
+#   select: frame 61 kept (overlap=384px 40%, NCC=1.000, threshold=0.843)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.844, contrast=38.2)
+#   select: frame 62 kept (overlap=384px 40%, NCC=1.000, threshold=0.844)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=41.2)
+#   select: frame 63 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.2)
+#   select: frame 64 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.6)
+#   select: frame 65 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.844, contrast=38.0)
+#   select: frame 66 kept (overlap=384px 40%, NCC=1.000, threshold=0.844)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.830, contrast=33.6)
+#   select: frame 67 kept (overlap=384px 40%, NCC=1.000, threshold=0.830)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.829, contrast=33.3)
+#   select: frame 68 kept (overlap=384px 40%, NCC=1.000, threshold=0.829)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.827, contrast=32.6)
+#   select: frame 69 kept (overlap=384px 40%, NCC=1.000, threshold=0.827)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.838, contrast=36.1)
+#   select: frame 70 kept (overlap=384px 40%, NCC=1.000, threshold=0.838)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.6)
+#   select: frame 71 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.2)
+#   select: frame 72 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.0)
+#   select: frame 73 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.5)
+#   select: frame 74 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.3)
+#   select: frame 75 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.847, contrast=39.0)
+#   select: frame 76 kept (overlap=384px 40%, NCC=1.000, threshold=0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.4)
+#   select: frame 77 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.847, contrast=38.9)
+#   select: frame 78 kept (overlap=384px 40%, NCC=1.000, threshold=0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.847, contrast=39.0)
+#   select: frame 79 kept (overlap=384px 40%, NCC=1.000, threshold=0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.4)
+#   select: frame 80 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.0)
+#   select: frame 81 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=43.5)
+#   select: frame 82 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.847, contrast=39.0)
+#   select: frame 83 kept (overlap=384px 40%, NCC=1.000, threshold=0.847)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.834, contrast=35.0)
+#   select: frame 84 kept (overlap=384px 40%, NCC=1.000, threshold=0.834)
+# Selection: 85 → 85 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: 85 frames stitch sequentially within a bounded memory footprint
+    ok 11 - 85 frames stitch sequentially within a bounded memory footprint
+      ---
+      duration_ms: 6411.755222
+      type: 'test'
+      ...
+#   overlap: 70px/7% (NCC=0.998, threshold=0.921, contrast=41.2)
+#   overlap: 912px/95% (NCC=1.000, threshold=0.850, contrast=41.8)
+#   overlap: 940px/98% (NCC=0.999, threshold=0.850, contrast=41.7)
+    # Subtest: overlaps far outside the common range are still found
+    ok 12 - overlaps far outside the common range are still found
+      ---
+      duration_ms: 215.946361
+      type: 'test'
+      ...
+#   overlap: 588px/92% (NCC=0.999, threshold=0.850, contrast=44.1)
+#   overlap: 586px/92% (NCC=0.999, threshold=0.850, contrast=44.1)
+#   overlap: 584px/91% (NCC=1.000, threshold=0.850, contrast=44.2)
+#   overlap: 582px/91% (NCC=0.999, threshold=0.850, contrast=44.3)
+#   overlap: 580px/91% (NCC=0.999, threshold=0.850, contrast=44.4)
+#   overlap: 578px/90% (NCC=0.999, threshold=0.850, contrast=44.4)
+#   overlap: 576px/90% (NCC=1.000, threshold=0.850, contrast=44.3)
+#   overlap: 574px/90% (NCC=0.999, threshold=0.850, contrast=44.4)
+#   overlap: 572px/89% (NCC=0.999, threshold=0.850, contrast=44.4)
+#   overlap: 588px/92% (NCC=0.999, threshold=0.850, contrast=43.2)
+#   overlap: 586px/92% (NCC=0.999, threshold=0.850, contrast=43.2)
+#   overlap: 584px/91% (NCC=1.000, threshold=0.850, contrast=43.2)
+#   overlap: 582px/91% (NCC=0.999, threshold=0.850, contrast=43.2)
+#   overlap: 580px/91% (NCC=0.999, threshold=0.850, contrast=43.2)
+#   overlap: 578px/90% (NCC=0.999, threshold=0.850, contrast=43.2)
+#   overlap: 576px/90% (NCC=1.000, threshold=0.850, contrast=43.2)
+#   overlap: 574px/90% (NCC=0.999, threshold=0.850, contrast=43.0)
+#   overlap: 572px/89% (NCC=0.999, threshold=0.850, contrast=42.9)
+#   overlap: 588px/92% (NCC=0.999, threshold=0.850, contrast=44.2)
+#   overlap: 586px/92% (NCC=0.999, threshold=0.850, contrast=44.2)
+#   overlap: 584px/91% (NCC=1.000, threshold=0.850, contrast=44.2)
+#   overlap: 582px/91% (NCC=0.999, threshold=0.850, contrast=44.2)
+#   overlap: 580px/91% (NCC=0.999, threshold=0.850, contrast=44.2)
+#   overlap: 578px/90% (NCC=0.999, threshold=0.850, contrast=44.2)
+#   overlap: 576px/90% (NCC=1.000, threshold=0.850, contrast=44.2)
+#   overlap: 574px/90% (NCC=0.999, threshold=0.850, contrast=44.2)
+#   overlap: 572px/89% (NCC=0.999, threshold=0.850, contrast=44.2)
+    # Subtest: repeating chat rows are aligned on the true offset, not one row off
+    ok 13 - repeating chat rows are aligned on the true offset, not one row off
+      ---
+      duration_ms: 831.310103
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 581px/91% (NCC=0.999, threshold=0.850, contrast=44.9)
+#   select: frame 1 skipped (overlap 91% > 80%, near-duplicate)
+#   overlap: 522px/82% (NCC=0.999, threshold=0.850, contrast=44.8)
+#   select: frame 2 skipped (overlap 82% > 80%, near-duplicate)
+#   overlap: 463px/72% (NCC=0.999, threshold=0.850, contrast=45.0)
+#   select: frame 3 skipped (overlap 72% above target window, waiting for a better seam)
+#   overlap: 404px/63% (NCC=0.999, threshold=0.850, contrast=44.9)
+#   select: frame 4 skipped (overlap 63% above target window, waiting for a better seam)
+#   overlap: 345px/54% (NCC=0.999, threshold=0.850, contrast=44.2)
+#   select: frame 5 kept (overlap=345px 54%, NCC=0.999, threshold=0.850)
+#   overlap: 581px/91% (NCC=0.999, threshold=0.850, contrast=43.2)
+#   select: frame 6 skipped (overlap 91% > 80%, near-duplicate)
+#   overlap: 522px/82% (NCC=0.999, threshold=0.850, contrast=43.6)
+#   select: frame 7 skipped (overlap 82% > 80%, near-duplicate)
+#   overlap: 463px/72% (NCC=0.999, threshold=0.850, contrast=43.9)
+#   select: frame 8 skipped (overlap 72% above target window, waiting for a better seam)
+#   overlap: 404px/63% (NCC=0.999, threshold=0.850, contrast=43.1)
+#   select: frame 9 skipped (overlap 63% above target window, waiting for a better seam)
+#   overlap: 345px/54% (NCC=1.000, threshold=0.850, contrast=43.0)
+#   select: frame 10 kept (overlap=345px 54%, NCC=1.000, threshold=0.850)
+#   overlap: 581px/91% (NCC=0.999, threshold=0.850, contrast=42.7)
+#   select: frame 11 skipped (overlap 91% > 80%, near-duplicate)
+#   overlap: 522px/82% (NCC=0.999, threshold=0.850, contrast=43.1)
+#   select: frame 12 skipped (overlap 82% > 80%, near-duplicate)
+#   overlap: 463px/72% (NCC=1.000, threshold=0.850, contrast=42.8)
+#   select: frame 13 skipped (overlap 72% above target window, waiting for a better seam)
+#   overlap: 404px/63% (NCC=1.000, threshold=0.850, contrast=42.8)
+#   select: frame 14 skipped (overlap 63% above target window, waiting for a better seam)
+#   overlap: 345px/54% (NCC=1.000, threshold=0.850, contrast=43.4)
+#   select: frame 15 kept (overlap=345px 54%, NCC=1.000, threshold=0.850)
+#   overlap: 581px/91% (NCC=0.999, threshold=0.850, contrast=44.7)
+#   select: frame 16 skipped (overlap 91% > 80%, near-duplicate)
+#   overlap: 522px/82% (NCC=0.999, threshold=0.850, contrast=44.7)
+#   select: frame 17 skipped (overlap 82% > 80%, near-duplicate)
+#   overlap: 463px/72% (NCC=1.000, threshold=0.850, contrast=44.8)
+#   select: frame 18 skipped (overlap 72% above target window, waiting for a better seam)
+#   overlap: 404px/63% (NCC=0.999, threshold=0.850, contrast=45.2)
+#   select: frame 19 skipped (overlap 63% above target window, waiting for a better seam)
+#   overlap: 345px/54% (NCC=0.999, threshold=0.850, contrast=45.5)
+#   select: frame 20 kept (overlap=345px 54%, NCC=0.999, threshold=0.850)
+#   overlap: 581px/91% (NCC=0.999, threshold=0.850, contrast=46.9)
+#   select: frame 21 skipped (overlap 91% > 80%, near-duplicate)
+#   overlap: 522px/82% (NCC=0.999, threshold=0.850, contrast=47.0)
+#   select: frame 22 skipped (overlap 82% > 80%, near-duplicate)
+#   overlap: 463px/72% (NCC=0.999, threshold=0.850, contrast=46.8)
+#   select: frame 23 skipped (overlap 72% above target window, waiting for a better seam)
+#   overlap: 404px/63% (NCC=0.999, threshold=0.850, contrast=46.5)
+#   select: frame 24 skipped (overlap 63% above target window, waiting for a better seam)
+#   overlap: 345px/54% (NCC=0.999, threshold=0.850, contrast=46.4)
+#   select: frame 25 kept (overlap=345px 54%, NCC=0.999, threshold=0.850)
+#   overlap: 581px/91% (NCC=0.999, threshold=0.850, contrast=46.1)
+#   select: frame 26 skipped (overlap 91% > 80%, near-duplicate)
+#   overlap: 522px/82% (NCC=0.999, threshold=0.850, contrast=45.7)
+#   select: frame 27 skipped (overlap 82% > 80%, near-duplicate)
+#   overlap: 463px/72% (NCC=0.999, threshold=0.850, contrast=45.1)
+#   select: frame 28 skipped (overlap 72% above target window, waiting for a better seam)
+#   overlap: 404px/63% (NCC=0.999, threshold=0.850, contrast=44.9)
+#   select: frame 29 skipped (overlap 63% above target window, waiting for a better seam)
+#   overlap: 355px/55% (NCC=0.999, threshold=0.850, contrast=45.2)
+#   select: frame 30 kept (overlap=355px 55%, NCC=0.999, threshold=0.850)
+# Selection: 31 → 7 frames (12 near-duplicates, 12 redundant, 0 gaps)
+    # Subtest: a smooth scroll through a chat stitches to the page's true height
+    ok 14 - a smooth scroll through a chat stitches to the page's true height
+      ---
+      duration_ms: 1046.549935
+      type: 'test'
+      ...
+#   overlap: 480px/50% (NCC=1.000, threshold=0.850, contrast=44.4)
+    # Subtest: a region that changes between frames does not sink a good seam
+    ok 15 - a region that changes between frames does not sink a good seam
+      ---
+      duration_ms: 169.569443
+      type: 'test'
+      ...
+#   overlap: none (best NCC=0.496 at 130px/14% < threshold=0.893, contrast=39.1, searched 38–950px)
+    # Subtest: small overlaps must clear a stricter confidence bar
+    ok 16 - small overlaps must clear a stricter confidence bar
+      ---
+      duration_ms: 114.769316
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 115px/12% (NCC=0.999, threshold=0.899, contrast=39.0)
+#   select: frame 1 kept (overlap=115px 12%, NCC=0.999, threshold=0.899)
+#   overlap: 115px/12% (NCC=0.995, threshold=0.902, contrast=42.8)
+#   select: frame 2 kept (overlap=115px 12%, NCC=0.995, threshold=0.902)
+#   overlap: 115px/12% (NCC=0.995, threshold=0.900, contrast=39.4)
+#   select: frame 3 kept (overlap=115px 12%, NCC=0.995, threshold=0.900)
+#   overlap: 115px/12% (NCC=0.998, threshold=0.902, contrast=40.8)
+#   select: frame 4 kept (overlap=115px 12%, NCC=0.998, threshold=0.902)
+# Selection: 5 → 5 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: a fast flick with only a sliver of overlap still stitches
+    ok 17 - a fast flick with only a sliver of overlap still stitches
+      ---
+      duration_ms: 646.919748
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: 480px/50% (NCC=1.000, threshold=0.850, contrast=45.5)
+#   select: frame 1 kept (overlap=480px 50%, NCC=1.000, threshold=0.850)
+#   overlap: 480px/50% (NCC=1.000, threshold=0.850, contrast=42.3)
+#   select: frame 2 kept (overlap=480px 50%, NCC=1.000, threshold=0.850)
+#   overlap: 480px/50% (NCC=1.000, threshold=0.850, contrast=41.2)
+#   select: frame 3 kept (overlap=480px 50%, NCC=1.000, threshold=0.850)
+#   overlap: 480px/50% (NCC=1.000, threshold=0.847, contrast=39.0)
+#   select: frame 4 kept (overlap=480px 50%, NCC=1.000, threshold=0.847)
+#   overlap: 480px/50% (NCC=1.000, threshold=0.844, contrast=38.0)
+#   select: frame 5 kept (overlap=480px 50%, NCC=1.000, threshold=0.844)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: a status bar with a live clock (undetectable sticky) still stitches
+    ok 18 - a status bar with a live clock (undetectable sticky) still stitches
+      ---
+      duration_ms: 616.155018
+      type: 'test'
+      ...
+# validateFrames: Frame 4 of 7 was blank (all black) and was skipped. (frame_black.jpg)
+# Sticky detection: header=0px, footer=0px
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.9)
+#   select: frame 1 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.2)
+#   select: frame 2 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.0)
+#   select: frame 3 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.3)
+#   select: frame 4 kept (overlap=384px 40%, NCC=1.000, threshold=0.850)
+#   overlap: 384px/40% (NCC=1.000, threshold=0.842, contrast=37.5)
+#   select: frame 5 kept (overlap=384px 40%, NCC=1.000, threshold=0.842)
+# Selection: 6 → 6 frames (0 near-duplicates, 0 redundant, 0 gaps)
+    # Subtest: blank (all-black) decoder-glitch frames are skipped with a warning
+    ok 19 - blank (all-black) decoder-glitch frames are skipped with a warning
+      ---
+      duration_ms: 521.98062
+      type: 'test'
+      ...
+# Sticky detection: header=0px, footer=0px
+#   overlap: none (best NCC=0.361 at 156px/16% < threshold=0.885, contrast=42.7, searched 38–950px)
+#   select: GAP at frame 2/5 (best NCC 0.361 < threshold 0.885)
+#   overlap: none (best NCC=0.355 at 583px/61% < threshold=0.850, contrast=41.0, searched 38–950px)
+#   select: GAP at frame 3/5 (best NCC 0.355 < threshold 0.850)
+#   overlap: none (best NCC=0.566 at 64px/7% < threshold=0.914, contrast=37.2, searched 38–950px)
+#   select: GAP at frame 4/5 (best NCC 0.566 < threshold 0.914)
+#   overlap: none (best NCC=0.407 at 446px/46% < threshold=0.832, contrast=34.2, searched 38–950px)
+# Selection: 5 → 5 frames (0 near-duplicates, 0 redundant, 4 gaps)
+#   select: GAP at frame 5/5 (best NCC 0.407 < threshold 0.832)
+    # Subtest: a scroll faster than the frame rate yields a leading 'too fast' warning
+    ok 20 - a scroll faster than the frame rate yields a leading 'too fast' warning
+      ---
+      duration_ms: 525.178772
+      type: 'test'
+      ...
+# preview: 400×6000 (2MP) → 200×3000
+    # Subtest: very tall outputs get a downscaled preview image
+    ok 21 - very tall outputs get a downscaled preview image
+      ---
+      duration_ms: 218.782499
+      type: 'test'
+      ...
+# validateFrames: Frame 1 of 3 could not be decoded and was skipped. (bad_0.jpg)
+# validateFrames: Frame 2 of 3 could not be decoded and was skipped. (bad_1.jpg)
+# validateFrames: Frame 3 of 3 could not be decoded and was skipped. (bad_2.jpg)
+    # Subtest: a fully corrupt upload fails with a clear error
+    ok 22 - a fully corrupt upload fails with a clear error
+      ---
+      duration_ms: 4.308906
+      type: 'test'
+      ...
+    1..22
+ok 43 - scroll stitching pipeline (e2e on synthetic recordings)
+  ---
+  duration_ms: 17287.151898
+  type: 'suite'
+  ...
+# Subtest: the message that shipped to a lock screen
+ok 44 - the message that shipped to a lock screen
+  ---
+  duration_ms: 1.592371
+  type: 'test'
+  ...
+# Subtest: does not depend on the path in the message
+ok 45 - does not depend on the path in the message
+  ---
+  duration_ms: 0.454088
+  type: 'test'
+  ...
+# Subtest: translates an undecodable frame separately
+ok 46 - translates an undecodable frame separately
+  ---
+  duration_ms: 0.28935
+  type: 'test'
+  ...
+# Subtest: translates a full disk
+ok 47 - translates a full disk
+  ---
+  duration_ms: 0.321159
+  type: 'test'
+  ...
+# Subtest: passes our own messages through
+ok 48 - passes our own messages through
+  ---
+  duration_ms: 0.300581
+  type: 'test'
+  ...
+# Subtest: never renders empty or as [object Object]
+ok 49 - never renders empty or as [object Object]
+  ---
+  duration_ms: 0.240068
+  type: 'test'
+  ...
+# Subtest: accepts a thrown string
+ok 50 - accepts a thrown string
+  ---
+  duration_ms: 0.23576
+  type: 'test'
+  ...
+# Subtest: is case insensitive
+ok 51 - is case insensitive
+  ---
+  duration_ms: 0.20374
+  type: 'test'
+  ...
+1..51
+# tests 101
+# suites 5
+# pass 101
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 33936.855188
