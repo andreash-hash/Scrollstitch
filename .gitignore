@@ -7,6 +7,11 @@ node_modules/
 .expo/
 dist/
 web-build/
+
+# E2E (npm run test:e2e)
+dist-e2e/
+playwright-report/
+test-results/
 expo-env.d.ts
 
 # Native

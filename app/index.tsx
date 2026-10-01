@@ -56,6 +56,7 @@ import {
 import { preparePdf, rehydrateStitch } from "@/lib/stitch-files";
 import { rememberPendingJob, forgetPendingJob, loadPendingJob } from "@/lib/pending-job";
 import { readableMediaError, technicalErrorCode } from "@/lib/mediaErrors";
+import { HttpError, httpErrorMessage, isRetryableStatus } from "@/lib/httpErrors";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -955,6 +956,9 @@ export default function ScrollStitchScreen() {
       pollRef.current = setInterval(async () => {
         if (Date.now() - lastProgressAt > STALL_TIMEOUT) {
           cleanupPolling();
+          // Like every other way this job can end: a relaunch must not pick a
+          // job back up that has already been reported as dead.
+          void forgetPendingJob();
           setStage("error");
           setErrorCode("TIMEOUT");
           setErrorMessage("Processing stopped responding. Please try again.");
@@ -1137,10 +1141,15 @@ export default function ScrollStitchScreen() {
           try {
             const body = buildBody ? await buildBody() : undefined;
             const res = await doFetch(url, { method: "POST", ...(body ? { body } : {}) });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+              throw new HttpError(res.status, httpErrorMessage(res.status, await res.text()));
+            }
             return res;
           } catch (err) {
             lastError = err;
+            // A rejected request is rejected again on retry; only a dropped
+            // connection or a server-side hiccup is worth another attempt.
+            if (err instanceof HttpError && !isRetryableStatus(err.status)) break;
           }
         }
         throw lastError;
@@ -1546,6 +1555,7 @@ export default function ScrollStitchScreen() {
               router.push("/library");
             }}
             style={styles.headerButton}
+            hitSlop={4}
             accessibilityRole="button"
             accessibilityLabel={
               libraryCount > 0
@@ -1567,6 +1577,7 @@ export default function ScrollStitchScreen() {
             <Pressable
               onPress={reset}
               style={styles.headerButton}
+              hitSlop={4}
               accessibilityRole="button"
               accessibilityLabel="Start over"
               accessibilityHint="Clears the result and returns to the start screen"
@@ -1858,7 +1869,11 @@ export default function ScrollStitchScreen() {
                   <>
                     <View style={styles.settingsDivider} />
                     <Text style={styles.settingLabel}>Sensitivity</Text>
-                <View style={styles.settingRow}>
+                <View
+                  style={styles.settingRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Sensitivity"
+                >
                   {(Object.keys(SENSITIVITY_PRESETS) as SensitivityKey[]).map((key) => (
                     <Pressable
                       key={key}
@@ -1887,7 +1902,11 @@ export default function ScrollStitchScreen() {
                 </Text>
 
                 <Text style={[styles.settingLabel, { marginTop: 16 }]}>Output Quality</Text>
-                <View style={styles.settingRow}>
+                <View
+                  style={styles.settingRow}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Output quality"
+                >
                   {(["png", "jpeg"] as const).map((q) => (
                     <Pressable
                       key={q}
@@ -2136,7 +2155,9 @@ export default function ScrollStitchScreen() {
                     <View style={styles.cropStepper}>
                       <Pressable
                         onPress={() => setCropTop((v) => Math.max(0, v - 50))}
-                        style={styles.stepperBtn}
+                        disabled={cropTop === 0}
+                        hitSlop={6}
+                        style={[styles.stepperBtn, cropTop === 0 && styles.stepperBtnDisabled]}
                         accessibilityRole="button"
                         accessibilityLabel="Decrease top trim by 50 pixels"
                         accessibilityValue={{ text: `${cropTop} pixels` }}
@@ -2146,11 +2167,14 @@ export default function ScrollStitchScreen() {
                       </Pressable>
                       <Text style={styles.stepperVal}>{cropTop}</Text>
                       <Pressable
-                        onPress={() => setCropTop((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
-                        style={styles.stepperBtn}
+                        onPress={() => setCropTop((v) => Math.min(Math.max(0, Math.floor(result.dimensions.height / 2) - 10), v + 50))}
+                        disabled={cropTop >= Math.max(0, Math.floor(result.dimensions.height / 2) - 10)}
+                        hitSlop={6}
+                        style={[styles.stepperBtn, cropTop >= Math.max(0, Math.floor(result.dimensions.height / 2) - 10) && styles.stepperBtnDisabled]}
                         accessibilityRole="button"
                         accessibilityLabel="Increase top trim by 50 pixels"
                         accessibilityValue={{ text: `${cropTop} pixels` }}
+                        accessibilityState={{ disabled: cropTop >= Math.max(0, Math.floor(result.dimensions.height / 2) - 10) }}
                       >
                         <Feather name="plus" size={16} color={C.accent} />
                       </Pressable>
@@ -2161,7 +2185,9 @@ export default function ScrollStitchScreen() {
                     <View style={styles.cropStepper}>
                       <Pressable
                         onPress={() => setCropBottom((v) => Math.max(0, v - 50))}
-                        style={styles.stepperBtn}
+                        disabled={cropBottom === 0}
+                        hitSlop={6}
+                        style={[styles.stepperBtn, cropBottom === 0 && styles.stepperBtnDisabled]}
                         accessibilityRole="button"
                         accessibilityLabel="Decrease bottom trim by 50 pixels"
                         accessibilityValue={{ text: `${cropBottom} pixels` }}
@@ -2171,11 +2197,14 @@ export default function ScrollStitchScreen() {
                       </Pressable>
                       <Text style={styles.stepperVal}>{cropBottom}</Text>
                       <Pressable
-                        onPress={() => setCropBottom((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
-                        style={styles.stepperBtn}
+                        onPress={() => setCropBottom((v) => Math.min(Math.max(0, Math.floor(result.dimensions.height / 2) - 10), v + 50))}
+                        disabled={cropBottom >= Math.max(0, Math.floor(result.dimensions.height / 2) - 10)}
+                        hitSlop={6}
+                        style={[styles.stepperBtn, cropBottom >= Math.max(0, Math.floor(result.dimensions.height / 2) - 10) && styles.stepperBtnDisabled]}
                         accessibilityRole="button"
                         accessibilityLabel="Increase bottom trim by 50 pixels"
                         accessibilityValue={{ text: `${cropBottom} pixels` }}
+                        accessibilityState={{ disabled: cropBottom >= Math.max(0, Math.floor(result.dimensions.height / 2) - 10) }}
                       >
                         <Feather name="plus" size={16} color={C.accent} />
                       </Pressable>
@@ -2881,6 +2910,9 @@ const styles = StyleSheet.create({
     padding: 10,
     alignItems: "center",
     justifyContent: "center",
+  },
+  stepperBtnDisabled: {
+    opacity: 0.35,
   },
   stepperVal: {
     flex: 1,

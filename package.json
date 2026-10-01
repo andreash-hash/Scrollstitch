@@ -15,7 +15,9 @@
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test server/tests/*.test.ts lib/__tests__/*.test.ts scripts/__tests__/*.test.ts"
+    "test": "tsx --test server/tests/*.test.ts lib/__tests__/*.test.ts scripts/__tests__/*.test.ts",
+    "e2e:build": "E2E=1 EXPO_PUBLIC_DOMAIN=api.e2e.test EXPO_PUBLIC_REVENUECAT_TEST_API_KEY=test_e2e EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=appl_e2e EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=goog_e2e EXPO_PUBLIC_INSERT_AFFILIATE_COMPANY_CODE= expo export --platform web --output-dir dist-e2e --clear",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
@@ -85,6 +87,7 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@expo/ngrok": "^4.1.0",
+    "@playwright/test": "^1.56.0",
     "@types/express": "^5.0.0",
     "@types/pdfkit": "^0.17.6",
     "@types/react": "~19.1.10",

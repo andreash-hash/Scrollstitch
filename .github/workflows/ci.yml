@@ -1,0 +1,93 @@
+name: CI
+
+# One ubuntu runner per PR push: typecheck, lint, unit tests, then the
+# Playwright e2e suite against the web build. Linux minutes are the cheap
+# kind (1x); expect roughly 6–8 minutes a run.
+#
+# Results: the HTML report and raw test output are uploaded as an artifact,
+# and a summary with screenshots is pushed to the `ci-results` branch
+# (<branch>/web/), readable with `git fetch origin ci-results`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # publish-ci-results.sh pushes to the ci-results branch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Each check runs even when an earlier one failed, so one run reports
+      # everything that is wrong rather than only the first thing.
+      - name: Typecheck
+        id: typecheck
+        run: npm run typecheck 2>&1 | tee typecheck.log
+
+      - name: Lint
+        id: lint
+        if: success() || failure()
+        run: npm run lint 2>&1 | tee lint.log
+
+      - name: Unit tests
+        id: unit
+        if: success() || failure()
+        run: npm test 2>&1 | tee unit-tests.log
+
+      - name: Cache Playwright browsers
+        if: success() || failure()
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium for Playwright
+        if: success() || failure()
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        id: e2e
+        if: success() || failure()
+        run: npm run test:e2e
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+            *.log
+          retention-days: 14
+
+      - name: Publish summary and screenshots to ci-results
+        # Not for PRs from forks: their token cannot push, and should not.
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node .github/scripts/collect-results.mjs ci-out typecheck.log lint.log unit-tests.log
+          status="typecheck=${{ steps.typecheck.outcome }} lint=${{ steps.lint.outcome }} unit=${{ steps.unit.outcome }} e2e=${{ steps.e2e.outcome }}"
+          bash .github/scripts/publish-ci-results.sh web ci-out "$status"

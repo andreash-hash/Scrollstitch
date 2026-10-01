@@ -1,0 +1,44 @@
+appId: com.scrollstitch
+name: Stitch the fixture recording from Photos
+# The workflow adds e2e/fixtures/scroll.mp4 to the simulator's Photos library
+# before this runs, so it is the newest item in the picker.
+#
+# The picker (PHPicker) is a system process, and its layout varies between
+# iOS versions — the steps that touch it are best-effort and every stage is
+# screenshotted, so a failure here shows where it stopped.
+#
+# Stitching goes to the server in EXPO_PUBLIC_DOMAIN (the real deployment):
+# a release build requires https, which a server on the runner cannot offer.
+---
+- launchApp:
+    clearState: true
+- runFlow: subflows/unlock.yaml
+- tapOn: "Pick a screen recording"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: ios-10-picker
+# Newest item, top-left of the grid in the picker's default layout.
+- tapOn:
+    point: "17%,22%"
+- tapOn:
+    text: "Add|Done|Choose"
+    optional: true
+# Registering for the completion push raises the notification prompt.
+- tapOn:
+    text: "Allow"
+    optional: true
+- takeScreenshot: ios-11-processing
+- extendedWaitUntil:
+    visible: "Save to Photos"
+    timeout: 180000
+- takeScreenshot: ios-12-result
+# 360x2400 is the true height of the fixture page. A different number means
+# the server stitched rows twice or lost some — or is running an older build.
+- assertVisible:
+    text: "360x2400"
+    optional: true
+- scrollUntilVisible:
+    element: "Process another video"
+    direction: DOWN
+    optional: true
+- takeScreenshot: ios-13-result-actions

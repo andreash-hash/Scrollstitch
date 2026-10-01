@@ -114,6 +114,57 @@ export function generatePage(
   return { data, width, height };
 }
 
+/**
+ * A chat-like page: every row has the same layout (alternating background, a
+ * bubble at a fixed x, "glyphs" inside it) and only the content differs —
+ * bubble width and glyph runs vary row to row. generatePage() is deliberately
+ * non-periodic; this is the opposite case, and the common one in practice:
+ * message lists, feeds and settings screens repeat their structure every row,
+ * so a matcher can line rows up one period off and still score well.
+ */
+export function generateChatPage(
+  width: number,
+  height: number,
+  seed: number,
+  rowH = 80
+): SyntheticPage {
+  const rand = mulberry32(seed);
+  const data = Buffer.alloc(width * height * 3);
+  const fill = (x0: number, y0: number, w: number, h: number, v: [number, number, number]) => {
+    for (let y = Math.max(0, y0); y < Math.min(height, y0 + h); y++) {
+      for (let x = Math.max(0, x0); x < Math.min(width, x0 + w); x++) {
+        const i = (y * width + x) * 3;
+        data[i] = v[0];
+        data[i + 1] = v[1];
+        data[i + 2] = v[2];
+      }
+    }
+  };
+  for (let row = 0, y = 0; y < height; row++, y += rowH) {
+    fill(0, y, width, rowH, row % 2 ? [236, 236, 240] : [248, 248, 250]);
+    const bubbleW = Math.floor(width * (0.45 + rand() * 0.45));
+    fill(16, y + 14, bubbleW, rowH - 28, [200, 222, 255]);
+    // Two lines of glyphs: 6–10px wide boxes with word gaps, like text.
+    for (const line of [0, 1]) {
+      let x = 26;
+      const gy = y + 22 + line * 20;
+      while (x < 16 + bubbleW - 14) {
+        const w = 6 + Math.floor(rand() * 5);
+        if (rand() < 0.18) {
+          x += 9; // word gap
+          continue;
+        }
+        // Glyphs are a few thin strokes, not solid blocks: text is 2px lines,
+        // which is what makes the true correlation peak a narrow one.
+        for (let k = 0; k < 3; k++) fill(x, gy + Math.floor(rand() * 14), w, 2, [40, 40, 50]);
+        fill(x + Math.floor(rand() * w), gy, 2, 16, [40, 40, 50]);
+        x += w + 2;
+      }
+    }
+  }
+  return { data, width, height };
+}
+
 // ---------------------------------------------------------------------------
 // Frame rendering (sticky header/footer, keyboard overlay, JPEG noise)
 // ---------------------------------------------------------------------------

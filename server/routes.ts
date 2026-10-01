@@ -290,6 +290,8 @@ function firstString(value: unknown): string {
 }
 
 const outputDir = path.join(os.tmpdir(), "scrollstitch-output");
+/** Least a trim may leave of a stitched image, in px. */
+const MIN_CROPPED_HEIGHT = 10;
 
 /**
  * Finished stitches would otherwise live forever.
@@ -817,7 +819,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const meta = await sharp(filePath).metadata();
       const origWidth = meta.width ?? 0;
       const origHeight = meta.height ?? 0;
-      const newHeight = Math.max(10, origHeight - cropTop - cropBottom);
+
+      // The device caps each stepper at half the height, but nothing stopped
+      // a larger request reaching here, and sharp throws on an extract area
+      // past the bottom of the image — a 500 for what is a bad request.
+      if (cropTop + cropBottom > origHeight - MIN_CROPPED_HEIGHT) {
+        return res.status(400).json({
+          error: "That trim would remove the whole image. Trim less and try again.",
+        });
+      }
+      const newHeight = origHeight - cropTop - cropBottom;
 
       const ext = path.extname(filename).toLowerCase();
       const baseName = path.basename(filename, ext);

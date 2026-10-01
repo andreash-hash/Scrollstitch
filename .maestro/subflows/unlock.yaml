@@ -1,0 +1,17 @@
+appId: com.scrollstitch
+name: Unlock the app (mocked purchase)
+# Shared by the other flows. The iOS CI build is bundled with E2E=1, so
+# RevenueCat is the test double from e2e/mocks: offerings are fixed, a
+# purchase always grants "pro", and nothing reaches the App Store.
+---
+- extendedWaitUntil:
+    visible: "Skip to plans"
+    timeout: 30000
+- tapOn: "Skip to plans"
+- extendedWaitUntil:
+    visible: "Go Pro"
+    timeout: 15000
+- tapOn: "Start 3 days free.*"
+- extendedWaitUntil:
+    visible: "Pick a screen recording"
+    timeout: 15000
