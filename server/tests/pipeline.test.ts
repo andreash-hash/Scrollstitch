@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { generatePreviewImage, measureOverlap, nccThresholdFor } from "../video-processor";
 import {
   generatePage,
+  generateChatPage,
   renderFrames,
   runPipeline,
   greyFromFile,
@@ -410,6 +411,55 @@ describe("scroll stitching pipeline (e2e on synthetic recordings)", () => {
         `measured ${m.overlapPx}px, expected ≈${expected}px`
       );
     }
+  });
+
+  test("repeating chat rows are aligned on the true offset, not one row off", async () => {
+    // Every row of a chat looks alike, so an overlap one row-period short of
+    // the truth also correlates. The 8px coarse grid can land a few pixels off
+    // the true peak, where its NCC collapses on sharp glyph edges, while a
+    // short window at the wrong period still scores high — and the fine pass
+    // only refined the coarse winner. The result was whole rows repeated in
+    // the stitch. Sweep steps so the true offset falls everywhere on the grid.
+    const W = 360;
+    const H = 640;
+    const page = generateChatPage(W, 2400, 2026);
+    const dir = makeTempDir("chat");
+    const failures: string[] = [];
+    // Start positions that failed before the fix, plus a spread; every pair
+    // stays inside the page so no frame is padded past its bottom.
+    for (const start of [85, 600, 1530]) for (let step = 52; step <= 68; step += 2) {
+      const frames = await renderFrames({
+        page,
+        outDir: path.join(dir, `s${start}_${step}`),
+        frameHeight: H,
+        frames: [{ position: start }, { position: start + step }],
+        jpegQuality: 80,
+      });
+      const expected = H - step;
+      const m = await measureOverlap(frames[0], frames[1]);
+      if (!m.matched || Math.abs(m.overlapPx - expected) > 3) {
+        failures.push(`start ${start} step ${step}: measured ${m.matched ? m.overlapPx : "none"}px, expected ${expected}px`);
+      }
+    }
+    assert.deepEqual(failures, []);
+  });
+
+  test("a smooth scroll through a chat stitches to the page's true height", async () => {
+    const W = 360;
+    const H = 640;
+    const PAGE_H = 2400;
+    const page = generateChatPage(W, PAGE_H, 7);
+    const dir = makeTempDir("chat-run");
+    const positions: { position: number }[] = [];
+    for (let p = 0; p < PAGE_H - H; p += 59) positions.push({ position: p });
+    positions.push({ position: PAGE_H - H });
+    const frames = await renderFrames({ page, outDir: dir, frameHeight: H, frames: positions, jpegQuality: 80 });
+    const run = await runPipeline(frames);
+    assert.equal(run.stitch.width, W);
+    assert.ok(
+      Math.abs(run.stitch.height - PAGE_H) <= 8,
+      `stitched ${run.stitch.height}px for a ${PAGE_H}px page — rows were repeated or dropped`
+    );
   });
 
   test("a region that changes between frames does not sink a good seam", async () => {

@@ -43,6 +43,7 @@ const NCC_SAMPLE_WIDTH = 64;          // downsample X to this width before NCC
 const NCC_COARSE_STEP = 8;            // px — coarse search step
 const NCC_FINE_RANGE = 16;            // px — fine-search ± around coarse winner
 const NCC_FINE_STEP = 1;              // px — fine-search resolution
+const NCC_FINE_SEEDS = 3;             // distinct coarse peaks refined at 1px
 // Banded scoring: the overlap is also scored in this many slices so a locally
 // changed region (a loaded image, a playing video) cannot sink the whole match.
 const NCC_MAX_BANDS = 9;
@@ -755,8 +756,10 @@ export async function measureOverlap(
   let bestOverlap = 0;
   let bestNCC = -1;
   let bestMargin = -Infinity;
+  const scored = new Set<number>();
 
-  const consider = (ov: number) => {
+  const consider = (ov: number): number => {
+    scored.add(ov);
     const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
     const margin = ncc - nccThresholdFor(baseThreshold, ov, frameH);
     if (margin > bestMargin) {
@@ -764,23 +767,38 @@ export async function measureOverlap(
       bestNCC = ncc;
       bestOverlap = ov;
     }
+    return margin;
   };
 
   // Coarse pass — iterate from minOverlap to maxSearch in NCC_COARSE_STEP steps.
   // No "prefer smallest" or "prefer largest" bias.
+  const coarse: { ov: number; margin: number }[] = [];
   for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
-    consider(ov);
+    coarse.push({ ov, margin: consider(ov) });
   }
 
-  // Fine pass — 1px resolution within ±NCC_FINE_RANGE of the coarse winner.
-  // Run it BEFORE the confidence check: the true peak can sit up to
-  // NCC_COARSE_STEP/2 px off the coarse grid, where JPEG noise already costs
-  // enough correlation to fail the threshold even for a genuine overlap.
-  const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
-  const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
-  for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
-    consider(ov);
+  // Fine pass — 1px resolution around the best few DISTINCT coarse peaks, not
+  // only the coarse winner. Run it BEFORE the confidence check: the true peak
+  // can sit up to NCC_COARSE_STEP/2 px off the coarse grid, and on sharp
+  // content (text) that alone can halve its correlation. Repeating layouts —
+  // every chat row alike — then let a short window one row-period off win the
+  // coarse pass, and refining only that winner never looked at the real
+  // offset: whole rows came out twice in the stitch. A runner-up peak gets a
+  // narrower window, since the grid point nearest the true peak is at most
+  // NCC_COARSE_STEP away from it.
+  const seeds: number[] = [];
+  for (const c of [...coarse].sort((a, b) => b.margin - a.margin)) {
+    if (seeds.length >= NCC_FINE_SEEDS) break;
+    if (seeds.every((s) => Math.abs(s - c.ov) > NCC_FINE_RANGE)) seeds.push(c.ov);
   }
+  seeds.forEach((seed, rank) => {
+    const range = rank === 0 ? NCC_FINE_RANGE : NCC_COARSE_STEP;
+    const lo = Math.max(minOverlap, seed - range);
+    const hi = Math.min(maxSearch, seed + range);
+    for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
+      if (!scored.has(ov)) consider(ov);
+    }
+  });
 
   const threshold = nccThresholdFor(baseThreshold, bestOverlap, frameH);
   const pct = ((bestOverlap / frameH) * 100).toFixed(0);
