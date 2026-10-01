@@ -34,7 +34,7 @@ import * as Haptics from "expo-haptics";
 import { Platform, Linking } from "react-native";
 import Colors from "@/constants/colors";
 import { useAppContext } from "@/contexts/AppContext";
-import { useSubscription } from "@/lib/revenuecat";
+import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import { getApiUrl } from "@/lib/query-client";
 import { PurchasesPackage } from "react-native-purchases";
 
@@ -302,6 +302,7 @@ function PaywallSlide({
   offeringsIsLoading,
   offeringsIsError,
   onRetryOfferings,
+  purchaseError,
 }: {
   weeklyPackage: PurchasesPackage | null;
   annualPackage: PurchasesPackage | null;
@@ -314,6 +315,7 @@ function PaywallSlide({
   offeringsIsLoading: boolean;
   offeringsIsError: boolean;
   onRetryOfferings: () => void;
+  purchaseError: string | null;
 }) {
   const [billing, setBilling] = useState<Plan>("weekly");
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -500,6 +502,17 @@ function PaywallSlide({
           </>
         )}
 
+        {/* A purchase can succeed at the store and still not grant access —
+            an unvalidated receipt leaves the entitlement off. The router sends
+            anyone without it back here, so without this message the app looks
+            frozen rather than failed. */}
+        {purchaseError && (
+          <View style={paywall.errorWrap} accessibilityLiveRegion="polite">
+            <Feather name="alert-circle" size={22} color={C.textTertiary} />
+            <Text style={paywall.errorText}>{purchaseError}</Text>
+          </View>
+        )}
+
         <Pressable
           onPress={onRestore}
           disabled={isRestoring}
@@ -611,6 +624,7 @@ export default function OnboardingScreen() {
   const listRef = useRef<FlatList>(null);
   const initialIndex = directPaywall === "1" ? SLIDES.length : 0;
   const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
   // When opened directly to the paywall, scroll the FlatList there immediately
   // (initial state already reflects the paywall, but the list renders at offset 0)
@@ -643,23 +657,42 @@ export default function OnboardingScreen() {
   };
 
   const handlePurchase = async (pkg: PurchasesPackage) => {
+    setPurchaseError(null);
     try {
-      await purchase(pkg);
+      const info = await purchase(pkg);
+
+      // Paying is not the same as being granted access. If the receipt cannot
+      // be validated the store still reports a completed purchase while the
+      // entitlement stays off, and the router — which sends anyone without it
+      // back to this screen — would bounce the navigation below straight back
+      // here. Saying so beats looking frozen.
+      if (!info?.entitlements.active?.[REVENUECAT_ENTITLEMENT_IDENTIFIER]) {
+        setPurchaseError(
+          "Your purchase went through, but we couldn't confirm access. Nothing was lost — tap Restore Purchases, or reopen the app in a moment."
+        );
+        return;
+      }
+
       await markOnboardingComplete();
       router.replace("/");
     } catch (err: any) {
       if (err?.userCancelled) return;
-      console.error("Purchase failed:", err?.message);
+      setPurchaseError(err?.message || "The purchase didn't complete. Please try again.");
     }
   };
 
   const handleRestore = async () => {
+    setPurchaseError(null);
     try {
-      await restore();
+      const info = await restore();
+      if (!info?.entitlements.active?.[REVENUECAT_ENTITLEMENT_IDENTIFIER]) {
+        setPurchaseError("We couldn't find an active purchase on this Apple ID.");
+        return;
+      }
       await markOnboardingComplete();
       router.replace("/");
     } catch (err: any) {
-      console.error("Restore failed:", err?.message);
+      setPurchaseError(err?.message || "Restore didn't complete. Please try again.");
     }
   };
 
@@ -686,13 +719,14 @@ export default function OnboardingScreen() {
             offeringsIsLoading={offeringsIsLoading}
             offeringsIsError={offeringsIsError}
             onRetryOfferings={refetchOfferings}
+            purchaseError={purchaseError}
           />
         );
       }
       return <OnboardingSlide item={item} index={index} />;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [weeklyPackage, annualPackage, lifetimePackage, trialDays, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings]
+    [weeklyPackage, annualPackage, lifetimePackage, trialDays, isPurchasing, isRestoring, offeringsIsLoading, offeringsIsError, refetchOfferings, purchaseError]
   );
 
   const data: ((typeof SLIDES)[number] | "paywall")[] = [...SLIDES, "paywall"];

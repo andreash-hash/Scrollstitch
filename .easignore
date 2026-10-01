@@ -1,0 +1,50 @@
+# WARNING: this file REPLACES .gitignore for EAS uploads — it does not add to
+# it. Anything omitted here gets uploaded even if git ignores it, and the first
+# omission that matters is node_modules at 635 MB. Everything in .gitignore is
+# therefore repeated below, and a change there needs mirroring here.
+
+# ── mirrored from .gitignore ────────────────────────────────────────────────
+node_modules/
+
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+ios/
+android/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+.metro-health-check*
+
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+.DS_Store
+*.pem
+
+.env*.local
+*.tsbuildinfo
+.vercel
+.env
+
+appstore-screenshots/html/
+
+# ── not needed to build the app ─────────────────────────────────────────────
+# Tracked, and uploaded on every build until now. The archive was 190 MB, which
+# is upload time on every single run for files the bundler never opens.
+.git/
+attached_assets/
+appstore-screenshots/
+design/
+server_dist/
+
+# The server is a separate deployment; the React Native bundler never reaches
+# into it. Its tests are the bulk of the weight here.
+server/tests/

@@ -3,6 +3,7 @@ import { AppState, AppStateStatus, Platform } from "react-native";
 import Purchases, { PurchasesPackage } from "react-native-purchases";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Constants from "expo-constants";
+import { isSamePlan } from "./planIdentity";
 
 const REVENUECAT_TEST_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY;
 const REVENUECAT_IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY;
@@ -95,7 +96,6 @@ function useSubscriptionContext() {
   // Which plan they are actually on — the win-back offer only makes sense for
   // someone paying weekly.
   const activeProductId = activeEntitlement?.productIdentifier ?? null;
-  const isAnnualSubscriber = activeProductId?.includes("annual") ?? false;
 
   // Weekly is the plan the trial funnels into; annual is the win-back offer.
   const currentOffering = offeringsQuery.data?.current;
@@ -110,6 +110,19 @@ function useSubscriptionContext() {
   const lifetimePackage = currentOffering?.availablePackages.find(
     (pkg) => pkg.packageType === "LIFETIME" || pkg.identifier === "$rc_lifetime"
   ) ?? null;
+
+  // Who the win-back offer is not for. This used to be a substring test for
+  // "annual" in the active product id, which the move to
+  // scrollstitch_pro_yearly silently broke: the substring disappeared from the
+  // annual plan's own identifier, so every annual subscriber started
+  // qualifying to be sold the plan they were already paying for.
+  //
+  // Compare against the package the offer would actually sell instead. A
+  // lifetime buyer is excluded for the same reason — there is nothing above
+  // their plan to move them to.
+  const hasAnnualOrLifetime =
+    isSamePlan(activeProductId, annualPackage?.product.identifier) ||
+    isSamePlan(activeProductId, lifetimePackage?.product.identifier);
 
   // Introductory offer on the weekly product, when the store reports one and
   // this user is still eligible for it. Drives the "3 days free" copy — never
@@ -127,7 +140,7 @@ function useSubscriptionContext() {
     weeklyIntro,
     trialDays,
     activeProductId,
-    isAnnualSubscriber,
+    hasAnnualOrLifetime,
     isSubscribed,
     isLoading: customerInfoQuery.isLoading || offeringsQuery.isLoading,
     offeringsIsLoading: offeringsQuery.isLoading,

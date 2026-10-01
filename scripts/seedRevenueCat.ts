@@ -18,6 +18,7 @@ import {
   createPackages,
   attachProductsToPackage,
   updateApp,
+  updateProduct,
   detachProductsFromPackage,
   detachProductsFromEntitlement,
   deletePackageFromOffering,
@@ -31,12 +32,20 @@ import {
   type CreateProductData,
   type Duration,
 } from "@replit/revenuecat-sdk";
+import { isRetiredIdentifier, retiredDisplayName } from "./retiredProducts";
 
 const PROJECT_NAME = "ScrollStitch";
 
 // Weekly product — the primary plan the trial funnels into
-const WEEKLY_IDENTIFIER = "scrollstitch_pro_weekly";
-const WEEKLY_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_weekly:weekly";
+//
+// NOT "scrollstitch_pro_weekly". That identifier was created in App Store
+// Connect as an in-app purchase rather than an auto-renewable subscription.
+// It was never submitted for review and the product was deleted, and App Store
+// Connect still refuses it: "The Product ID you entered is already being used
+// by another subscription." Deleting a product does not release its id — an
+// identifier is spent the moment it is used.
+const WEEKLY_IDENTIFIER = "scrollstitch_pro_weekly_v2";
+const WEEKLY_PLAY_STORE_IDENTIFIER = "scrollstitch_pro_weekly_v2:weekly";
 const WEEKLY_DISPLAY_NAME = "ScrollStitch Pro Weekly";
 const WEEKLY_DURATION = "P1W" as const;
 
@@ -209,6 +218,39 @@ async function seedRevenueCat() {
   });
   if (listProductsError) throw new Error("Failed to list products");
 
+  // ── Free the display names the replacements need ──────────────────────────
+  // A display name must be unique within its app. The retired annual holds the
+  // exact name the new yearly product wants, and it is not removed until the
+  // retirement pass at the end of this run — so creating the replacement first
+  // fails with resource_already_exists, and the run dies there, before the
+  // yearly product, the lifetime product, the package swap and the retirement
+  // pass have happened. Moving the name aside first is what lets the run reach
+  // any of them.
+  //
+  // This is also the only step that survives an undeletable product. A product
+  // with recorded transactions cannot be deleted — a test purchase is enough to
+  // earn that — so the retirement pass below may well have to leave it in
+  // place. Renaming is the one mutation RevenueCat allows on a product that
+  // already exists, which makes it the only way to guarantee the name is free
+  // on this run and on every future one.
+  for (const p of existingProducts.items ?? []) {
+    if (!isRetiredIdentifier(p.store_identifier)) continue;
+
+    const renamed = retiredDisplayName(p.display_name, p.store_identifier ?? "product");
+    if (renamed === p.display_name) continue;
+
+    const { error } = await updateProduct({
+      client,
+      path: { project_id: project.id, product_id: p.id },
+      body: { display_name: renamed },
+    });
+    if (error) {
+      console.warn(`Could not rename retired product ${p.store_identifier}:`, error);
+    } else {
+      console.log(`Renamed retired product ${p.store_identifier} -> "${renamed}"`);
+    }
+  }
+
   const ensureProductForApp = async (
     targetApp: App,
     label: string,
@@ -228,10 +270,17 @@ async function seedRevenueCat() {
 
     // A null duration means a one-time purchase (lifetime) rather than a
     // subscription — a different product type, with no renewal period.
+    // A null duration is the lifetime unlock. "one_time" is the wrong type for
+    // it: the API rejects that on the Test Store outright — "Allowed product
+    // types for Test Store: 'subscription', 'consumable' and 'non_consumable'"
+    // — and it is not what the product is anywhere else either. A lifetime
+    // unlock is bought once and kept forever, which is a non-consumable in App
+    // Store Connect and in Play. "one_time" is the umbrella the API reports
+    // such a product under, not a type it accepts when creating one.
     const body: CreateProductData["body"] = {
       store_identifier: productIdentifier,
       app_id: targetApp.id,
-      type: duration ? "subscription" : "one_time",
+      type: duration ? "subscription" : "non_consumable",
       display_name: displayName,
     };
 
@@ -246,7 +295,13 @@ async function seedRevenueCat() {
       body,
     });
 
-    if (error) throw new Error("Failed to create " + label + " product");
+    // Carry the API's own message. Swallowing it cost a full debugging round
+    // trip: "Failed to create Test/Lifetime product" says nothing about which
+    // field the store rejected, and the answer only came from repeating the
+    // call by hand.
+    if (error) {
+      throw new Error("Failed to create " + label + " product: " + JSON.stringify(error));
+    }
     console.log("Created " + label + " product:", createdProduct.id);
     return createdProduct;
   };
@@ -488,8 +543,8 @@ async function seedRevenueCat() {
   //
   // Deliberately narrow: only products whose identifier carries the old app
   // name, or the spent annual identifier, are touched — and only after they
-  // have been detached from everything.
-  const LEGACY_IDENTIFIER = /^scrollsnap|^scrollstitch_pro_annual/i;
+  // have been detached from everything. RETIRED_IDENTIFIER is unit-checked in
+  // scripts/__tests__/retiredProducts.test.ts, because it governs deletion.
   const keepPackages = new Set(["$rc_weekly", "$rc_annual", "$rc_lifetime"]);
 
   const { data: allPackages, error: allPackagesError } = await listPackages({
@@ -525,7 +580,7 @@ async function seedRevenueCat() {
   if (productsNowError) throw new Error("Failed to list products for cleanup");
 
   const legacyProducts = (productsNow.items ?? []).filter((p) =>
-    LEGACY_IDENTIFIER.test(p.store_identifier ?? "")
+    isRetiredIdentifier(p.store_identifier)
   );
 
   if (legacyProducts.length > 0) {

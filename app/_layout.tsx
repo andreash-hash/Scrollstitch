@@ -17,6 +17,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AppContextProvider, useAppContext } from "@/contexts/AppContext";
 import { initializeRevenueCat, SubscriptionProvider, useSubscription } from "@/lib/revenuecat";
+import { DeepLinkIapProvider } from "insert-affiliate-react-native-sdk";
+import { InsertAffiliateSync } from "@/lib/insertAffiliate";
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
@@ -186,6 +188,7 @@ function RootLayoutNav() {
   return (
     <>
       <SubscriptionSync />
+      <InsertAffiliateSync />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="library" />
@@ -215,11 +218,13 @@ export default function RootLayout() {
       <AppContextProvider>
         <QueryClientProvider client={queryClient}>
           <SubscriptionProvider>
-            <GestureHandlerRootView>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
-            </GestureHandlerRootView>
+            <DeepLinkIapProvider>
+              <GestureHandlerRootView>
+                <KeyboardProvider>
+                  <RootLayoutNav />
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </DeepLinkIapProvider>
           </SubscriptionProvider>
         </QueryClientProvider>
       </AppContextProvider>

@@ -55,6 +55,7 @@ import {
 } from "@/lib/library";
 import { preparePdf, rehydrateStitch } from "@/lib/stitch-files";
 import { rememberPendingJob, forgetPendingJob, loadPendingJob } from "@/lib/pending-job";
+import { readableMediaError, technicalErrorCode } from "@/lib/mediaErrors";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -64,6 +65,11 @@ const C = Colors.dark;
 
 type ProcessingStage =
   | "idle"
+  // The picker has dismissed and iOS is still exporting the recording. Nothing
+  // of ours is running yet, but the screen must not look untouched: leaving it
+  // on "idle" puts the pick button back under the closing picker, and a reader
+  // who sees the button again taps it again.
+  | "preparing"
   | "extracting"
   | "filtering"
   | "uploading"
@@ -284,6 +290,13 @@ async function extractFramesFromVideo(
   const totalFrames = Math.ceil(durationMs / intervalMs);
   const frameUris: string[] = [];
 
+  // A frame that will not render is normal — a seek past the end, a corrupt
+  // sample — and dropping it is the right call. Dropping the *reason* is not.
+  // Swallowing every failure here is what left "Processing Failed" with nothing
+  // behind it to explain: when a video cannot be read at all, every iteration
+  // throws the same diagnosis and all of them were discarded.
+  let firstFailure: unknown = null;
+
   for (let i = 0; i < totalFrames; i++) {
     const time = i * intervalMs;
     try {
@@ -292,8 +305,17 @@ async function extractFramesFromVideo(
         quality: 0.7,
       });
       frameUris.push(thumb.uri);
-    } catch {}
+    } catch (err) {
+      if (firstFailure === null) firstFailure = err;
+    }
     onProgress(i + 1, totalFrames);
+  }
+
+  // Nothing came out. Hand back why rather than a generic count of zero, so the
+  // caller can tell "this file is not readable" from "this video has no usable
+  // frames" and say something the reader can act on.
+  if (frameUris.length === 0 && firstFailure !== null) {
+    throw firstFailure;
   }
 
   return frameUris;
@@ -499,6 +521,54 @@ async function clientDeduplicateFrames(
 /** How often the countdown is refreshed. */
 const ETA_TICK_MS = 500;
 
+const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
+  mediaTypes: ["videos"],
+  quality: 1,
+  // Passthrough: hand the file over as it is, no re-encode.
+  //
+  // This was briefly HighestQuality, to skip a fast path in expo-image-picker
+  // that copies an asset's bytes directly and struggles with recordings that
+  // have been trimmed. The evidence for that theory was a recording needing
+  // two picks — which turned out to be the app showing its start screen while
+  // iOS was still exporting, and nothing to do with trimming at all. The
+  // theory outlived its evidence, and the transcode it justified had a cost of
+  // its own: a re-encode long enough to be interrupted, which is a failure
+  // passthrough simply cannot have.
+  //
+  // If a trimmed recording really does fail here, it now says so precisely —
+  // PICK plus Apple's own code — rather than being guessed at.
+  videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
+};
+
+/**
+ * Offer the fix while it is still cheap — before a recording has been chosen.
+ *
+ * Continuing is a real option, not a formality: a recording inside the selected
+ * set works fine, and someone who deliberately shares a few photos with an app
+ * should not be forced to widen that to use it.
+ */
+function confirmLimitedAccess(): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      "Limited photo access",
+      "ScrollStitch can only open the photos you have selected. The picker will " +
+        "still show everything, but recordings outside your selection cannot be " +
+        "read.",
+      [
+        { text: "Pick anyway", style: "cancel", onPress: () => resolve(false) },
+        { text: "Open Settings", onPress: () => resolve(true) },
+      ],
+      { cancelable: false }
+    );
+  });
+}
+
+/** "READ" plus Apple's own identifier when the error carries one. */
+function withDetail(step: string, err: unknown): string {
+  const detail = technicalErrorCode(err);
+  return detail ? `${step} · ${detail}` : step;
+}
+
 function formatRenewalDate(dateString: string | null | undefined): string {
   if (!dateString) return "—";
   const date = new Date(dateString);
@@ -532,7 +602,7 @@ export default function ScrollStitchScreen() {
     customerInfoIsLoading,
     refetchCustomerInfo,
     annualPackage,
-    isAnnualSubscriber,
+    hasAnnualOrLifetime,
     purchase,
     isPurchasing,
   } = useSubscription();
@@ -541,7 +611,20 @@ export default function ScrollStitchScreen() {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [result, setResult] = useState<ProcessingResult | null>(null);
+  /** True while a pick is being exported by iOS; blocks a second one. */
+  const pickInFlightRef = useRef(false);
+  /** Limited-access notice is worth saying once a launch, not once a pick. */
+  const limitedNoticeShownRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState("");
+  /**
+   * Which step gave up, shown under the message.
+   *
+   * Two builds were spent fixing the wrong call because a failure screen that
+   * names no step is the same screen whatever went wrong: the first fix guarded
+   * one call out of four and looked identical in a screenshot to no fix at all.
+   * A short code costs the reader nothing and ends the guessing.
+   */
+  const [errorCode, setErrorCode] = useState("");
   const [frameCount, setFrameCount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -794,7 +877,7 @@ export default function ScrollStitchScreen() {
       if (
         daysSinceFirstLaunch >= 3 &&
         !winBackShown &&
-        !isAnnualSubscriber &&
+        !hasAnnualOrLifetime &&
         annualPackage
       ) {
         setTimeout(() => setShowWinBack(true), 1200);
@@ -821,7 +904,7 @@ export default function ScrollStitchScreen() {
       recordSuccessfulStitch,
       daysSinceFirstLaunch,
       winBackShown,
-      isAnnualSubscriber,
+      hasAnnualOrLifetime,
       annualPackage,
       reviewPrompted,
       markReviewPrompted,
@@ -850,13 +933,31 @@ export default function ScrollStitchScreen() {
   const pollProgress = useCallback(
     (jobId: string) => {
       const baseUrl = getApiUrl();
-      const startTime = Date.now();
-      const TIMEOUT = 5 * 60 * 1000;
+      // Measured from the last sign of life, not from the start. A long
+      // recording on a busy server can legitimately take longer than five
+      // minutes, and a fixed wall throws away a job that was still working,
+      // while one that is genuinely stuck stops reporting — which this catches.
+      let lastProgressAt = Date.now();
+      let lastSeen = "";
+      // The interval callback is async: a tick that outlives its 500ms slot
+      // overlaps the next one, and both can read the same Complete. Clearing
+      // the interval stops future ticks, not one already in flight — so the
+      // completion itself has to be the thing that happens once, or the job
+      // counts twice, buzzes twice, and skews when the win-back is offered.
+      let completed = false;
+      // Assigning over a live pollRef loses the handle to it, and a poll nobody
+      // can stop keeps finding the job Complete: it vibrates every 500ms and
+      // puts the stage back to "complete", so Process Another Video appears to
+      // bounce the reader straight back to the result they just left.
+      cleanupPolling();
+
+      const STALL_TIMEOUT = 5 * 60 * 1000;
       pollRef.current = setInterval(async () => {
-        if (Date.now() - startTime > TIMEOUT) {
+        if (Date.now() - lastProgressAt > STALL_TIMEOUT) {
           cleanupPolling();
           setStage("error");
-          setErrorMessage("Processing timed out. Please try a shorter video.");
+          setErrorCode("TIMEOUT");
+          setErrorMessage("Processing stopped responding. Please try again.");
           return;
         }
         try {
@@ -881,15 +982,25 @@ export default function ScrollStitchScreen() {
           const data = await res.json();
 
           if (data.error && data.stage === "Error") {
+            if (completed) return;
+            completed = true;
             cleanupPolling();
             void forgetPendingJob();
             setStage("error");
+            setErrorCode("SERVER");
             setErrorMessage(data.error);
             return;
           }
 
           // The server reports real progress (0..1) plus a per-frame counter
           // in `detail` — map it into the client's processing window.
+          // Any change at all counts as the job still being alive.
+          const seen = `${data.stage ?? ""}|${data.progress ?? ""}|${data.detail ?? ""}`;
+          if (seen !== lastSeen) {
+            lastSeen = seen;
+            lastProgressAt = Date.now();
+          }
+
           if (data.stage !== "Complete") {
             const label = STAGE_LABELS[data.stage] ?? data.stage ?? "Processing...";
             setStatusText(data.detail ? `${label} (${data.detail})` : label);
@@ -900,6 +1011,8 @@ export default function ScrollStitchScreen() {
           }
 
           if (data.stage === "Complete" && data.result) {
+            if (completed) return;
+            completed = true;
             stopFakeTick();
             cleanupPolling();
             setStage("complete");
@@ -946,6 +1059,7 @@ export default function ScrollStitchScreen() {
     setStatusText(`Extracting ~${estimatedFrames} frames...`);
     setResult(null);
     setErrorMessage("");
+    setErrorCode("");
 
     const frameUris = await extractFramesFromVideo(
       uri,
@@ -1006,6 +1120,32 @@ export default function ScrollStitchScreen() {
       const expoFetch = isWeb ? null : (await import("expo/fetch")).fetch;
       const ExpoFile = isWeb ? null : (await import("expo-file-system")).File;
 
+      const doFetch = isWeb ? fetch : expoFetch!;
+
+      // A phone loses its connection mid-upload as a matter of course, and one
+      // dropped batch used to end the whole job — which is what the batching
+      // was for in the first place. The server names a chunk's frames from that
+      // request alone, so resending one replaces it rather than doubling it.
+      const postWithRetry = async (url: string, buildBody?: () => Promise<FormData>) => {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) {
+            // Rebuilt per attempt: a FormData that has already been consumed by
+            // a failed send is not safe to hand over a second time.
+            await new Promise((r) => setTimeout(r, 700 * attempt));
+          }
+          try {
+            const body = buildBody ? await buildBody() : undefined;
+            const res = await doFetch(url, { method: "POST", ...(body ? { body } : {}) });
+            if (!res.ok) throw new Error(await res.text());
+            return res;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        throw lastError;
+      };
+
       for (let b = 0; b < batches.length; b++) {
         setStatusText(`Uploading batch ${b + 1} of ${batches.length}...`);
 
@@ -1013,19 +1153,18 @@ export default function ScrollStitchScreen() {
         chunkUrl.searchParams.set("sessionId", sessionId);
         chunkUrl.searchParams.set("chunkIndex", String(b));
 
-        const formData = new FormData();
-        for (let i = 0; i < batches[b].length; i++) {
-          if (isWeb) {
-            const blob = await (await fetch(batches[b][i])).blob();
-            formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
-          } else {
-            formData.append("frames", new ExpoFile!(batches[b][i]) as any);
+        await postWithRetry(chunkUrl.toString(), async () => {
+          const formData = new FormData();
+          for (let i = 0; i < batches[b].length; i++) {
+            if (isWeb) {
+              const blob = await (await fetch(batches[b][i])).blob();
+              formData.append("frames", blob, `frame_${i.toString().padStart(5, "0")}.jpg`);
+            } else {
+              formData.append("frames", new ExpoFile!(batches[b][i]) as any);
+            }
           }
-        }
-
-        const doFetch = isWeb ? fetch : expoFetch!;
-        const res = await doFetch(chunkUrl.toString(), { method: "POST", body: formData });
-        if (!res.ok) throw new Error(await res.text());
+          return formData;
+        });
 
         advanceProgress(0.26 + ((b + 1) / batches.length) * 0.07);
       }
@@ -1042,9 +1181,9 @@ export default function ScrollStitchScreen() {
         setCanLeaveApp(true);
       }
 
-      const doFetch = isWeb ? fetch : expoFetch!;
-      const startRes = await doFetch(processUrl.toString(), { method: "POST" });
-      if (!startRes.ok) throw new Error(await startRes.text());
+      // Safe to retry: the server hands back the job already running for a
+      // session rather than starting a second one over the same frames.
+      const startRes = await postWithRetry(processUrl.toString());
       const data = await startRes.json();
 
       stopFakeTick();
@@ -1060,11 +1199,42 @@ export default function ScrollStitchScreen() {
       stopFakeTick();
       stopEtaTick();
       setStage("error");
-      setErrorMessage(err.message || "Failed to process video");
+      setErrorCode(withDetail("UPLOAD", err));
+      setErrorMessage(readableMediaError(err));
     }
   };
 
-  const pickVideo = async () => {
+  /**
+   * Ask PhotoKit for a recording directly, with the iCloud download switched on.
+   *
+   * The picker has no such option — there is nothing in ImagePickerOptions that
+   * says "fetch this from iCloud first" — so a recording that is not on the
+   * device can come back as a file the app cannot read. MediaLibrary does have
+   * the option, and the picker hands back an assetId that MediaLibrary accepts,
+   * which makes this the one way to recover without sending the reader to the
+   * Photos app to do it by hand.
+   *
+   * Returns null whenever that is not possible: no assetId (the picker omits it
+   * under limited-library access), no permission, or the fetch itself failing.
+   */
+  const downloadFromICloud = async (assetId: string | null | undefined): Promise<string | null> => {
+    if (!assetId) return null;
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") return null;
+      setStatusText("Downloading from iCloud...");
+      const info = await MediaLibrary.getAssetInfoAsync(assetId, {
+        shouldDownloadFromNetwork: true,
+      });
+      return info.localUri ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const runPickVideo = async () => {
+    let pickerResult: ImagePicker.ImagePickerResult;
+    let limitedAccess = false;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1072,49 +1242,110 @@ export default function ScrollStitchScreen() {
         Alert.alert("Permission needed", "Please grant access to your media library.");
         return;
       }
-      const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["videos"],
-        quality: 1,
-        videoMaxDuration: 300,
-      });
-      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
-      const asset = pickerResult.assets[0];
-      const rawDuration = asset.duration || 10000;
-      const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
-      const filtered = await processVideoUri(asset.uri, durationMs);
-      await startUpload(filtered);
+      // granted is true for "Selected Photos" as well as "All Photos", so it
+      // cannot be the whole answer. Under limited access the app may only read
+      // the recordings the user ticked, and everything else fails at export —
+      // which is what a library where some videos work and others do not looks
+      // like from in here.
+      limitedAccess = permResult.accessPrivileges === "limited";
+
+      // Say it before the picker, not after. The picker shows the whole
+      // library whatever the app is allowed to read, so under limited access
+      // it happily offers recordings that cannot then be handed over — and
+      // finding that out *after* choosing one reads as the app breaking rather
+      // than as a setting to change. Once per launch; a warning repeated on
+      // every pick becomes noise the reader learns to dismiss.
+      if (limitedAccess && !limitedNoticeShownRef.current) {
+        limitedNoticeShownRef.current = true;
+        const openSettings = await confirmLimitedAccess();
+        if (openSettings) {
+          Linking.openSettings();
+          return;
+        }
+      }
+
+      // Set before presenting, not after: the picker covers the app while it is
+      // open, so the screen underneath has to have changed already by the time
+      // it slides away. Otherwise the export happens behind an idle screen.
+      setStage("preparing");
+      setStatusText("Preparing recording...");
+      setProgress(0);
+      setErrorMessage("");
+      setErrorCode("");
+
+      pickerResult = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
     } catch (err: any) {
+      // The picker threw while handing the recording over, after it was chosen.
       setStage("error");
-      setErrorMessage(err.message || "Failed to process video");
+      setErrorCode(withDetail(limitedAccess ? "PICK-LTD" : "PICK", err));
+      setErrorMessage(
+        limitedAccess
+          ? "ScrollStitch only has access to the photos you have selected, and " +
+            "this recording is not one of them. In Settings > ScrollStitch > Photos, " +
+            "choose All Photos, or add this recording to the selection."
+          : readableMediaError(err)
+      );
+      return;
     }
+
+    if (pickerResult.canceled || !pickerResult.assets?.[0]) {
+      setStage("idle");
+      setStatusText("");
+      return;
+    }
+    const asset = pickerResult.assets[0];
+    const rawDuration = asset.duration || 10000;
+    const durationMs = rawDuration < 1000 ? rawDuration * 1000 : rawDuration;
+
+    // Only the read is retried. Retrying the whole chain ran startUpload twice,
+    // and a second upload starts a second poll — which is how the endless
+    // vibration and the bounced Process Another Video button came about.
+    let filtered: string[];
+    try {
+      filtered = await processVideoUri(asset.uri, durationMs);
+    } catch (err: any) {
+      // The picker returned a file that will not open. Before saying so, fetch
+      // the asset properly — this is the case the reader was previously asked
+      // to fix themselves by opening it in Photos.
+      const recovered = await downloadFromICloud(asset.assetId);
+      if (!recovered || recovered === asset.uri) {
+        setStage("error");
+        setErrorCode(withDetail("READ", err));
+        setErrorMessage(readableMediaError(err));
+        return;
+      }
+      try {
+        filtered = await processVideoUri(recovered, durationMs);
+      } catch (retryErr: any) {
+        setStage("error");
+        setErrorCode(withDetail("READ2", retryErr));
+        setErrorMessage(readableMediaError(retryErr));
+        return;
+      }
+    }
+
+    // startUpload reports its own failures and does not rethrow, so wrapping it
+    // here would only add a catch that never runs.
+    await startUpload(filtered);
   };
 
-  const pickLatestVideo = async () => {
+  /**
+   * One pick at a time.
+   *
+   * iOS exports the recording after the picker dismisses, and nothing of ours
+   * runs during that export — so without a guard the reader sees the start
+   * screen again, assumes the tap missed, and starts a second pick on top of
+   * the first. The flag is cleared in a finally rather than on each exit,
+   * because a path that forgets to clear it leaves the button dead for the rest
+   * of the session, which is worse than the bug it is fixing.
+   */
+  const pickVideo = async () => {
+    if (pickInFlightRef.current) return;
+    pickInFlightRef.current = true;
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission needed", "Please grant access to your media library.");
-        return;
-      }
-      const { assets } = await MediaLibrary.getAssetsAsync({
-        mediaType: MediaLibrary.MediaType.video,
-        sortBy: [MediaLibrary.SortBy.creationTime],
-        first: 1,
-      });
-      if (!assets.length) {
-        Alert.alert("No videos found", "No screen recordings found in your library.");
-        return;
-      }
-      const asset = assets[0];
-      const info = await MediaLibrary.getAssetInfoAsync(asset);
-      const uri = info.localUri || asset.uri;
-      const durationMs = (asset.duration || 10) * 1000;
-      const filtered = await processVideoUri(uri, durationMs);
-      await startUpload(filtered);
-    } catch (err: any) {
-      setStage("error");
-      setErrorMessage(err.message || "Failed to process video");
+      await runPickVideo();
+    } finally {
+      pickInFlightRef.current = false;
     }
   };
 
@@ -1276,6 +1507,7 @@ export default function ScrollStitchScreen() {
     setStatusText("");
     setResult(null);
     setErrorMessage("");
+    setErrorCode("");
     setFrameCount(0);
     setIsSaving(false);
     setIsSharing(false);
@@ -1287,7 +1519,11 @@ export default function ScrollStitchScreen() {
   statusTextRef.current = statusText;
 
   const isProcessing =
-    stage === "extracting" || stage === "filtering" || stage === "uploading" || stage === "processing";
+    stage === "preparing" ||
+    stage === "extracting" ||
+    stage === "filtering" ||
+    stage === "uploading" ||
+    stage === "processing";
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
@@ -1462,38 +1698,22 @@ export default function ScrollStitchScreen() {
 
             <Animated.View style={buttonAnimStyle}>
               <Pressable
-                onPress={Platform.OS === "web" ? pickVideo : pickLatestVideo}
+                onPress={pickVideo}
                 onPressIn={() => { buttonScale.value = withSpring(0.96); }}
                 onPressOut={() => { buttonScale.value = withSpring(1); }}
                 style={styles.pickButton}
                 accessibilityRole="button"
-                accessibilityLabel={
-                  Platform.OS === "web" ? "Pick a screen recording" : "Use latest recording"
-                }
+                accessibilityLabel="Pick a screen recording"
                 accessibilityHint="Extracts frames and stitches them into one long screenshot"
               >
                 <View
                   style={styles.pickButtonGradient}
                 >
-                  <Feather name={Platform.OS === "web" ? "upload" : "zap"} size={22} color="#f3f2f2" />
-                  <Text style={styles.pickButtonText}>
-                    {Platform.OS === "web" ? "Pick a Screen Recording" : "Use Latest Recording"}
-                  </Text>
+                  <Feather name="upload" size={22} color="#f3f2f2" />
+                  <Text style={styles.pickButtonText}>Pick a Screen Recording</Text>
                 </View>
               </Pressable>
             </Animated.View>
-
-            {Platform.OS !== "web" && (
-              <Pressable
-                onPress={pickVideo}
-                style={styles.secondaryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Pick from library"
-              >
-                <Feather name="folder" size={18} color={C.accent} />
-                <Text style={styles.secondaryButtonText}>Pick from Library</Text>
-              </Pressable>
-            )}
 
             <Pressable
               onPress={() => setShowSettings((v) => !v)}
@@ -1789,6 +2009,9 @@ export default function ScrollStitchScreen() {
               <Feather name="alert-circle" size={40} color={C.danger} />
               <Text style={styles.errorTitle}>Processing Failed</Text>
               <Text style={styles.errorMessage}>{errorMessage}</Text>
+              {errorCode ? (
+                <Text style={styles.errorCode}>{`Error code: ${errorCode}`}</Text>
+              ) : null}
               <Pressable
                 onPress={reset}
                 style={styles.retryButton}
@@ -2351,6 +2574,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
+  errorCode: {
+    fontSize: 11,
+    fontFamily: "Archivo_400Regular",
+    color: C.textTertiary,
+    textAlign: "center",
+    marginTop: 6,
+    letterSpacing: 0.5,
+  },
   retryButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -2523,25 +2754,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Archivo_400Regular",
     color: C.textSecondary,
-  },
-  secondaryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 13,
-    borderRadius: 0,
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: C.border,
-    marginBottom: 12,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontFamily: "Archivo_800ExtraBold",
-    color: C.text,
-    letterSpacing: 0.02,
-    textTransform: "uppercase",
   },
   settingsToggle: {
     flexDirection: "row",
