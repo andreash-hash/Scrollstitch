@@ -145,9 +145,10 @@ export async function pickRecording(page: Page, file = RECORDING) {
   await chooser.setFiles(file);
 }
 
+/** Screenshot saved as a file in the test's output folder (CI publishes
+ * these to the ci-results branch) and attached to the HTML report. */
 export async function snap(page: Page, name: string) {
-  await test.info().attach(name, {
-    body: await page.screenshot({ fullPage: false }),
-    contentType: "image/png",
-  });
+  const file = test.info().outputPath(`${name}.png`);
+  await page.screenshot({ path: file, fullPage: false });
+  await test.info().attach(name, { path: file, contentType: "image/png" });
 }

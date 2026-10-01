@@ -1,0 +1,37 @@
+appId: com.scrollstitch
+name: Onboarding, paywall, purchase and main screens
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Stop taking 12.*"
+    timeout: 30000
+- takeScreenshot: ios-01-onboarding
+- tapOn: "Next slide"
+- tapOn: "Next slide"
+- tapOn: "Next slide"
+- tapOn: "Continue to plans"
+- assertVisible: "Go Pro"
+# Plan chips are radios inside a "Choose a plan" radiogroup; on iOS each chip
+# is one accessibility element named by its label.
+- assertVisible: "Weekly plan, .*"
+- assertVisible: "Annual plan, .*"
+- assertVisible: "Lifetime, .*"
+- takeScreenshot: ios-02-paywall
+- tapOn: "Lifetime, .*"
+- assertVisible: "Buy ScrollStitch Pro for .*"
+- tapOn: "Weekly plan, .*"
+- tapOn: "Start 3 days free.*"
+- extendedWaitUntil:
+    visible: "Pick a screen recording"
+    timeout: 15000
+- takeScreenshot: ios-03-main
+- tapOn: "Settings"
+- assertVisible: "Restore purchases"
+- takeScreenshot: ios-04-settings
+- tapOn: "Settings"
+- tapOn: "Saved stitches.*"
+- assertVisible: "No stitches yet"
+- takeScreenshot: ios-05-library
+- tapOn: "Make a stitch"
+- assertVisible: "Pick a screen recording"

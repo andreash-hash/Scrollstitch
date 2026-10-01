@@ -31,5 +31,8 @@ for (let f = 0; f < frames; f++) {
 }
 execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", String(FPS), "-i", join(dir, "f%04d.png"),
   "-c:v", "libvpx", "-b:v", "1M", "-pix_fmt", "yuv420p", "e2e/fixtures/scroll.webm"]);
+// The iOS simulator's Photos library needs H.264, not VP8 (used by Maestro).
+execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", String(FPS), "-i", join(dir, "f%04d.png"),
+  "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "e2e/fixtures/scroll.mp4"]);
 rmSync(dir, { recursive: true });
-console.log("wrote e2e/fixtures/scroll.webm and stitched.png");
+console.log("wrote e2e/fixtures/scroll.webm, scroll.mp4 and stitched.png");

@@ -1,0 +1,122 @@
+name: iOS simulator (manual)
+
+# Builds the app for the iOS simulator and drives it with Maestro.
+#
+# COST: macOS minutes count 10x in private repositories. One run takes about
+# 25–40 minutes of wall time (dependencies, prebuild, pods, a Release build,
+# simulator boot, flows), i.e. roughly 250–400 billed minutes. That is why this
+# never runs on its own: only by hand (Actions → "iOS simulator (manual)" →
+# Run workflow) or by pushing a branch named ci/ios-<anything>.
+#
+# The JS is bundled with E2E=1, so RevenueCat is the test double in
+# e2e/mocks (no App Store, no real purchase). Stitching goes to the real
+# server in EXPO_PUBLIC_DOMAIN. Screenshots, the Maestro report and logs are
+# uploaded as an artifact and pushed to ci-results (<branch>/ios/).
+#
+# Not testable in a simulator: the camera, real push delivery, real
+# purchases and iCloud-only recordings.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ci/ios-*"]
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      E2E: "1"
+      EXPO_PUBLIC_DOMAIN: scroll-stitcher.replit.app
+      EXPO_PUBLIC_REVENUECAT_TEST_API_KEY: test_e2e
+      EXPO_PUBLIC_REVENUECAT_IOS_API_KEY: appl_e2e
+      EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY: goog_e2e
+      EXPO_PUBLIC_INSERT_AFFILIATE_COMPANY_CODE: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate the native project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install pods
+        run: cd ios && pod install
+
+      - name: Build for the simulator (Release, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace ios/ScrollStitch.xcworkspace \
+            -scheme ScrollStitch \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee xcodebuild.log | grep -E "error:|warning: .*ScrollStitch|BUILD (SUCCEEDED|FAILED)" || true
+          test -d ios/build/Build/Products/Release-iphonesimulator/ScrollStitch.app
+
+      - name: Boot a simulator and install the app
+        run: |
+          UDID=$(xcrun simctl list devices available -j | node -e '
+            const d = JSON.parse(require("fs").readFileSync(0, "utf8")).devices;
+            const phones = Object.entries(d).filter(([rt]) => rt.includes("iOS"))
+              .flatMap(([, list]) => list).filter((x) => x.name.startsWith("iPhone"));
+            const pick = phones.find((x) => /iPhone 1[5-7]( Pro)?$/.test(x.name)) ?? phones[0];
+            process.stdout.write(pick.udid);')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" ios/build/Build/Products/Release-iphonesimulator/ScrollStitch.app
+          xcrun simctl addmedia "$UDID" e2e/fixtures/scroll.mp4
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Run Maestro flows
+        id: maestro
+        run: |
+          mkdir -p maestro-out
+          cd maestro-out
+          maestro --device "$UDID" test ../.maestro/ --format junit --output maestro-report.xml
+
+      - name: Collect logs and screenshots
+        if: always()
+        run: |
+          mkdir -p ci-out/screens
+          find . -name 'ios-*.png' -not -path './node_modules/*' -exec cp {} ci-out/screens/ \; || true
+          cp maestro-out/maestro-report.xml ci-out/ 2>/dev/null || true
+          cp -R ~/.maestro/tests ci-out/maestro-debug 2>/dev/null || true
+          tail -200 xcodebuild.log > ci-out/xcodebuild-tail.log 2>/dev/null || true
+          xcrun simctl spawn "$UDID" log show --last 15m --style compact \
+            --predicate 'process == "ScrollStitch"' > ci-out/app.log 2>/dev/null || true
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-results-${{ github.run_id }}
+          path: ci-out/
+          retention-days: 14
+
+      - name: Publish to ci-results
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/publish-ci-results.sh ios ci-out "maestro=${{ steps.maestro.outcome }}"
