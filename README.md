@@ -136,6 +136,511 @@ Two things found while measuring, unrelated to speed:
 The progress-bar stage weights were re-measured, since they are shares of wall
 time and selection no longer owns as much of it.
 
+### 2026-08 — Affiliate attribution, hung off RevenueCat rather than the purchase
+
+Insert Affiliate is in. The integration is deliberately shallow: the SDK never
+touches a transaction. It resolves which affiliate link brought someone here,
+and that identifier is handed to RevenueCat as an *attribute*
+(`Purchases.setAttributes` plus `syncAttributesAndOfferingsIfNeeded`), with the
+attribution settled server-side by a RevenueCat webhook.
+
+Nothing in the paywall, the `pro` entitlement or the purchase flow changes. Two
+systems both deciding who owns a subscription is a class of bug this project has
+spent enough time on already.
+
+Three choices worth recording:
+
+**Clipboard reading is off.** The SDK can recover attributions by reading the
+clipboard on launch, which trips iOS's paste banner for every person who opens
+the app. A handful of recovered referrals is a poor trade for that.
+
+**A missing company code disables the feature rather than failing.** It reads
+from `EXPO_PUBLIC_INSERT_AFFILIATE_COMPANY_CODE`, and without one the app logs
+a line and carries on selling subscriptions. A marketing integration must never
+be able to stop the app starting.
+
+**No AppDelegate edit**, despite the README asking for one. There is no `ios/`
+directory — it is generated at build time — and Expo's own template already
+wires `RCTLinkingManager` for universal links. What was actually needed is
+`associatedDomains` in `app.json`, which is where the link handling comes from.
+
+The privacy policy names Insert Affiliate as a recipient. It was previously
+accurate that data went only to RevenueCat, Apple, Google and legal
+obligations; adding a fourth party without saying so would have made the
+document false, and it is the document the App Store review reads.
+
+
+### 2026-08 — 1.0.1 is spent
+
+Build 16 built cleanly from `af43aa9` and the submission was rejected:
+
+    SUBMISSION_SERVICE_IOS_OLD_APP_VERSION
+    You've already submitted this version of the app.
+
+1.0.1 has been through App Store Connect as a completed submission, and Apple
+will not take it again. The version string is baked into the binary as
+`CFBundleShortVersionString`, so build 16 cannot be re-submitted under another
+number — it needs a new build. The app is 1.0.2 now.
+
+Familiar shape: a store identifier that is used up the moment it is used.
+Product ids taught this twice already, and `autoIncrement` only moves the build
+number, which is enough for TestFlight and never enough for a submission.
+
+
+### 2026-08 — A sweep for the same mistakes, before building again
+
+Rather than build straight after the last fix, the codebase was read for the
+classes of bug this week actually produced.
+
+**Completion could fire twice.** The poll's interval callback is `async`, so a
+tick that outlives its 500ms slot overlaps the next one and both can read the
+same `Complete`. Clearing the interval stops future ticks, not one already in
+flight. The result: two success haptics, `recordSuccessfulStitch` counting one
+job as two, and the win-back and review prompts triggering earlier than they
+should. Both terminal branches now run once.
+
+**Internal strings still reached the client from two server routes.** Upload
+and crop failures were sending `err.message` straight through — the same
+mistake as the Sharp path that arrived on a lock screen. Both go through
+`readableProcessingError` now.
+
+Checked and found sound: the other two intervals both guard against
+double-starting; `saveToPhotos`, `sharePdf` and `applyCrop` all clear their busy
+flags in a `finally`, so a failure cannot leave a button dead; the poll's empty
+`catch` is correct now that a stall is measured separately; and the swallowed
+`AsyncStorage` writes set in-memory state first, so a failed write costs
+persistence between launches and nothing in the session.
+
+
+### 2026-08 — A theory that outlived its evidence
+
+    Failed to transcode picked video
+    → Caused by: Operation Interrupted
+    Error code: PICK · ERR_FAILED_TO_TRANSCODE_VIDEO
+
+That is the re-encode forced on every pick two builds ago, failing. A
+passthrough export cannot be interrupted, because there is nothing to
+interrupt; a full re-encode runs long enough to be, and this one was.
+
+Worth being exact about why it was there. The reasoning was that
+expo-image-picker's passthrough fast path mishandles trimmed recordings, and
+the evidence was a recording that needed picking twice. That double pick has
+since been explained completely — the app was showing its start screen while
+iOS was still exporting, so the second tap was someone reasonably assuming the
+first had missed. Nothing to do with trimming.
+
+The theory lost its evidence and the change stayed, which is how a fix becomes
+a bug. Passthrough is back.
+
+The trimming hypothesis may still be true; it was never actually tested. It is
+also no longer expensive to find out. A failure here reports `PICK` with
+Apple's own code attached, the re-entry guard stops a second pick landing on
+top of the first, and the `preparing` stage means a slow export looks like
+waiting rather than like nothing having happened.
+
+
+### 2026-08 — A dropped batch should not lose the whole job
+
+Two runs, two failures: one `UPLOAD`, one `TIMEOUT`. Both are what a phone on a
+mobile network does to a long transfer, and neither was survivable.
+
+The comment above `UPLOAD_BATCH_SIZE` says the batches are "small enough to
+retry cheaply". The retry was never written. A single dropped connection ended
+the upload and the job with it.
+
+Writing one meant fixing the server first. A chunk's frames were named from a
+counter shared across the whole process, so a resent chunk landed *beside* its
+half-written first attempt rather than replacing it, and the stitch would have
+contained the same frames twice. Both numbers in a frame's name now come from
+its own request, which makes resending a chunk idempotent — and stops a
+filename depending on how many frames the server had handled since it last
+restarted. Each batch gets three attempts with a widening pause, rebuilding its
+body each time, because a FormData already consumed by a failed send is not
+safe to hand over again.
+
+The trigger is retried too, which is only safe because of the session-ownership
+fix a few builds back: a second request for a session already being processed
+gets the running job rather than starting a rival over the same frames.
+
+`TIMEOUT` was measured from the start of processing, so a long recording on a
+busy server hit a five-minute wall while it was still working. It measures the
+gap since the last sign of life now — any change in stage, progress or frame
+count resets it — which still catches a job that has genuinely stopped, and no
+longer throws away one that has not.
+
+
+### 2026-08 — The silent gap where the picker used to be
+
+Still three taps to start a stitch, and after the alert was removed, no longer
+any explanation for them. That last part is what gave it away: nothing was
+failing. There was no error to report because there was no error.
+
+`launchImageLibraryAsync` resolves only once iOS has finished exporting the
+chosen recording, and the picker dismisses well before that. In between, the
+app is doing nothing and `stage` is still `"idle"` — so the start screen slides
+back into view with the pick button on it, exactly as though the tap had
+missed. Tap it again, and a second export starts behind the first. Three taps,
+and the third one appearing to work is only the first one finishing.
+
+Every theory before this assumed something was throwing. Nothing was.
+
+There is now a `"preparing"` stage, entered *before* the picker is presented so
+the screen underneath has already changed by the time it slides away, and a
+re-entry guard so a second pick cannot start on top of the first. The guard
+clears in a `finally`: a path that forgets to clear it would leave the button
+dead for the rest of the session, which is worse than the bug being fixed.
+
+
+### 2026-08 — Three symptoms, one leaked interval
+
+Reported as three bugs: the phone vibrating without stopping once a result
+appeared, "Process Another Video" returning the reader straight to the result
+they had just left, and a recording that needed picking three times before
+anything happened.
+
+One line explains the first two.
+
+    pollRef.current = setInterval(...)
+
+Assigning over a live `pollRef` loses the handle to the interval it replaces.
+That poll runs forever, finds the job `Complete` every 500ms, and each tick
+fires the success haptic — the endless vibration — and sets the stage back to
+`complete`, which is why leaving the result screen bounced straight back to it.
+`pollProgress` now clears before it starts.
+
+The second poll came from the retry added a build earlier. It re-ran the whole
+chain — read *and* upload — when only the read was worth attempting twice, so a
+recovered recording uploaded and polled a second time. Only the read is retried
+now, and the upload sits outside it.
+
+The third symptom was the recovery path itself. A failed export loses the
+asset, so retrying meant re-opening the picker: an alert, a second selection,
+and a picker presented while the alert was still dismissing — which iOS drops,
+so the second pick did nothing and a third was needed. The transcode that
+dance was avoiding is now simply done up front with `HighestQuality`. The
+frames get downscaled to thumbnails anyway, so the quality it costs is quality
+the app discards, and the alert and the second selection are gone with it.
+
+
+### 2026-08 — The shortcut goes, and the access warning moves earlier
+
+"Use Latest Recording" is gone. One button now, and it opens the picker —
+which is what everyone expects from an app that wants a video, and what the
+secondary "Pick from Library" button was already offering underneath it.
+
+Removing it also removes where several of this week's failures lived. The
+shortcut read the library itself through `MediaLibrary`, and that is the only
+reason limited photo access stayed invisible for so long: under "Selected
+Photos" the query returns *only* the ticked assets, so the newest recording it
+could see was always one the app was allowed to read. The conflict could not
+occur. Adding the fallback to the system picker is what made it reachable —
+PHPicker shows the whole library whatever the app has been granted — so the
+failure was not old and newly surfaced, it was newly built.
+
+The limited-access warning now comes before the picker rather than after a
+recording has been chosen. It says the picker will show everything and that
+recordings outside the selection cannot be read, and offers Settings.
+Continuing is a real option: a recording inside the selected set works, and
+someone who deliberately shares a few photos with an app should not have to
+widen that to use it. Once per launch — a warning on every pick is noise.
+
+
+### 2026-08 — Trimmed recordings, and a fast path that cannot carry them
+
+`PICK · PHPhotos-3164`, on a recording sitting on the device, with full photo
+library access. Not iCloud, not limited access — both were checked and both
+were wrong guesses. The answer was in expo-image-picker's own iOS source:
+
+```swift
+if options.videoExportPreset == .passthrough, let assetId = ... {
+  let resource = resources.first(where: { $0.type == .fullSizeVideo })
+              ?? resources.first(where: { $0.type == .video })
+  try await PHAssetResourceManager.default().writeData(for: resource, ...)
+```
+
+`passthrough` is the default, so this path is always taken, and it prefers
+`fullSizeVideo` — the *rendered* resource, which exists precisely when a
+recording has been trimmed or edited. The comment directly above it says as
+much: an adjusted asset makes the photo service re-render a temporary file, and
+this fast path exists to avoid that.
+
+Screen recordings get trimmed constantly. A library where some videos work and
+others do not is exactly what that looks like from inside the app.
+
+Any preset other than `passthrough` skips the fast path and takes the slower
+route that renders the adjustment properly. That is only worth paying for once
+the quick one has failed, so the pick is retried with `HighestQuality` — after
+asking, because silently reopening a picker someone just used reads as the app
+having lost their choice.
+
+Three wrong diagnoses preceded this one, and the difference was not cleverness:
+the first two were guesses about a black box, and this one came from reading
+what the library actually does.
+
+
+### 2026-08 — PICK, and what the code line bought
+
+The error code shipped in the previous build and answered the question in one
+screenshot: `PICK · PHPhotos-3164`. `PICK` means `launchImageLibraryAsync`
+itself threw, before the app held a recording at all — not the extraction, not
+the upload, and not iCloud, which the reader had already ruled out by opening
+the file in Photos and watching it play instantly.
+
+Three builds went into the wrong calls for want of that one line.
+
+The picker failing to export an asset that exists locally points at what the
+app is allowed to read rather than at the file. `granted` is `true` for
+"Selected Photos" as well as "All Photos", and the app treated the two as the
+same thing. Under limited access it may only read the recordings the user
+ticked — and a library where some videos work and others do not is exactly what
+that looks like from inside the app.
+
+`accessPrivileges` is now read alongside `granted`. When it is `limited`, the
+failure says so and names the setting to change instead of offering a generic
+apology, and carries `PICK-LTD` so the next report distinguishes the two.
+
+`videoMaxDuration` is dropped from the picker call. It applies to camera
+recording, not to picking from the library, so it never did anything here.
+
+
+### 2026-08 — The iCloud diagnosis was wrong
+
+The message said the recording was probably still in iCloud. It was checked
+against a failing video in Photos: no cloud badge, no download, plays
+instantly. The file is on the device, and the app was confidently telling
+people something untrue about their own library.
+
+So the message now states only what is known — the photo library would not hand
+the file over — and offers iCloud as one possibility rather than the diagnosis.
+
+The deeper mistake was hiding Apple's error number. `readableMediaError` was
+written to keep `PHPhotosErrorDomain error 3164` off a paying user's screen,
+which is right, but it dropped the number entirely — and that number is the one
+thing that identifies which failure this is. A build cycle went into guessing
+what the sentence had erased.
+
+`technicalErrorCode` puts it back where it belongs: the sentence stays
+readable, and the identifier goes on the small grey code line next to the step
+that failed, as `READ · PHPhotos-3164`. That is what a support code is for.
+
+
+### 2026-08 — Fetch the recording rather than asking the reader to
+
+Build 8 still failed on some recordings and not others, with the message saying
+the video might be in iCloud. That message was most likely correct. The picker
+has no iCloud option — nothing in `ImagePickerOptions` says "fetch this from
+the network first" — so a recording that is not on the device can come back as
+a file the app cannot read, and the advice was to go and open it in Photos by
+hand.
+
+`MediaLibrary` does have the option, and the picker returns an `assetId` that
+`MediaLibrary` accepts as an `AssetRef`. So a read failure now retries through
+PhotoKit with the download switched on, and only reports failure if that also
+comes back empty. The reader is told what is happening while it runs, because
+a silent wait on a slow connection is its own bug.
+
+**Every failure screen now carries a short error code.** Two builds went into
+fixing the wrong call, and the reason is that a screen naming no step looks
+identical however it got there: the first attempt guarded one call out of four
+and was indistinguishable in a screenshot from having changed nothing. PICK,
+READ, READ2, AUTO-UPLOAD, UPLOAD, TIMEOUT and SERVER each name where the app
+gave up. It costs the reader a line of grey text and removes a whole class of
+guesswork.
+
+
+### 2026-08 — Two jobs, one session, and a race to delete each other's frames
+
+A push notification reached a lock screen reading:
+
+    Stitching failed: Input file is missing:
+    /tmp/scrollstitch-sessions/mt8xbwlmss701niv/00000_00025
+
+A job deletes its input frames when it finishes. Correct for one job, fatal for
+two: the first to finish removes the files the second is still reading, and
+Sharp reports it as a missing path — naming a frame the reader never saw, in a
+session that was intact when the run began.
+
+Two runs over one session is not hypothetical. The client posts to
+`/api/process-frames` once, but a POST whose connection drops *after* the
+server accepted it can be retried by the networking layer underneath, and the
+retry is indistinguishable from a fresh request. The same evening produced
+`fetch failed: The network connection was lost` two minutes after an unrelated
+failure, on 5G, which is exactly the condition that produces one.
+
+`sessionJobs` now records which job owns a session's frames. A second request
+for a session already being processed gets the running job's id instead of
+starting a rival over the same files, which is both the safe answer and the
+true one — there really is a job, and it really is running.
+
+The second fix is that the path was ever sent. `readableProcessingError` keeps
+Sharp's message in the server log, where the session id and frame number are
+precisely what is wanted, and sends the reader something in terms of what they
+did. Writing its tests caught the same hole found in `readableMediaError` a day
+earlier: an object with no `message` stringifying to `[object Object]`.
+
+
+### 2026-08 — The fallback covered one step out of four
+
+The previous entry added a fallback to the system picker and it did not fire.
+The build reached TestFlight, the raw PhotoKit string was gone — so the new
+error copy was live — and the same dead end appeared under a friendlier
+sentence.
+
+The fallback was wrapped around exactly one call, `getAssetInfoAsync`, because
+that was the call named in the error. Three others in the same path talk to
+PhotoKit and can fail the same way: the permission request, the library query,
+and the frame extraction that follows. Any of them threw straight past the
+fallback into the outer catch, which does nothing but render the message.
+
+`resolveLatestRecording` now owns the whole shortcut and returns null for every
+failure in it rather than throwing. Null means "the shortcut cannot deliver",
+and there is one answer to that: open the picker. Extraction is handled
+separately, because a file that resolves and still will not open is also the
+picker's problem, while a failed upload is not — reopening a picker there would
+discard work the user already waited through.
+
+The reason this took two attempts is in `extractFramesFromVideo`. Every frame
+was wrapped in `catch {}`. Dropping a frame that will not render is correct;
+dropping the reason is not, and when a video cannot be read at all, every
+iteration throws the same diagnosis and all of them were discarded. Total
+failure now rethrows the first one, so the cause survives to the screen instead
+of arriving as a count of zero.
+
+
+### 2026-08 — A PhotoKit error reached a paying user
+
+The first thing someone saw after subscribing on the App Store build was:
+
+    Processing Failed
+    The operation couldn't be completed. (PHPhotosErrorDomain error 3164.)
+
+Two separate failures, one screen.
+
+The shortcut behind the main button takes the newest video in the library and
+opens it directly. Under "Optimise iPhone Storage" that recording lives in
+iCloud with no file on the device, so PhotoKit has to fetch it first — and on a
+weak connection the fetch fails. There was no flag to turn on:
+`shouldDownloadFromNetwork` already defaults to true, so the download had been
+attempted and had lost.
+
+The dead end was the bug. A failed fetch left the screen with nothing to do,
+and the fallback made it worse: `info.localUri || asset.uri` handed the
+thumbnailer a `ph://` reference, which is an identifier rather than a file.
+Failing to resolve an asset now falls through to the system picker, which
+downloads iCloud assets itself with Apple's progress UI and lets the user point
+at the recording they meant rather than whatever they filmed last. An empty
+result does the same, since "no videos" and "Selected Photos access that
+excludes the recording" are indistinguishable from here.
+
+The second failure is that the raw error was ever rendered. `readableMediaError`
+in `lib/mediaErrors.ts` matches on the error domain — the numeric codes vary and
+Apple documents almost none of them — and says the useful thing instead: the
+recording is probably still in iCloud. Writing the test for it turned up one
+more path to the same screen: an object with no `message` stringified to
+`[object Object]`.
+
+
+### 2026-08 — The weekly identifier was spent too, and deleting it changed nothing
+
+`scrollstitch_pro_weekly` was also created in App Store Connect as an in-app
+purchase rather than an auto-renewable subscription. It was never submitted for
+review and the product was deleted — and App Store Connect still answers *"The
+Product ID you entered is already being used by another subscription"* on
+re-creation.
+
+That is the part worth keeping: **deleting a product does not release its id.**
+The annual identifier was lost because it had been submitted, which made it
+easy to believe submission was the trigger. It is not. An identifier is spent
+the moment it is used. There is no state a product can be put into that gives
+it back.
+
+The weekly plan is `scrollstitch_pro_weekly_v2` now. The suffix is not a
+version scheme, it is a scar; a product id is never shown to anyone, so the
+only thing that matters is that it is free and that it matches RevenueCat
+exactly.
+
+Retiring the old one made the delete check dangerous in a way it had not been
+before. The live weekly identifier is the retired one plus a suffix, so the
+prefix pattern that had been fine until now — `/^scrollstitch_pro_weekly/` —
+matches both, and the seed would have created the weekly product and deleted it
+in the same run, taking out the plan the free trial funnels into. The check is
+an exact match on the identifier with Play's `:basePlanId` suffix stripped, and
+the test that fails on the prefix version is in `scripts/__tests__`.
+
+### 2026-08 — Product ids did not live in exactly one file after all
+
+The note below claims the rename cost nothing in the app because the client
+never names a product. That was wrong, and worth correcting rather than
+quietly deleting: `lib/revenuecat.tsx` decided whether someone was already on
+the annual plan by asking whether their active product id *contained* the word
+`annual`.
+
+Moving the plan to `scrollstitch_pro_yearly` removed that substring from the
+identifier of the very plan the check was looking for. It answered false for
+every annual subscriber, and the day-3 win-back offer — which exists to move
+weekly subscribers up to annual — would have been shown to people already
+paying for annual, offering to sell them what they had.
+
+Nothing caught it, because a substring test against a literal has nothing to
+typecheck and the identifier it was reading is chosen in a different file. The
+check now compares against the product behind the annual package, so the two
+move together by construction. Lifetime buyers are excluded on the same
+grounds: there is nothing above their plan to upsell.
+
+The comparison also has to survive Play writing subscriptions as
+`productId:basePlanId` and reporting them both ways, so it matches on the part
+before the colon. It lives in `lib/planIdentity.ts` with tests, including the
+one that would have caught this: the same plan, spelled two ways, sharing no
+useful substring.
+
+### 2026-08 — The lifetime product was created with a type no store accepts
+
+With the naming collision out of the way the seed got as far as the lifetime
+product and stopped there: `Allowed product types for Test Store:
+'subscription', 'consumable' and 'non_consumable'`. The script was sending
+`one_time`.
+
+`one_time` is the umbrella the API *reports* such a product under — it is in
+the product type enum, and there is a `one_time` field on a returned product —
+but it is not a type a store accepts when creating one. A lifetime unlock is
+bought once and kept: a **non-consumable**, in App Store Connect, in Play, and
+on the Test Store alike. That is what the seed sends now.
+
+Finding this took a round trip it should not have. The script threw
+`Failed to create Test/Lifetime product` and discarded the API's own response,
+so the message naming the offending field had to be recovered by repeating the
+call by hand. Product creation errors now carry the store's reply.
+
+### 2026-08 — The seed could not create the plan that replaced the old one
+
+Moving the annual plan to `scrollstitch_pro_yearly` changed the constant but
+never reached RevenueCat: the seed run failed on the first new product with
+`resource_already_exists`, and left the project exactly as it was.
+
+The cause was ordering. A product's display name must be unique within its app,
+and the new yearly product wanted `ScrollStitch Pro Annual` — the name still
+held by the product it was replacing, which the retirement pass does not remove
+until the end of the same run. Creation came first, so it collided every time.
+Because the run died there, nothing after it happened either: no yearly
+product, no lifetime product, no package swap, no retirement. That is why the
+lifetime tier was missing from the offering too — one failure, two features
+silently absent, and a script that reported the error and then exited.
+
+Retired products are now renamed out of the way before anything is created.
+Renaming is the only mutation RevenueCat allows on an existing product, which
+also makes it the only fix that survives the case the retirement pass already
+anticipated: a product with recorded transactions cannot be deleted, so
+deleting it first would not have been enough. A test purchase is all it takes
+to make a product permanent, and the name would have stayed occupied on every
+future run.
+
+The pattern that decides what gets retired now lives in
+`scripts/retiredProducts.ts` with tests in `scripts/__tests__`. It governs
+deletion and the two mistakes are not symmetric — keeping a dead product leaves
+clutter in a dashboard, deleting a live one takes a plan out of the paywall —
+so it is checked against every identifier the project has used, including the
+one-word gap between `…_pro_annual` and `…_pro_yearly`.
+
 ### 2026-08 — The annual plan needs a new identifier
 
 `scrollstitch_pro_annual` was created in App Store Connect as a non-consumable

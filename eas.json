@@ -11,7 +11,8 @@
         "EXPO_PUBLIC_DOMAIN": "scroll-stitcher.replit.app",
         "EXPO_PUBLIC_REVENUECAT_TEST_API_KEY": "test_NUOBXBjyOqwOTUPvsTOMjAoEbYv",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_pQNutSFdNAByouOKmFkMAtxjXkQ",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF",
+        "EXPO_PUBLIC_INSERT_AFFILIATE_COMPANY_CODE": "Effi"
       }
     },
     "preview": {
@@ -21,7 +22,8 @@
         "EXPO_PUBLIC_DOMAIN": "scroll-stitcher.replit.app",
         "EXPO_PUBLIC_REVENUECAT_TEST_API_KEY": "test_NUOBXBjyOqwOTUPvsTOMjAoEbYv",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_pQNutSFdNAByouOKmFkMAtxjXkQ",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF",
+        "EXPO_PUBLIC_INSERT_AFFILIATE_COMPANY_CODE": "Effi"
       }
     },
     "production": {
@@ -30,11 +32,16 @@
         "EXPO_PUBLIC_DOMAIN": "scroll-stitcher.replit.app",
         "EXPO_PUBLIC_REVENUECAT_TEST_API_KEY": "test_NUOBXBjyOqwOTUPvsTOMjAoEbYv",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_pQNutSFdNAByouOKmFkMAtxjXkQ",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_BhKbtDPHWZbHGWuhYwAjVdrHVdF",
+        "EXPO_PUBLIC_INSERT_AFFILIATE_COMPANY_CODE": "Effi"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6800344679"
+      }
+    }
   }
 }
