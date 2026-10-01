@@ -31,6 +31,7 @@ var NCC_SAMPLE_WIDTH = 64;
 var NCC_COARSE_STEP = 8;
 var NCC_FINE_RANGE = 16;
 var NCC_FINE_STEP = 1;
+var NCC_FINE_SEEDS = 3;
 var NCC_MAX_BANDS = 9;
 var NCC_MIN_BAND_ROWS = 12;
 var STICKY_GUARD_FRACTION = 0.08;
@@ -409,7 +410,9 @@ async function measureOverlap(topImagePath, bottomImagePath, cache = new FrameBa
   let bestOverlap = 0;
   let bestNCC = -1;
   let bestMargin = -Infinity;
+  const scored = /* @__PURE__ */ new Set();
   const consider = (ov) => {
+    scored.add(ov);
     const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
     const margin = ncc - nccThresholdFor(baseThreshold, ov, frameH);
     if (margin > bestMargin) {
@@ -417,15 +420,25 @@ async function measureOverlap(topImagePath, bottomImagePath, cache = new FrameBa
       bestNCC = ncc;
       bestOverlap = ov;
     }
+    return margin;
   };
+  const coarse = [];
   for (let ov = minOverlap; ov <= maxSearch; ov += NCC_COARSE_STEP) {
-    consider(ov);
+    coarse.push({ ov, margin: consider(ov) });
   }
-  const lo = Math.max(minOverlap, bestOverlap - NCC_FINE_RANGE);
-  const hi = Math.min(maxSearch, bestOverlap + NCC_FINE_RANGE);
-  for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
-    consider(ov);
+  const seeds = [];
+  for (const c of [...coarse].sort((a, b) => b.margin - a.margin)) {
+    if (seeds.length >= NCC_FINE_SEEDS) break;
+    if (seeds.every((s) => Math.abs(s - c.ov) > NCC_FINE_RANGE)) seeds.push(c.ov);
   }
+  seeds.forEach((seed, rank) => {
+    const range = rank === 0 ? NCC_FINE_RANGE : NCC_COARSE_STEP;
+    const lo = Math.max(minOverlap, seed - range);
+    const hi = Math.min(maxSearch, seed + range);
+    for (let ov = lo; ov <= hi; ov += NCC_FINE_STEP) {
+      if (!scored.has(ov)) consider(ov);
+    }
+  });
   const threshold = nccThresholdFor(baseThreshold, bestOverlap, frameH);
   const pct = (bestOverlap / frameH * 100).toFixed(0);
   if (bestNCC < threshold) {
@@ -721,6 +734,21 @@ async function generatePdf(imagePath, outputPath) {
   });
 }
 
+// server/processingErrors.ts
+function readableProcessingError(err) {
+  const raw = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  if (/input file is missing/i.test(raw)) {
+    return "Some of the uploaded frames were no longer available. Please try again.";
+  }
+  if (/unsupported image format|input buffer contains unsupported image format/i.test(raw)) {
+    return "One of the uploaded frames could not be read. Please try again.";
+  }
+  if (/ENOSPC|no space left/i.test(raw)) {
+    return "The server ran out of space while stitching. Please try again shortly.";
+  }
+  return raw.trim() || "Processing failed unexpectedly.";
+}
+
 // server/routes.ts
 var privacyPolicyHtml = fs2.readFileSync(
   path2.resolve(process.cwd(), "server", "templates", "privacy-policy.html"),
@@ -800,12 +828,12 @@ var chunkStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, _file, cb) => {
-    const chunk = String(req.query.chunkIndex ?? "0").replace(/\D/g, "").padStart(5, "0");
-    const seq = String(chunkSeq++).padStart(5, "0");
-    cb(null, `${chunk}_${seq}`);
+    const r = req;
+    const chunk = String(r.query.chunkIndex ?? "0").replace(/\D/g, "").padStart(5, "0");
+    r._frameSeq = (r._frameSeq ?? -1) + 1;
+    cb(null, `${chunk}_${String(r._frameSeq).padStart(5, "0")}`);
   }
 });
-var chunkSeq = 0;
 var chunkUpload = multer({
   storage: chunkStorage,
   limits: { fileSize: 100 * 1024 * 1024 }
@@ -826,6 +854,7 @@ everyMs(() => {
   }
 }, 15 * 60 * 1e3);
 var jobProgress = /* @__PURE__ */ new Map();
+var sessionJobs = /* @__PURE__ */ new Map();
 function updateJob(id, update) {
   const existing = jobProgress.get(id);
   if (existing) {
@@ -878,6 +907,7 @@ function firstString(value) {
   return typeof value === "string" ? value : "";
 }
 var outputDir = path2.join(os2.tmpdir(), "scrollstitch-output");
+var MIN_CROPPED_HEIGHT = 10;
 var OUTPUT_TTL_MS = 2 * 60 * 60 * 1e3;
 function sweepOutputs(now = Date.now()) {
   let removed = 0;
@@ -947,6 +977,10 @@ async function registerRoutes(app2) {
         let framePaths;
         let sessionDir = null;
         if (sessionId) {
+          const owner = sessionJobs.get(sessionId);
+          if (owner && jobProgress.has(owner.jobId)) {
+            return res.json({ jobId: owner.jobId, frameCount: owner.frameCount });
+          }
           sessionDir = path2.join(sessionsDir, sessionId);
           let staged = [];
           try {
@@ -974,6 +1008,9 @@ async function registerRoutes(app2) {
         const quality = firstString(req.query.quality) === "jpeg" ? "jpeg" : "png";
         const pushToken = validPushToken(firstString(req.query.pushToken));
         jobProgress.set(jobId, { stage: "Processing", progress: 0, createdAt: Date.now() });
+        if (sessionId) {
+          sessionJobs.set(sessionId, { jobId, frameCount: framePaths.length });
+        }
         res.json({ jobId, frameCount: framePaths.length });
         (async () => {
           const tempOutputs = [];
@@ -1086,8 +1123,8 @@ async function registerRoutes(app2) {
               );
             }
           } catch (err) {
-            const message = err instanceof Error ? err.message : "Processing failed unexpectedly.";
             console.error(`Processing error (job ${jobId}):`, err);
+            const message = readableProcessingError(err);
             updateJob(jobId, { stage: "Error", progress: 0, error: message });
             if (pushToken) {
               await sendCompletionPush(pushToken, `Stitching failed: ${message}`, {
@@ -1102,6 +1139,7 @@ async function registerRoutes(app2) {
               } catch {
               }
             }
+            if (sessionId) sessionJobs.delete(sessionId);
             if (sessionDir) {
               try {
                 fs2.rmSync(sessionDir, { recursive: true, force: true });
@@ -1111,7 +1149,7 @@ async function registerRoutes(app2) {
           }
         })();
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Upload failed.";
+        const message = readableProcessingError(err) || "Upload failed.";
         return res.status(500).json({ error: message });
       }
     }
@@ -1245,7 +1283,12 @@ async function registerRoutes(app2) {
       const meta = await sharp2(filePath).metadata();
       const origWidth = meta.width ?? 0;
       const origHeight = meta.height ?? 0;
-      const newHeight = Math.max(10, origHeight - cropTop - cropBottom);
+      if (cropTop + cropBottom > origHeight - MIN_CROPPED_HEIGHT) {
+        return res.status(400).json({
+          error: "That trim would remove the whole image. Trim less and try again."
+        });
+      }
+      const newHeight = origHeight - cropTop - cropBottom;
       const ext = path2.extname(filename).toLowerCase();
       const baseName = path2.basename(filename, ext);
       const croppedFilename = `${baseName}_crop${ext}`;
@@ -1268,7 +1311,7 @@ async function registerRoutes(app2) {
         dimensions: { width: origWidth, height: newHeight }
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Crop failed.";
+      const message = readableProcessingError(err) || "Crop failed.";
       console.error("Crop error:", err);
       res.status(500).json({ error: message });
     }
