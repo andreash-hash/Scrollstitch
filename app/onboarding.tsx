@@ -644,10 +644,16 @@ export default function OnboardingScreen() {
 
   const isPaywall = activeIndex === SLIDES.length;
 
+  // Where the list is heading, not where it has settled. activeIndex only
+  // moves once a scroll finishes, so a second tap on Next during the
+  // animation used to ask for the same slide again and was simply lost.
+  const targetIndexRef = useRef(initialIndex);
+
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (viewableItems[0]?.index != null) {
         setActiveIndex(viewableItems[0].index);
+        targetIndexRef.current = viewableItems[0].index;
       }
     },
     []
@@ -657,7 +663,9 @@ export default function OnboardingScreen() {
 
   const goNext = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    listRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
+    const next = Math.min(SLIDES.length, targetIndexRef.current + 1);
+    targetIndexRef.current = next;
+    listRef.current?.scrollToIndex({ index: next, animated: true });
   };
 
   const handlePurchase = async (pkg: PurchasesPackage) => {
@@ -704,6 +712,7 @@ export default function OnboardingScreen() {
   // plans rather than into the app.
   const handleSkipToPlans = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    targetIndexRef.current = SLIDES.length;
     listRef.current?.scrollToIndex({ index: SLIDES.length, animated: true });
   };
 
