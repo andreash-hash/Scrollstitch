@@ -420,7 +420,11 @@ function PaywallSlide({
           </View>
         ) : (
           <>
-            <View style={paywall.billingToggle}>
+            <View
+              style={paywall.billingToggle}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Choose a plan"
+            >
               {availablePlans.map((b) => (
                 <Pressable
                   key={b}
