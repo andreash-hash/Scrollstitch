@@ -56,6 +56,7 @@ import {
 import { preparePdf, rehydrateStitch } from "@/lib/stitch-files";
 import { rememberPendingJob, forgetPendingJob, loadPendingJob } from "@/lib/pending-job";
 import { readableMediaError, technicalErrorCode } from "@/lib/mediaErrors";
+import { HttpError, httpErrorMessage, isRetryableStatus } from "@/lib/httpErrors";
 import { useSubscription, REVENUECAT_ENTITLEMENT_IDENTIFIER } from "@/lib/revenuecat";
 import * as StoreReview from "expo-store-review";
 import Colors from "@/constants/colors";
@@ -1137,10 +1138,15 @@ export default function ScrollStitchScreen() {
           try {
             const body = buildBody ? await buildBody() : undefined;
             const res = await doFetch(url, { method: "POST", ...(body ? { body } : {}) });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+              throw new HttpError(res.status, httpErrorMessage(res.status, await res.text()));
+            }
             return res;
           } catch (err) {
             lastError = err;
+            // A rejected request is rejected again on retry; only a dropped
+            // connection or a server-side hiccup is worth another attempt.
+            if (err instanceof HttpError && !isRetryableStatus(err.status)) break;
           }
         }
         throw lastError;
