@@ -6,6 +6,7 @@ import * as path from "path";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import express from "express";
+import sharp from "sharp";
 import { registerRoutes, sweepOutputs, OUTPUT_TTL_MS } from "../routes";
 import {
   generatePage,
@@ -374,6 +375,36 @@ describe("/api/process-frames end to end", () => {
     assert.equal(cropRes.status, 200);
     const cropped = (await cropRes.json()) as { dimensions: { height: number } };
     assert.equal(cropped.dimensions.height, restored.dimensions.height - 150);
+  });
+
+  test("refuses a trim that would leave nothing, instead of crashing", async () => {
+    // Each stepper is capped at half the height on the device, but the
+    // endpoint took whatever it was sent: top=195 on a 200px image asked
+    // sharp for rows 195–205 and came back as a 500.
+    const png = await sharp({
+      create: { width: 120, height: 200, channels: 3, background: { r: 200, g: 60, b: 40 } },
+    })
+      .png()
+      .toBuffer();
+    const fd = new FormData();
+    fd.append("image", new Blob([new Uint8Array(png)], { type: "image/png" }), "small.png");
+    const restored = (await (
+      await fetch(`${baseUrl}/api/rehydrate`, { method: "POST", body: fd })
+    ).json()) as { imageUrl: string };
+    const name = restored.imageUrl.split("/").pop();
+
+    for (const query of ["top=195", "top=150&bottom=100", "bottom=1000000"]) {
+      const res = await fetch(`${baseUrl}/api/crop/${name}?${query}`);
+      assert.equal(res.status, 400, query);
+      const body = (await res.json()) as { error: string };
+      assert.match(body.error, /trim/i, query);
+    }
+
+    // The largest trim that still leaves an image is fine.
+    const edge = await fetch(`${baseUrl}/api/crop/${name}?top=95&bottom=95`);
+    assert.equal(edge.status, 200);
+    const kept = (await edge.json()) as { dimensions: { height: number } };
+    assert.equal(kept.dimensions.height, 10);
   });
 
   test("refuses a rehydrate that is not an image", async () => {

@@ -2152,7 +2152,7 @@ export default function ScrollStitchScreen() {
                       </Pressable>
                       <Text style={styles.stepperVal}>{cropTop}</Text>
                       <Pressable
-                        onPress={() => setCropTop((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
+                        onPress={() => setCropTop((v) => Math.min(Math.max(0, Math.floor(result.dimensions.height / 2) - 10), v + 50))}
                         style={styles.stepperBtn}
                         accessibilityRole="button"
                         accessibilityLabel="Increase top trim by 50 pixels"
@@ -2177,7 +2177,7 @@ export default function ScrollStitchScreen() {
                       </Pressable>
                       <Text style={styles.stepperVal}>{cropBottom}</Text>
                       <Pressable
-                        onPress={() => setCropBottom((v) => Math.min(result.dimensions.height / 2 - 10, v + 50))}
+                        onPress={() => setCropBottom((v) => Math.min(Math.max(0, Math.floor(result.dimensions.height / 2) - 10), v + 50))}
                         style={styles.stepperBtn}
                         accessibilityRole="button"
                         accessibilityLabel="Increase bottom trim by 50 pixels"
