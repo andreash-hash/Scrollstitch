@@ -1,0 +1,27 @@
+# E2E summary
+
+expected 0 · unexpected 21 · flaky 0 · skipped 0
+
+| result | test | error |
+| --- | --- | --- |
+| FAIL | paywall.spec.ts › paywall and purchase › a new user is held in onboarding and reaches the plans | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › the copy follows the selected plan, including one-time lifetime terms | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › buying unlocks the app | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › a purchase that grants no access says so instead of looking frozen | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › cancelling the store sheet is not an error | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › a store error is shown and the button stays usable | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › restore: nothing to restore, then an active purchase | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › pricing that fails to load offers a retry that recovers | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › a store that returns no plans shows the retry, not a dead button | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | paywall.spec.ts › paywall and purchase › a subscriber goes straight to the app and never sees the plans | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | real-pipeline.spec.ts › the real server stitches the recording to the page's true height | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › recording in, long image and PDF out | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › trimming sends the chosen edges and shows the new size | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › the trim steppers stop at their cap | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › Process another video returns to a clean start | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › a rejected upload shows the server's sentence, once, without JSON | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › a server hiccup is retried, then explained in plain words | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › a failed job reports the server's reason and offers a retry | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › a job the server has forgotten says it expired | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › settings: the choices are grouped radios and the choice is sent | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
+| FAIL | stitch.spec.ts › stitching a recording › the library opens and comes back | Error: browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell |
