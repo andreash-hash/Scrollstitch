@@ -542,6 +542,19 @@ const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
 };
 
 /**
+ * Used for the retry after a PICK failure. Passthrough hands over the stored
+ * file untouched, which cannot work for a recording that is only in iCloud or
+ * has been edited (PHPhotos-3164 and friends). Compatible plus a real export
+ * preset makes iOS fetch and render the video itself, with its own progress UI.
+ */
+const FALLBACK_PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
+  ...PICKER_OPTIONS,
+  videoExportPreset: ImagePicker.VideoExportPreset.HighestQuality,
+  preferredAssetRepresentationMode:
+    ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+};
+
+/**
  * Offer the fix while it is still cheap — before a recording has been chosen.
  *
  * Continuing is a real option, not a formality: a recording inside the selected
@@ -1241,6 +1254,8 @@ export default function ScrollStitchScreen() {
     }
   };
 
+  const useFallbackPickerRef = useRef(false);
+
   const runPickVideo = async () => {
     let pickerResult: ImagePicker.ImagePickerResult;
     let limitedAccess = false;
@@ -1282,8 +1297,13 @@ export default function ScrollStitchScreen() {
       setErrorMessage("");
       setErrorCode("");
 
-      pickerResult = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
+      pickerResult = await ImagePicker.launchImageLibraryAsync(
+        useFallbackPickerRef.current ? FALLBACK_PICKER_OPTIONS : PICKER_OPTIONS
+      );
+      useFallbackPickerRef.current = false;
     } catch (err: any) {
+      // The next attempt asks iOS to download and export the video itself.
+      useFallbackPickerRef.current = !limitedAccess;
       // The picker threw while handing the recording over, after it was chosen.
       setStage("error");
       setErrorCode(withDetail(limitedAccess ? "PICK-LTD" : "PICK", err));
