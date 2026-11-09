@@ -542,10 +542,12 @@ const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
 };
 
 /**
- * Used for the retry after a PICK failure. Passthrough hands over the stored
- * file untouched, which cannot work for a recording that is only in iCloud or
- * has been edited (PHPhotos-3164 and friends). Compatible plus a real export
- * preset makes iOS fetch and render the video itself, with its own progress UI.
+ * Used for the retry after a PICK failure (PHPhotos-3164). Passthrough takes
+ * expo-image-picker's fast path, which copies the `fullSizeVideo` resource —
+ * the re-rendered file that exists when a recording has been trimmed or edited
+ * — and that copy can fail. Any other preset skips the fast path and renders
+ * the adjustment properly. Compatible additionally lets iOS fetch from iCloud.
+ * See README, "Trimmed recordings, and a fast path that cannot carry them".
  */
 const FALLBACK_PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
   ...PICKER_OPTIONS,
