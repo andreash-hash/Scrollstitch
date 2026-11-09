@@ -482,33 +482,81 @@ interface NccStats {
   sbb: number;
 }
 
+/**
+ * Per-row prefix sums of a greyscale column (W bytes per row): entry r holds the
+ * total over rows [0, r). The sums over any row range are then two lookups, so
+ * scoring an overlap only has to walk the pixels for the cross term.
+ *
+ * Pixel values are integers and every total stays far below 2^53, so these are
+ * exact in doubles — differences of prefixes equal what a direct walk adds up,
+ * bit for bit.
+ */
+interface RowPrefixSums {
+  sum: Float64Array;
+  sq: Float64Array;
+}
+
+function rowPrefixSums(buf: Buffer, rows: number): RowPrefixSums {
+  const W = NCC_SAMPLE_WIDTH;
+  const sum = new Float64Array(rows + 1);
+  const sq = new Float64Array(rows + 1);
+  for (let r = 0; r < rows; r++) {
+    const base = r * W;
+    let rs = 0;
+    let rq = 0;
+    for (let x = 0; x < W; x++) {
+      const v = buf[base + x];
+      rs += v;
+      rq += v * v;
+    }
+    sum[r + 1] = sum[r] + rs;
+    sq[r + 1] = sq[r] + rq;
+  }
+  return { sum, sq };
+}
+
 function nccStatsOverRows(
   topBuf: Buffer,
   botBuf: Buffer,
   rowOffset: number,
   lo: number,
-  hi: number
+  hi: number,
+  topSums: RowPrefixSums,
+  botSums: RowPrefixSums
 ): NccStats {
   const W = NCC_SAMPLE_WIDTH;
-  let sa = 0;
-  let sb = 0;
+  // The cross term is the only one that depends on how the two windows line
+  // up, so it is the only one that needs the pixels. Each row's dot product
+  // fits comfortably in an int (64 × 255 × 255), which keeps the inner loop in
+  // integer arithmetic; it is unrolled by eight, W being a multiple of it.
   let sab = 0;
-  let saa = 0;
-  let sbb = 0;
   for (let r = lo; r < hi; r++) {
     const ti = (rowOffset + r) * W;
     const bi = r * W;
-    for (let x = 0; x < W; x++) {
-      const a = topBuf[ti + x];
-      const b = botBuf[bi + x];
-      sa += a;
-      sb += b;
-      sab += a * b;
-      saa += a * a;
-      sbb += b * b;
+    let dot = 0;
+    for (let x = 0; x < W; x += 8) {
+      dot +=
+        topBuf[ti + x] * botBuf[bi + x] +
+        topBuf[ti + x + 1] * botBuf[bi + x + 1] +
+        topBuf[ti + x + 2] * botBuf[bi + x + 2] +
+        topBuf[ti + x + 3] * botBuf[bi + x + 3] +
+        topBuf[ti + x + 4] * botBuf[bi + x + 4] +
+        topBuf[ti + x + 5] * botBuf[bi + x + 5] +
+        topBuf[ti + x + 6] * botBuf[bi + x + 6] +
+        topBuf[ti + x + 7] * botBuf[bi + x + 7];
     }
+    sab += dot;
   }
-  return { n: Math.max(0, (hi - lo) * W), sa, sb, sab, saa, sbb };
+  const tLo = rowOffset + lo;
+  const tHi = rowOffset + hi;
+  return {
+    n: Math.max(0, (hi - lo) * W),
+    sa: topSums.sum[tHi] - topSums.sum[tLo],
+    sb: botSums.sum[hi] - botSums.sum[lo],
+    sab,
+    saa: topSums.sq[tHi] - topSums.sq[tLo],
+    sbb: botSums.sq[hi] - botSums.sq[lo],
+  };
 }
 
 function addStats(a: NccStats, b: NccStats): NccStats {
@@ -559,7 +607,9 @@ function computeNCC(
   botBuf: Buffer,
   maxSearch: number,
   overlap: number,
-  guard: number = 0
+  guard: number,
+  topSums: RowPrefixSums,
+  botSums: RowPrefixSums
 ): number {
   // Skip `guard` rows at both ends of the compared window: the start of B's
   // region and the end of A's region are where undetected sticky chrome
@@ -575,7 +625,7 @@ function computeNCC(
   if (bands < 3) {
     // Too few rows for a median to mean anything — the global score is all
     // there is, so walk the window once and be done.
-    return pearsonFromStats(nccStatsOverRows(topBuf, botBuf, rowOffset, lo, hi));
+    return pearsonFromStats(nccStatsOverRows(topBuf, botBuf, rowOffset, lo, hi, topSums, botSums));
   }
 
   // The band edges below tile [lo, hi) exactly — b=0 starts at lo and the last
@@ -586,7 +636,7 @@ function computeNCC(
   for (let b = 0; b < bands; b++) {
     const bandLo = lo + Math.floor((rows * b) / bands);
     const bandHi = lo + Math.floor((rows * (b + 1)) / bands);
-    const stats = nccStatsOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi);
+    const stats = nccStatsOverRows(topBuf, botBuf, rowOffset, bandLo, bandHi, topSums, botSums);
     bandScores.push(pearsonFromStats(stats));
     total = total ? addStats(total, stats) : stats;
   }
@@ -647,6 +697,7 @@ export interface OverlapMeasurement {
 export class FrameBandCache {
   private readonly columns = new Map<string, { height: number; column: Buffer }>();
   private readonly metas = new Map<string, { width: number; height: number } | null>();
+  private readonly pending = new Map<string, Promise<{ height: number; column: Buffer } | null>>();
 
   constructor(private readonly maxEntries: number = 4) {}
 
@@ -680,24 +731,38 @@ export class FrameBandCache {
       return hit;
     }
 
-    const meta = await this.size(framePath);
-    if (!meta) return null;
+    // A decode already under way for this frame (a prefetch, say) is shared
+    // rather than started a second time.
+    const pending = this.pending.get(key);
+    if (pending) return pending;
 
-    const column = await sharp(framePath)
-      .extract({ left: 0, top: 0, width: frameWidth, height: meta.height })
-      .resize(NCC_SAMPLE_WIDTH, meta.height, { fit: "fill" })
-      .greyscale()
-      .raw()
-      .toBuffer();
+    const load = (async () => {
+      const meta = await this.size(framePath);
+      if (!meta) return null;
 
-    const entry = { height: meta.height, column };
-    this.columns.set(key, entry);
-    while (this.columns.size > this.maxEntries) {
-      const oldest = this.columns.keys().next().value;
-      if (oldest === undefined) break;
-      this.columns.delete(oldest);
+      const column = await sharp(framePath)
+        .extract({ left: 0, top: 0, width: frameWidth, height: meta.height })
+        .resize(NCC_SAMPLE_WIDTH, meta.height, { fit: "fill" })
+        .greyscale()
+        .raw()
+        .toBuffer();
+
+      const entry = { height: meta.height, column };
+      this.columns.set(key, entry);
+      while (this.columns.size > this.maxEntries) {
+        const oldest = this.columns.keys().next().value;
+        if (oldest === undefined) break;
+        this.columns.delete(oldest);
+      }
+      return entry;
+    })();
+
+    this.pending.set(key, load);
+    try {
+      return await load;
+    } finally {
+      this.pending.delete(key);
     }
-    return entry;
   }
 }
 
@@ -747,6 +812,10 @@ export async function measureOverlap(
   const contrast = (greyStddev(topBuf) + greyStddev(botBuf)) / 2;
   const baseThreshold = adaptiveNccThreshold(contrast);
 
+  // Built once per measurement and shared by every overlap scored below.
+  const topSums = rowPrefixSums(topBuf, maxSearch);
+  const botSums = rowPrefixSums(botBuf, maxSearch);
+
   const stickyGuard = Math.round(frameH * STICKY_GUARD_FRACTION);
   const guardFor = (ov: number) => Math.min(stickyGuard, Math.floor(ov / 4));
 
@@ -760,7 +829,7 @@ export async function measureOverlap(
 
   const consider = (ov: number): number => {
     scored.add(ov);
-    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov));
+    const ncc = computeNCC(topBuf, botBuf, maxSearch, ov, guardFor(ov), topSums, botSums);
     const margin = ncc - nccThresholdFor(baseThreshold, ov, frameH);
     if (margin > bestMargin) {
       bestMargin = margin;
@@ -894,7 +963,29 @@ export async function selectFrames(
   // One cache for the whole walk: the reference frame is compared against
   // every candidate that follows it, so without this each of those comparisons
   // decodes the reference again.
-  const cache = new FrameBandCache();
+  //
+  // The walk itself is sequential — whether a frame is kept decides what the
+  // next one is compared against — but decoding the frames that lie ahead is
+  // not, and it is most of the wall-clock time: each frame costs a thumbnail
+  // decode and a column decode, and the walk used to wait for them one at a
+  // time. A few frames ahead are decoded while the current one is being
+  // scored. The window is bounded, so memory stays flat however long the
+  // recording is, and a frame that ends up skipped only costs a decode.
+  const PREFETCH_AHEAD = IO_CONCURRENCY * 2;
+  const cache = new FrameBandCache(PREFETCH_AHEAD + 4);
+  const signatures = new Map<number, Promise<FrameSignature | null>>();
+  const prefetchFrom = (from: number) => {
+    const end = Math.min(framePaths.length, from + PREFETCH_AHEAD);
+    for (let k = from; k < end; k++) {
+      if (signatures.has(k)) continue;
+      const p = framePaths[k];
+      signatures.set(k, getFrameSignature(p).catch(() => null));
+      cache
+        .size(p)
+        .then((m) => (m ? cache.column(p, m.width) : null))
+        .catch(() => null);
+    }
+  };
 
   let refPath = framePaths[0];
   let refSig: FrameSignature | null = null;
@@ -924,12 +1015,9 @@ export async function selectFrames(
   while (i < framePaths.length) {
     const candidate = framePaths[i];
 
-    let sig: FrameSignature | null = null;
-    try {
-      sig = await getFrameSignature(candidate);
-    } catch {
-      sig = null;
-    }
+    prefetchFrom(i);
+    const sig: FrameSignature | null = (await signatures.get(i)) ?? null;
+    signatures.delete(i);
 
     // Near-identical to the reference (e.g. paused scroll, blinking cursor,
     // sub-minimum scroll step): skip without measuring. These are useless as
