@@ -7,341 +7,341 @@ TAP version 13
     # Subtest: never increases once it has been shown
     ok 1 - never increases once it has been shown
       ---
-      duration_ms: 3.797686
+      duration_ms: 13.573089
       type: 'test'
       ...
     # Subtest: the first estimate is not wildly short of the real duration
     ok 2 - the first estimate is not wildly short of the real duration
       ---
-      duration_ms: 0.503135
+      duration_ms: 1.538093
       type: 'test'
       ...
     # Subtest: keeps counting down while progress is flat
     ok 3 - keeps counting down while progress is flat
       ---
-      duration_ms: 0.573597
+      duration_ms: 0.789842
       type: 'test'
       ...
     # Subtest: converges towards zero by the time the job ends
     ok 4 - converges towards zero by the time the job ends
       ---
-      duration_ms: 0.752882
+      duration_ms: 0.962456
       type: 'test'
       ...
     # Subtest: a job that runs long lands on zero rather than going negative
     ok 5 - a job that runs long lands on zero rather than going negative
       ---
-      duration_ms: 1.866355
+      duration_ms: 1.371804
       type: 'test'
       ...
     # Subtest: the naive model is the thing being fixed
     ok 6 - the naive model is the thing being fixed
       ---
-      duration_ms: 0.843014
+      duration_ms: 1.760572
       type: 'test'
       ...
     # Subtest: short jobs still get a sensible floor
     ok 7 - short jobs still get a sensible floor
       ---
-      duration_ms: 0.272456
+      duration_ms: 0.343514
       type: 'test'
       ...
     # Subtest: formats in coarse steps so the digits do not flicker
     ok 8 - formats in coarse steps so the digits do not flicker
       ---
-      duration_ms: 0.322929
+      duration_ms: 0.407805
       type: 'test'
       ...
     1..8
 ok 1 - time remaining
   ---
-  duration_ms: 10.578239
+  duration_ms: 22.500844
   type: 'suite'
   ...
 # Subtest: uses the server's own sentence from a JSON error body
 ok 2 - uses the server's own sentence from a JSON error body
   ---
-  duration_ms: 1.44624
+  duration_ms: 1.110473
   type: 'test'
   ...
 # Subtest: never shows braces and quotes on screen
 ok 3 - never shows braces and quotes on screen
   ---
-  duration_ms: 0.287093
+  duration_ms: 0.246302
   type: 'test'
   ...
 # Subtest: accepts a `message` field as well as `error`
 ok 4 - accepts a `message` field as well as `error`
   ---
-  duration_ms: 0.180685
+  duration_ms: 0.141726
   type: 'test'
   ...
 # Subtest: replaces a proxy's HTML page with a plain sentence
 ok 5 - replaces a proxy's HTML page with a plain sentence
   ---
-  duration_ms: 0.233416
+  duration_ms: 0.18097
   type: 'test'
   ...
 # Subtest: passes a short plain-text reason through
 ok 6 - passes a short plain-text reason through
   ---
-  duration_ms: 0.198432
+  duration_ms: 0.166482
   type: 'test'
   ...
 # Subtest: explains the statuses a person can act on
 ok 7 - explains the statuses a person can act on
   ---
-  duration_ms: 0.30174
+  duration_ms: 0.25069
   type: 'test'
   ...
 # Subtest: drops a plain-text body too long to be a sentence
 ok 8 - drops a plain-text body too long to be a sentence
   ---
-  duration_ms: 0.256464
+  duration_ms: 0.216055
   type: 'test'
   ...
 # Subtest: retries only what a second attempt could fix
 ok 9 - retries only what a second attempt could fix
   ---
-  duration_ms: 0.21076
+  duration_ms: 0.189034
   type: 'test'
   ...
 # Subtest: an HttpError reads cleanly on the error screen and carries its status code
 ok 10 - an HttpError reads cleanly on the error screen and carries its status code
   ---
-  duration_ms: 1.021111
+  duration_ms: 0.651362
   type: 'test'
   ...
 # Subtest: stitch library retention
     # Subtest: keeps everything while under both limits
     ok 1 - keeps everything while under both limits
       ---
-      duration_ms: 2.179183
+      duration_ms: 2.43626
       type: 'test'
       ...
     # Subtest: returns newest first regardless of input order
     ok 2 - returns newest first regardless of input order
       ---
-      duration_ms: 0.513434
+      duration_ms: 0.443462
       type: 'test'
       ...
     # Subtest: drops the oldest once the count limit is passed
     ok 3 - drops the oldest once the count limit is passed
       ---
-      duration_ms: 1.994251
+      duration_ms: 0.315201
       type: 'test'
       ...
     # Subtest: drops the oldest once the byte budget is passed
     ok 4 - drops the oldest once the byte budget is passed
       ---
-      duration_ms: 0.422223
+      duration_ms: 0.422262
       type: 'test'
       ...
     # Subtest: keeps the newest stitch even when it alone exceeds the budget
     ok 5 - keeps the newest stitch even when it alone exceeds the budget
       ---
-      duration_ms: 0.273154
+      duration_ms: 0.262342
       type: 'test'
       ...
     # Subtest: a record with no measured size is not treated as free
     ok 6 - a record with no measured size is not treated as free
       ---
-      duration_ms: 0.207522
+      duration_ms: 0.393367
       type: 'test'
       ...
     # Subtest: handles an empty library
     ok 7 - handles an empty library
       ---
-      duration_ms: 0.371142
+      duration_ms: 0.470893
       type: 'test'
       ...
     # Subtest: formats sizes the way the library screen shows them
     ok 8 - formats sizes the way the library screen shows them
       ---
-      duration_ms: 0.326256
+      duration_ms: 0.416521
       type: 'test'
       ...
     1..8
 ok 11 - stitch library retention
   ---
-  duration_ms: 7.922868
+  duration_ms: 8.545011
   type: 'suite'
   ...
 # Subtest: translates the error that shipped
 ok 12 - translates the error that shipped
   ---
-  duration_ms: 1.621494
+  duration_ms: 2.107734
   type: 'test'
   ...
 # Subtest: matches the domain, not the code
 ok 13 - matches the domain, not the code
   ---
-  duration_ms: 0.423391
+  duration_ms: 0.506971
   type: 'test'
   ...
 # Subtest: is case insensitive about the domain
 ok 14 - is case insensitive about the domain
   ---
-  duration_ms: 0.240119
+  duration_ms: 0.231695
   type: 'test'
   ...
 # Subtest: passes other messages through unchanged
 ok 15 - passes other messages through unchanged
   ---
-  duration_ms: 0.150893
+  duration_ms: 0.242264
   type: 'test'
   ...
 # Subtest: never renders as empty or as [object Object]
 ok 16 - never renders as empty or as [object Object]
   ---
-  duration_ms: 0.268282
+  duration_ms: 0.457338
   type: 'test'
   ...
 # Subtest: accepts a thrown string
 ok 17 - accepts a thrown string
   ---
-  duration_ms: 0.14127
+  duration_ms: 0.190838
   type: 'test'
   ...
 # Subtest: extracts the identifier that was being hidden
 ok 18 - extracts the identifier that was being hidden
   ---
-  duration_ms: 0.54413
+  duration_ms: 0.541646
   type: 'test'
   ...
 # Subtest: works for any Apple error domain
 ok 19 - works for any Apple error domain
   ---
-  duration_ms: 3.689176
+  duration_ms: 0.283442
   type: 'test'
   ...
 # Subtest: falls back to a code property
 ok 20 - falls back to a code property
   ---
-  duration_ms: 0.413943
+  duration_ms: 0.430538
   type: 'test'
   ...
 # Subtest: returns empty when there is nothing technical to show
 ok 21 - returns empty when there is nothing technical to show
   ---
-  duration_ms: 0.501172
+  duration_ms: 0.587232
   type: 'test'
   ...
 # Subtest: the message no longer asserts iCloud as the cause
 ok 22 - the message no longer asserts iCloud as the cause
   ---
-  duration_ms: 0.18719
+  duration_ms: 0.217007
   type: 'test'
   ...
 # Subtest: the identifiers that broke the substring check
 ok 23 - the identifiers that broke the substring check
   ---
-  duration_ms: 1.203514
+  duration_ms: 1.554817
   type: 'test'
   ...
 # Subtest: matches across Play's base-plan suffix
 ok 24 - matches across Play's base-plan suffix
   ---
-  duration_ms: 0.236989
+  duration_ms: 0.269425
   type: 'test'
   ...
 # Subtest: does not confuse one plan for another
 ok 25 - does not confuse one plan for another
   ---
-  duration_ms: 0.162811
+  duration_ms: 0.355096
   type: 'test'
   ...
 # Subtest: a weekly subscriber is not on the annual plan
 ok 26 - a weekly subscriber is not on the annual plan
   ---
-  duration_ms: 0.15654
+  duration_ms: 0.219492
   type: 'test'
   ...
 # Subtest: an unknown plan is never a match
 ok 27 - an unknown plan is never a match
   ---
-  duration_ms: 0.172981
+  duration_ms: 0.246582
   type: 'test'
   ...
 # Subtest: baseProductId strips only the suffix
 ok 28 - baseProductId strips only the suffix
   ---
-  duration_ms: 0.163249
+  duration_ms: 0.264386
   type: 'test'
   ...
 # Subtest: retires the old app name and every burnt identifier
 ok 29 - retires the old app name and every burnt identifier
   ---
-  duration_ms: 1.8336
+  duration_ms: 1.825735
   type: 'test'
   ...
 # Subtest: keeps every live product
 ok 30 - keeps every live product
   ---
-  duration_ms: 1.408692
+  duration_ms: 1.400347
   type: 'test'
   ...
 # Subtest: the replacement weekly is not caught by the retired weekly
 ok 31 - the replacement weekly is not caught by the retired weekly
   ---
-  duration_ms: 0.218319
+  duration_ms: 0.225623
   type: 'test'
   ...
 # Subtest: yearly is not caught by the annual it replaced
 ok 32 - yearly is not caught by the annual it replaced
   ---
-  duration_ms: 0.141873
+  duration_ms: 0.179036
   type: 'test'
   ...
 # Subtest: matches the whole identifier, not a fragment of it
 ok 33 - matches the whole identifier, not a fragment of it
   ---
-  duration_ms: 0.266962
+  duration_ms: 0.312226
   type: 'test'
   ...
 # Subtest: catches both spellings of a Play subscription
 ok 34 - catches both spellings of a Play subscription
   ---
-  duration_ms: 0.121657
+  duration_ms: 0.176501
   type: 'test'
   ...
 # Subtest: is case insensitive
 ok 35 - is case insensitive
   ---
-  duration_ms: 0.09642
+  duration_ms: 0.171582
   type: 'test'
   ...
 # Subtest: treats a missing identifier as live
 ok 36 - treats a missing identifier as live
   ---
-  duration_ms: 0.133745
+  duration_ms: 0.172194
   type: 'test'
   ...
 # Subtest: repeated calls agree
 ok 37 - repeated calls agree
   ---
-  duration_ms: 0.392001
+  duration_ms: 0.401583
   type: 'test'
   ...
 # Subtest: moves a retired display name aside
 ok 38 - moves a retired display name aside
   ---
-  duration_ms: 0.470646
+  duration_ms: 0.590127
   type: 'test'
   ...
 # Subtest: renaming is idempotent
 ok 39 - renaming is idempotent
   ---
-  duration_ms: 0.193066
+  duration_ms: 0.21329
   type: 'test'
   ...
 # Subtest: falls back to the store identifier when there is no display name
 ok 40 - falls back to the store identifier when there is no display name
   ---
-  duration_ms: 0.101529
+  duration_ms: 0.164067
   type: 'test'
   ...
-# Received 6 frames for job 17908463283002ta9b65ga
+# Received 6 frames for job 1794227533306t36olzhjb
 # Deduplicated: 6 -> 6 frames
 # Sticky detection: header=0px, footer=0px
 #   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=40.0)
@@ -360,10 +360,10 @@ ok 40 - falls back to the store identifier when there is no display name
     # Subtest: uploads frames, reports progress and serves the stitched result
     ok 1 - uploads frames, reports progress and serves the stitched result
       ---
-      duration_ms: 1407.128321
+      duration_ms: 1102.448915
       type: 'test'
       ...
-# Received 6 frames for job 1790846329587y538xrup3 (session testmupbnzkt)
+# Received 6 frames for job 1794227534314krit6860j (session testmw98qxub)
 # Deduplicated: 6 -> 6 frames
 # Sticky detection: header=0px, footer=0px
 #   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=42.6)
@@ -381,46 +381,46 @@ ok 40 - falls back to the store identifier when there is no display name
     # Subtest: chunked upload stages frames and stitches them in order
     ok 2 - chunked upload stages frames and stitches them in order
       ---
-      duration_ms: 794.89744
+      duration_ms: 621.572403
       type: 'test'
       ...
     # Subtest: rejects a session that staged nothing
     ok 3 - rejects a session that staged nothing
       ---
-      duration_ms: 3.086151
+      duration_ms: 2.384649
       type: 'test'
       ...
     # Subtest: rejects a chunk without a session id
     ok 4 - rejects a chunk without a session id
       ---
-      duration_ms: 2.919498
+      duration_ms: 2.769397
       type: 'test'
       ...
     # Subtest: rejects an upload without frames
     ok 5 - rejects an upload without frames
       ---
-      duration_ms: 2.950013
+      duration_ms: 2.898508
       type: 'test'
       ...
-# Received 3 frames for job 1790846330219vqsn1rtc3
-# validateFrames: Frame 1 of 3 could not be decoded and was skipped. (84f6a05613810a9c339684640c5a0adb)
-# validateFrames: Frame 2 of 3 could not be decoded and was skipped. (55f411fc15ce91c8343314b40cf4e5df)
-# validateFrames: Frame 3 of 3 could not be decoded and was skipped. (bdbe0c07737983a0acafe49a8ff9ad8d)
-# Processing error (job 1790846330219vqsn1rtc3): Error: None of the uploaded frames could be read as images. The recording may be corrupt — please try recording again.
+# Received 3 frames for job 17942275347455y0vvebcu
+# validateFrames: Frame 1 of 3 could not be decoded and was skipped. (8a14bdab981d750125f8dd224d0802ca)
+# validateFrames: Frame 2 of 3 could not be decoded and was skipped. (69721589b50f50d17c5665bcbe314055)
+# validateFrames: Frame 3 of 3 could not be decoded and was skipped. (640ec97f93c9d24f443fb93716a74262)
+# Processing error (job 17942275347455y0vvebcu): Error: None of the uploaded frames could be read as images. The recording may be corrupt — please try recording again.
 #     at <anonymous> (/home/runner/work/Scrollstitch/Scrollstitch/server/routes.ts:476:21)
     # Subtest: reports a clear error for an undecodable upload
     ok 6 - reports a clear error for an undecodable upload
       ---
-      duration_ms: 12.580012
+      duration_ms: 13.783116
       type: 'test'
       ...
     # Subtest: reports build identity so a stale deployment is visible
     ok 7 - reports build identity so a stale deployment is visible
       ---
-      duration_ms: 2.071932
+      duration_ms: 2.007314
       type: 'test'
       ...
-# Received 4 frames for job 17908463303206yzj1txfb
+# Received 4 frames for job 1794227534853nsmz5xrgq
 # Deduplicated: 4 -> 4 frames
 # Sticky detection: header=0px, footer=0px
 #   overlap: 384px/40% (NCC=1.000, threshold=0.850, contrast=45.0)
@@ -434,10 +434,10 @@ ok 40 - falls back to the store identifier when there is no display name
     # Subtest: builds the PDF on demand, once, without blocking the job
     ok 8 - builds the PDF on demand, once, without blocking the job
       ---
-      duration_ms: 578.001476
+      duration_ms: 612.328923
       type: 'test'
       ...
-# Received 4 frames for job 1790846330898m9g7ri9gl
+# Received 4 frames for job 1794227535465iyjuwqppc
 # Deduplicated: 4 -> 4 frames
 # Sticky detection: header=0px, footer=0px
 #   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.8)
@@ -451,10 +451,10 @@ ok 40 - falls back to the store identifier when there is no display name
     # Subtest: ignores a malformed push token instead of failing the job
     ok 9 - ignores a malformed push token instead of failing the job
       ---
-      duration_ms: 496.610024
+      duration_ms: 507.425927
       type: 'test'
       ...
-# Received 4 frames for job 17908463313937w3kslx2x
+# Received 4 frames for job 1794227535961dxwr462a3
 # Deduplicated: 4 -> 4 frames
 # Sticky detection: header=0px, footer=0px
 #   overlap: 384px/40% (NCC=1.000, threshold=0.845, contrast=38.3)
@@ -468,62 +468,62 @@ ok 40 - falls back to the store identifier when there is no display name
     # Subtest: rehydrates a stitch the server no longer has, PDF and all
     ok 10 - rehydrates a stitch the server no longer has, PDF and all
       ---
-      duration_ms: 701.470249
+      duration_ms: 727.031219
       type: 'test'
       ...
     # Subtest: refuses a trim that would leave nothing, instead of crashing
     ok 11 - refuses a trim that would leave nothing, instead of crashing
       ---
-      duration_ms: 23.584369
+      duration_ms: 23.842187
       type: 'test'
       ...
     # Subtest: refuses a rehydrate that is not an image
     ok 12 - refuses a rehydrate that is not an image
       ---
-      duration_ms: 6.139259
+      duration_ms: 7.427922
       type: 'test'
       ...
     # Subtest: 404s for a PDF whose source image does not exist
     ok 13 - 404s for a PDF whose source image does not exist
       ---
-      duration_ms: 1.5659
+      duration_ms: 2.343482
       type: 'test'
       ...
     # Subtest: returns 404 for unknown jobs
     ok 14 - returns 404 for unknown jobs
       ---
-      duration_ms: 1.370585
+      duration_ms: 2.973167
       type: 'test'
       ...
     # Subtest: sweeps stale outputs and leaves fresh ones alone
     ok 15 - sweeps stale outputs and leaves fresh ones alone
       ---
-      duration_ms: 0.835207
+      duration_ms: 1.187285
       type: 'test'
       ...
     1..15
 ok 41 - /api/process-frames end to end
   ---
-  duration_ms: 4043.556103
+  duration_ms: 3639.265102
   type: 'suite'
   ...
 # Subtest: deployed bundle
     # Subtest: exposes every route the source registers
     ok 1 - exposes every route the source registers
       ---
-      duration_ms: 0.724578
+      duration_ms: 0.776469
       type: 'test'
       ...
     # Subtest: records the commit it was built from
     ok 2 - records the commit it was built from
       ---
-      duration_ms: 0.167669
+      duration_ms: 0.261117
       type: 'test'
       ...
     1..2
 ok 42 - deployed bundle
   ---
-  duration_ms: 0.998494
+  duration_ms: 1.214406
   type: 'suite'
   ...
 # Sticky detection: header=0px, footer=0px
@@ -542,7 +542,7 @@ ok 42 - deployed bundle
     # Subtest: smooth scrolling reconstructs the page without gaps or duplicates
     ok 1 - smooth scrolling reconstructs the page without gaps or duplicates
       ---
-      duration_ms: 1012.566844
+      duration_ms: 915.008715
       type: 'test'
       ...
 # Sticky detection: header=119px, footer=95px
@@ -562,7 +562,7 @@ ok 42 - deployed bundle
     # Subtest: sticky header and footer are detected, removed and kept once
     ok 2 - sticky header and footer are detected, removed and kept once
       ---
-      duration_ms: 1117.142063
+      duration_ms: 810.743131
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -580,7 +580,7 @@ ok 42 - deployed bundle
     # Subtest: a scroll jump produces a gap seam and a client-visible warning
     ok 3 - a scroll jump produces a gap seam and a client-visible warning
       ---
-      duration_ms: 768.597734
+      duration_ms: 666.404588
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -598,7 +598,7 @@ ok 42 - deployed bundle
     # Subtest: near-identical frames are dropped instead of duplicating content
     ok 4 - near-identical frames are dropped instead of duplicating content
       ---
-      duration_ms: 688.864062
+      duration_ms: 594.135054
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -616,7 +616,7 @@ ok 42 - deployed bundle
     # Subtest: dark low-contrast screens stitch via the adaptive NCC threshold
     ok 5 - dark low-contrast screens stitch via the adaptive NCC threshold
       ---
-      duration_ms: 682.45676
+      duration_ms: 630.058656
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -636,13 +636,13 @@ ok 42 - deployed bundle
     # Subtest: a keyboard appearing mid-scroll degrades gracefully with warnings
     ok 6 - a keyboard appearing mid-scroll degrades gracefully with warnings
       ---
-      duration_ms: 812.513191
+      duration_ms: 755.55677
       type: 'test'
       ...
     # Subtest: a single frame passes through unchanged
     ok 7 - a single frame passes through unchanged
       ---
-      duration_ms: 70.02351
+      duration_ms: 73.008799
       type: 'test'
       ...
 #   overlap: 384px/40% (NCC=1.000, threshold=0.849, contrast=39.7)
@@ -651,7 +651,7 @@ ok 42 - deployed bundle
     # Subtest: two overlapping frames stitch into one image
     ok 8 - two overlapping frames stitch into one image
       ---
-      duration_ms: 171.752298
+      duration_ms: 154.922805
       type: 'test'
       ...
 #   overlap: none (best NCC=0.536 at 48px/5% < threshold=0.929, contrast=39.5, searched 38–950px)
@@ -660,7 +660,7 @@ ok 42 - deployed bundle
     # Subtest: two non-overlapping frames butt together with a gap warning
     ok 9 - two non-overlapping frames butt together with a gap warning
       ---
-      duration_ms: 203.505914
+      duration_ms: 195.252423
       type: 'test'
       ...
 # validateFrames: Frame 4 of 7 could not be decoded and was skipped. (frame_zz_corrupt.jpg)
@@ -679,7 +679,7 @@ ok 42 - deployed bundle
     # Subtest: corrupt frames are skipped with a warning, the rest still stitch
     ok 10 - corrupt frames are skipped with a warning, the rest still stitch
       ---
-      duration_ms: 512.933064
+      duration_ms: 440.242838
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -855,7 +855,7 @@ ok 42 - deployed bundle
     # Subtest: 85 frames stitch sequentially within a bounded memory footprint
     ok 11 - 85 frames stitch sequentially within a bounded memory footprint
       ---
-      duration_ms: 6491.024982
+      duration_ms: 5122.7922
       type: 'test'
       ...
 #   overlap: 70px/7% (NCC=0.998, threshold=0.921, contrast=41.2)
@@ -864,7 +864,7 @@ ok 42 - deployed bundle
     # Subtest: overlaps far outside the common range are still found
     ok 12 - overlaps far outside the common range are still found
       ---
-      duration_ms: 209.867934
+      duration_ms: 193.538848
       type: 'test'
       ...
 #   overlap: 588px/92% (NCC=0.999, threshold=0.850, contrast=44.1)
@@ -897,7 +897,7 @@ ok 42 - deployed bundle
     # Subtest: repeating chat rows are aligned on the true offset, not one row off
     ok 13 - repeating chat rows are aligned on the true offset, not one row off
       ---
-      duration_ms: 820.36717
+      duration_ms: 706.19352
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -965,21 +965,21 @@ ok 42 - deployed bundle
     # Subtest: a smooth scroll through a chat stitches to the page's true height
     ok 14 - a smooth scroll through a chat stitches to the page's true height
       ---
-      duration_ms: 1042.56005
+      duration_ms: 746.485595
       type: 'test'
       ...
 #   overlap: 480px/50% (NCC=1.000, threshold=0.850, contrast=44.4)
     # Subtest: a region that changes between frames does not sink a good seam
     ok 15 - a region that changes between frames does not sink a good seam
       ---
-      duration_ms: 171.578649
+      duration_ms: 162.707865
       type: 'test'
       ...
 #   overlap: none (best NCC=0.496 at 130px/14% < threshold=0.893, contrast=39.1, searched 38–950px)
     # Subtest: small overlaps must clear a stricter confidence bar
     ok 16 - small overlaps must clear a stricter confidence bar
       ---
-      duration_ms: 116.088654
+      duration_ms: 105.661565
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -995,7 +995,7 @@ ok 42 - deployed bundle
     # Subtest: a fast flick with only a sliver of overlap still stitches
     ok 17 - a fast flick with only a sliver of overlap still stitches
       ---
-      duration_ms: 624.033846
+      duration_ms: 589.081133
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -1013,7 +1013,7 @@ ok 42 - deployed bundle
     # Subtest: a status bar with a live clock (undetectable sticky) still stitches
     ok 18 - a status bar with a live clock (undetectable sticky) still stitches
       ---
-      duration_ms: 610.595055
+      duration_ms: 538.295255
       type: 'test'
       ...
 # validateFrames: Frame 4 of 7 was blank (all black) and was skipped. (frame_black.jpg)
@@ -1032,7 +1032,7 @@ ok 42 - deployed bundle
     # Subtest: blank (all-black) decoder-glitch frames are skipped with a warning
     ok 19 - blank (all-black) decoder-glitch frames are skipped with a warning
       ---
-      duration_ms: 525.15747
+      duration_ms: 459.816256
       type: 'test'
       ...
 # Sticky detection: header=0px, footer=0px
@@ -1048,14 +1048,14 @@ ok 42 - deployed bundle
     # Subtest: a scroll faster than the frame rate yields a leading 'too fast' warning
     ok 20 - a scroll faster than the frame rate yields a leading 'too fast' warning
       ---
-      duration_ms: 518.944733
+      duration_ms: 475.828055
       type: 'test'
       ...
 # preview: 400×6000 (2MP) → 200×3000
     # Subtest: very tall outputs get a downscaled preview image
     ok 21 - very tall outputs get a downscaled preview image
       ---
-      duration_ms: 224.533449
+      duration_ms: 227.209051
       type: 'test'
       ...
 # validateFrames: Frame 1 of 3 could not be decoded and was skipped. (bad_0.jpg)
@@ -1064,61 +1064,61 @@ ok 42 - deployed bundle
     # Subtest: a fully corrupt upload fails with a clear error
     ok 22 - a fully corrupt upload fails with a clear error
       ---
-      duration_ms: 7.051677
+      duration_ms: 2.217105
       type: 'test'
       ...
     1..22
 ok 43 - scroll stitching pipeline (e2e on synthetic recordings)
   ---
-  duration_ms: 17405.43908
+  duration_ms: 14568.441399
   type: 'suite'
   ...
 # Subtest: the message that shipped to a lock screen
 ok 44 - the message that shipped to a lock screen
   ---
-  duration_ms: 1.574287
+  duration_ms: 1.891188
   type: 'test'
   ...
 # Subtest: does not depend on the path in the message
 ok 45 - does not depend on the path in the message
   ---
-  duration_ms: 0.395867
+  duration_ms: 0.463079
   type: 'test'
   ...
 # Subtest: translates an undecodable frame separately
 ok 46 - translates an undecodable frame separately
   ---
-  duration_ms: 0.288449
+  duration_ms: 0.359605
   type: 'test'
   ...
 # Subtest: translates a full disk
 ok 47 - translates a full disk
   ---
-  duration_ms: 0.24701
+  duration_ms: 0.440556
   type: 'test'
   ...
 # Subtest: passes our own messages through
 ok 48 - passes our own messages through
   ---
-  duration_ms: 0.282051
+  duration_ms: 0.365215
   type: 'test'
   ...
 # Subtest: never renders empty or as [object Object]
 ok 49 - never renders empty or as [object Object]
   ---
-  duration_ms: 0.166427
+  duration_ms: 0.328566
   type: 'test'
   ...
 # Subtest: accepts a thrown string
 ok 50 - accepts a thrown string
   ---
-  duration_ms: 0.180017
+  duration_ms: 0.279233
   type: 'test'
   ...
 # Subtest: is case insensitive
 ok 51 - is case insensitive
   ---
-  duration_ms: 0.140783
+  duration_ms: 0.214562
   type: 'test'
   ...
 1..51
@@ -1129,4 +1129,4 @@ ok 51 - is case insensitive
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 33739.408804
+# duration_ms 25797.932689

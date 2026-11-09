@@ -1,6 +1,6 @@
-# web — typecheck=success lint=success unit=success e2e=success
+# web — typecheck=success lint=success unit=success e2e=failure
 
 - branch: `main`
-- commit: `2ee2b7eaa8a96852138797a80b8952231168baa2`
-- run: https://github.com/andreash-hash/Scrollstitch/actions/runs/36841831605
-- finished: 2026-10-01T09:20:54Z
+- commit: `cd19d0fc83a15b00dd40e262fb16b9fa8d4e0b2c`
+- run: https://github.com/andreash-hash/Scrollstitch/actions/runs/42617740414
+- finished: 2026-11-09T12:33:33Z
