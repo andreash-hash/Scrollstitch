@@ -1,0 +1,80 @@
+diff --git a/node_modules/expo-image-picker/ios/MediaHandler.swift b/node_modules/expo-image-picker/ios/MediaHandler.swift
+index 6e4fbe1..16c59ff 100644
+--- a/node_modules/expo-image-picker/ios/MediaHandler.swift
++++ b/node_modules/expo-image-picker/ios/MediaHandler.swift
+@@ -310,19 +310,26 @@ internal struct MediaHandler {
+         let fileExtension = getFileExtension(from: originalFilename)
+         let destinationUrl = try generateUrl(withFileExtension: fileExtension)
+ 
+-        try await PHAssetResourceManager.default().writeData(
+-          for: resource,
+-          toFile: destinationUrl,
+-          options: nil
+-        )
++        // Patched: allow iCloud download and fall through to the regular path on failure.
++        let resourceOptions = PHAssetResourceRequestOptions()
++        resourceOptions.isNetworkAccessAllowed = true
++        do {
++          try await PHAssetResourceManager.default().writeData(
++            for: resource,
++            toFile: destinationUrl,
++            options: resourceOptions
++          )
+ 
+-        let mimeType = getMimeType(from: destinationUrl.pathExtension)
+-        return try buildVideoResult(
+-          for: destinationUrl,
+-          withName: originalFilename,
+-          mimeType: mimeType,
+-          assetId: asset.localIdentifier
+-        )
++          let mimeType = getMimeType(from: destinationUrl.pathExtension)
++          return try buildVideoResult(
++            for: destinationUrl,
++            withName: originalFilename,
++            mimeType: mimeType,
++            assetId: asset.localIdentifier
++          )
++        } catch {
++          // Fall through to the regular path below.
++        }
+       }
+     }
+ 
+@@ -389,16 +396,26 @@ internal struct MediaHandler {
+ 
+           // Stream the resource into our cache directory. This API is asynchronous but doesn't require
+           // a temporary file like `loadFileRepresentation`.
+-          try await PHAssetResourceManager.default().writeData(for: resource, toFile: destinationUrl, options: nil)
+-
+-          // Build and return the result using the helper.
+-          let mimeType = getMimeType(from: destinationUrl.pathExtension)
+-          return try buildVideoResult(
+-            for: destinationUrl,
+-            withName: originalFilename,
+-            mimeType: mimeType,
+-            assetId: assetId
+-          )
++          //
++          // Patched: allow downloading from iCloud (nil options means no network, which fails with
++          // PHPhotosErrorDomain 3164 for assets that are not on the device) and fall through to the
++          // regular path on any failure, as the comment below always claimed.
++          let resourceOptions = PHAssetResourceRequestOptions()
++          resourceOptions.isNetworkAccessAllowed = true
++          do {
++            try await PHAssetResourceManager.default().writeData(for: resource, toFile: destinationUrl, options: resourceOptions)
++
++            // Build and return the result using the helper.
++            let mimeType = getMimeType(from: destinationUrl.pathExtension)
++            return try buildVideoResult(
++              for: destinationUrl,
++              withName: originalFilename,
++              mimeType: mimeType,
++              assetId: assetId
++            )
++          } catch {
++            // Fall through to the regular path below.
++          }
+         }
+       }
+       // If anything above fails we'll gracefully fall back to the existing (slower) path below.

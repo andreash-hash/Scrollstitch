@@ -1261,6 +1261,7 @@ export default function ScrollStitchScreen() {
   const runPickVideo = async () => {
     let pickerResult: ImagePicker.ImagePickerResult;
     let limitedAccess = false;
+    let usingFallback = false;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1299,13 +1300,16 @@ export default function ScrollStitchScreen() {
       setErrorMessage("");
       setErrorCode("");
 
-      pickerResult = await ImagePicker.launchImageLibraryAsync(
-        useFallbackPickerRef.current ? FALLBACK_PICKER_OPTIONS : PICKER_OPTIONS
-      );
+      usingFallback = useFallbackPickerRef.current;
+      // One-shot: a transcode that failed once is not worth repeating forever.
       useFallbackPickerRef.current = false;
+      pickerResult = await ImagePicker.launchImageLibraryAsync(
+        usingFallback ? FALLBACK_PICKER_OPTIONS : PICKER_OPTIONS
+      );
     } catch (err: any) {
-      // The next attempt asks iOS to download and export the video itself.
-      useFallbackPickerRef.current = !limitedAccess;
+      // The next attempt asks iOS to export the video itself, unless this
+      // attempt already was that one.
+      useFallbackPickerRef.current = !limitedAccess && !usingFallback;
       // The picker threw while handing the recording over, after it was chosen.
       setStage("error");
       setErrorCode(withDetail(limitedAccess ? "PICK-LTD" : "PICK", err));
